@@ -1,0 +1,3 @@
+{"type":"event","t":"2026-10-21T15:40:11.77570561Z","agent":"main","turn":0,"name":"warmup","data":{"cached_tokens":1856,"latency_ms":495,"prompt_tokens":1871}}
+{"type":"turn","t":"2026-10-21T15:40:18.912914287Z","agent":"main","segment":0,"turn":1,"prompt_tokens":2315,"cached_tokens":1856,"prefill_tokens":459,"reprefill_tokens":0,"completion_tokens":50,"reasoning_tokens":10,"latency_ms":7136,"ttft_ms":5476,"finish_reason":"tool_calls","cache_status":"hit","tool_calls":1,"effort":"medium"}
+{"type":"tool","t":"2026-10-21T15:40:18.919820712Z","agent":"main","turn":1,"tool":"run","args_hash":"41a5c41fa6de61d6","args_preview":"{\"command\":\"cat go.mod; ls semver/ 2\u003e/dev/null\"}","ok":true,"out_chars":47,"dur_ms":6}

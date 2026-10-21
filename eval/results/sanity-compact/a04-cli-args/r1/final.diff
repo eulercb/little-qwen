@@ -1,0 +1,151 @@
+ cli/cli.go | 133 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 132 insertions(+), 1 deletion(-)
+
+diff --git a/cli/cli.go b/cli/cli.go
+index b437c96..bd91045 100644
+--- a/cli/cli.go
++++ b/cli/cli.go
+@@ -1,7 +1,12 @@
+ // Package cli parses the command line of the frob tool.
+ package cli
+ 
+-import "errors"
++import (
++	"errors"
++	"fmt"
++	"strconv"
++	"strings"
++)
+ 
+ // ErrUsage is wrapped by every parse error.
+ var ErrUsage = errors.New("usage error")
+@@ -14,3 +19,129 @@ type Config struct {
+ 	Tags    []string
+ 	Args    []string
+ }
++
++// Parse parses args into a Config. It never uses the flag package.
++func Parse(args []string) (Config, error) {
++	cfg := Config{Count: 1, Output: "-"}
++
++	afterDoubleDash := false
++	for i := 0; i < len(args); i++ {
++		arg := args[i]
++
++		if afterDoubleDash || !strings.HasPrefix(arg, "-") || arg == "-" {
++			cfg.Args = append(cfg.Args, arg)
++			continue
++		}
++		if arg == "--" {
++			afterDoubleDash = true
++			continue
++		}
++
++		if strings.HasPrefix(arg, "--") {
++			name := arg[2:]
++			var val string
++			hasVal := false
++			if eq := strings.IndexByte(name, '='); eq >= 0 {
++				val, name, hasVal = name[eq+1:], name[:eq], true
++			}
++			switch name {
++			case "verbose":
++				if hasVal {
++					return Config{}, fmt.Errorf("%w: --verbose takes no argument", ErrUsage)
++				}
++				cfg.Verbose = true
++			case "count":
++				if !hasVal {
++					v, err := takeValue(&args, &i, "--count")
++					if err != nil {
++						return Config{}, err
++					}
++					val = v
++				}
++				if err := setCount(&cfg, val, "--count"); err != nil {
++					return Config{}, err
++				}
++			case "output":
++				if !hasVal {
++					v, err := takeValue(&args, &i, "--output")
++					if err != nil {
++						return Config{}, err
++					}
++					val = v
++				}
++				cfg.Output = val
++			case "tag":
++				if !hasVal {
++					v, err := takeValue(&args, &i, "--tag")
++					if err != nil {
++						return Config{}, err
++					}
++					val = v
++				}
++				cfg.Tags = append(cfg.Tags, val)
++			default:
++				return Config{}, fmt.Errorf("%w: unknown flag --%s", ErrUsage, name)
++			}
++			continue
++		}
++
++		// Short flag cluster, e.g. -v, -vv, -n 3.
++		s := arg[1:]
++		for len(s) > 0 {
++			switch s[0] {
++			case 'v':
++				cfg.Verbose = true
++				s = s[1:]
++			case 'n', 'o':
++				flagName := fmt.Sprintf("-%c", s[0])
++				var val string
++				switch {
++				case len(s) > 1 && s[1] == '=':
++					val = s[2:]
++					s = ""
++				case len(s) > 1:
++					// attached value, e.g. -n3
++					val = s[1:]
++					s = ""
++				default:
++					v, err := takeValue(&args, &i, flagName)
++					if err != nil {
++						return Config{}, err
++					}
++					val = v
++					s = ""
++				}
++				if flagName == "-n" {
++					if err := setCount(&cfg, val, flagName); err != nil {
++						return Config{}, err
++					}
++				} else {
++					cfg.Output = val
++				}
++			default:
++				return Config{}, fmt.Errorf("%w: unknown flag -%c", ErrUsage, s[0])
++			}
++		}
++	}
++	return cfg, nil
++}
++
++// takeValue consumes the next argument as the value for flag; it reports an
++// error (wrapping ErrUsage) when there is none.
++func takeValue(args *[]string, idx *int, flag string) (string, error) {
++	if *idx+1 >= len(*args) {
++		return "", fmt.Errorf("%w: flag needs an argument: %s", ErrUsage, flag)
++	}
++	*idx++
++	return (*args)[*idx], nil
++}
++
++// setCount parses val as a non-negative integer and stores it in cfg.Count.
++func setCount(cfg *Config, val, flag string) error {
++	n, err := strconv.Atoi(val)
++	if err != nil || n < 0 {
++		return fmt.Errorf("%w: invalid value for %s: %q", ErrUsage, flag, val)
++	}
++	cfg.Count = n
++	return nil
++}
