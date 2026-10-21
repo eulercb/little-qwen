@@ -275,3 +275,103 @@
 15:09:51 a12-jsonpath/r1 [main]   write_file {"content":"// Package jpath implements a tiny path query language over decoded JSON\n// values (the shapes produced by ... -> OK created jpath/jpath.go (240 lines, 5399 bytes)
 15:11:46 a12-jsonpath/r1 [main] turn 3: prompt=7272 cached=2752 prefill=4520 out=178 (think 142) 114.3s finish=tool_calls tools=1
 15:11:46 a12-jsonpath/r1 [main]   run {"command":"go test ./... && go vet ./..."} -> OK (exit=0)
+15:13:11 a12-jsonpath/r1 [main] turn 4: prompt=7488 cached=7264 prefill=224 out=1380 (think 133) 85.2s finish=tool_calls tools=1
+15:13:11 a12-jsonpath/r1 [main]   write_file {"content":"package jpath\n\nimport (\n\t\"reflect\"\n\t\"testing\"\n)\n\nfunc mustErr(t *testing.T, path string) {\n\tt... -> OK created jpath/zz_temp_test.go (88 lines, 2877 bytes)
+15:14:07 a10-topk-words/r1 [main] turn 12: prompt=17428 cached=16672 prefill=756 out=3143 (think 2517) 324.6s finish=tool_calls tools=3
+15:14:07 a10-topk-words/r1 [main]   edit_file {"new_text":"\t\tif n > 0 {\n\t\t\tvar data []byte\n\t\t\tif len(tail) > 0 {\n\t\t\t\t// Copy into a fresh slice: tail m... -> OK edited words/words.go at line 106 (-7 +13 lines)
+15:14:07 a10-topk-words/r1 [main]   edit_file {"new_text":"\tvar sb strings.Builder\n\tfor i := 0; i < 16000; i++ {\n\t\tsb.WriteString(\"x \")\n\t}\n\tsb.WriteString... -> OK edited words/words_test.go at line 124 (-8 +8 lines)
+15:14:07 a10-topk-words/r1 [main]   edit_file {"new_text":"\tmustTopK(t, sb.String(), 3, nil,\n\t\t[]WordCount{{\"apple\", 3}, {\"avocado\", 3}, {\"banana\", 3}})","o... -> OK edited words/words_test.go at line 177 (-2 +2 lines)
+15:14:15 a12-jsonpath/r1 [main] turn 5: prompt=9086 cached=7456 prefill=1630 out=265 (think 190) 63.9s finish=tool_calls tools=1
+15:14:15 a12-jsonpath/r1 [main]   run {"command":"gofmt -e jpath/zz_temp_test.go > /dev/null; echo \"gofmt exit: $?\"; go test ./jpath/ -run TestTempEdgeCases... -> OK (exit=0)
+15:15:08 a10-topk-words/r1 [main] turn 13: prompt=20653 cached=17408 prefill=3245 out=183 (think 85) 61.1s finish=tool_calls tools=1
+15:15:08 a10-topk-words/r1 [main]   edit_file {"new_text":"\twant := []WordCount{{\"x\", 32000}, {\"big\", 1}}","old_text":"\twant := []WordCount{{\"x\", 2000}, {\"bi... -> OK edited words/words_test.go at line 140 (-1 +1 lines)
+15:15:17 a12-jsonpath/r1 [main] turn 6: prompt=9712 cached=9056 prefill=656 out=366 (think 307) 61.7s finish=tool_calls tools=1
+15:15:17 a12-jsonpath/r1 [main]   read_file {"end_line":28,"path":"jpath/zz_temp_test.go","start_line":18} -> OK jpath/zz_temp_test.go lines 18-28 of 88
+15:15:42 a10-topk-words/r1 [main] turn 14: prompt=20870 cached=20640 prefill=230 out=244 (think 195) 33.2s finish=tool_calls tools=1
+15:15:42 a10-topk-words/r1 [main]   run {"command":"go vet ./... && go test ./... -count=1 2>&1 | tail -20"} -> OK (exit=0)
+15:17:19 a12-jsonpath/r1 [main] turn 7: prompt=10342 cached=9696 prefill=646 out=1355 (think 1104) 122.0s finish=tool_calls tools=1
+15:17:19 a12-jsonpath/r1 [main]   edit_file {"new_text":"\t\tmalformed := []string{\"\", \"a.b\", \"$.\", \"$[\", \"$[1\", `$[\"x]`, \"$.1abc\", \"$[abc]\", \"$\", ... -> OK edited jpath/zz_temp_test.go at line 21 (-3 +4 lines)
+15:17:34 a10-topk-words/r1 [main] turn 15: prompt=21331 cached=20864 prefill=467 out=1105 (think 823) 111.8s finish=tool_calls tools=2
+15:17:34 a10-topk-words/r1 [main]   edit_file {"new_text":"\t\t\tcomplete, rest := splitComplete(data)\n\t\t\tif len(rest) > 0 {\n\t\t\t\t// Copy: rest may alias buf,... -> OK edited words/words.go at line 118 (-4 +6 lines)
+15:17:34 a10-topk-words/r1 [main]   edit_file {"new_text":"\tif len(data) < 64*1024 {","old_text":"\tif len(data) < 64*1024 {","path":"words/words_test.go"} -> OK edited words/words_test.go at line 133 (-1 +1 lines)
+15:18:00 a12-jsonpath/r1 [main] turn 8: prompt=11731 cached=10336 prefill=1395 out=166 (think 113) 40.5s finish=tool_calls tools=1
+15:18:00 a12-jsonpath/r1 [main]   run {"command":"go test ./jpath/ -run TestTempEdgeCases -v -count=1 2>&1 | tail -5"} -> OK (exit=0)
+15:18:19 a10-topk-words/r1 [main] turn 16: prompt=22493 cached=21312 prefill=1181 out=193 (think 78) 45.2s finish=tool_calls tools=1
+15:18:19 a10-topk-words/r1 [main]   run {"command":"sed -i 's/for i := 0; i < 16000; i++/for i := 0; i < 16384; i++/; s/{\"x\", 32000}/{\"x\", 32768}/' words/wo... -> OK (exit=0)
+15:18:28 a12-jsonpath/r1 [main] turn 9: prompt=11973 cached=11712 prefill=261 out=201 (think 142) 27.9s finish=tool_calls tools=1
+15:18:28 a12-jsonpath/r1 [main]   read_file {"end_line":52,"path":"jpath/zz_temp_test.go","start_line":40} -> OK jpath/zz_temp_test.go lines 40-52 of 89
+15:18:47 a10-topk-words/r1 [main] turn 17: prompt=22795 cached=22464 prefill=331 out=230 (think 139) 27.3s finish=tool_calls tools=1
+15:18:47 a10-topk-words/r1 [main]   edit_file {"new_text":"\tsb.WriteString(\"big \")","old_text":"\tsb.WriteString(\"big\")","path":"words/words_test.go"} -> OK edited words/words_test.go at line 128 (-1 +1 lines)
+15:19:03 a10-topk-words/r1 [main] turn 18: prompt=23059 cached=22784 prefill=275 out=124 (think 76) 16.2s finish=tool_calls tools=1
+15:19:03 a10-topk-words/r1 [main]   run {"command":"go vet ./... && go test ./... -count=1 2>&1 | tail -5"} -> OK (exit=0)
+15:19:23 a12-jsonpath/r1 [main] turn 10: prompt=12486 cached=11968 prefill=518 out=528 (think 233) 54.8s finish=tool_calls tools=1
+15:19:23 a12-jsonpath/r1 [main]   edit_file {"new_text":"\t\tcase '.':\n\t\t\tif i+1 < len(path) && path[i+1] == '.' {\n\t\t\t\tname, j, err := ident(path, i+2)\n\t... -> OK edited jpath/jpath.go at line 50 (-9 +12 lines)
+15:19:50 a12-jsonpath/r1 [main] turn 11: prompt=13048 cached=12480 prefill=568 out=161 (think 114) 27.7s finish=tool_calls tools=1
+15:19:51 a12-jsonpath/r1 [main]   run {"command":"go test ./jpath/ -count=1 -v 2>&1 | tail -8"} -> OK (exit=0)
+15:20:50 a12-jsonpath/r1 [main] turn 12: prompt=13339 cached=13024 prefill=315 out=681 (think 437) 59.3s finish=tool_calls tools=2
+15:20:50 a12-jsonpath/r1 [main]   edit_file {"new_text":"\t\tmalformed := []string{\"\", \"a.b\", \"$.\", \"$[\", \"$[1\", `$[\"x]`, \"$.1abc\", \"$[abc]\", \"a\", ... -> OK edited jpath/zz_temp_test.go at line 21 (-1 +1 lines)
+15:20:50 a12-jsonpath/r1 [main]   read_file {"end_line":58,"path":"jpath/zz_temp_test.go","start_line":52} -> OK jpath/zz_temp_test.go lines 52-58 of 89
+15:21:27 a10-topk-words/r1 [main] turn 19: prompt=23221 cached=23040 prefill=181 out=1580 (think 557) 144.1s finish=tool_calls tools=1
+15:21:27 a10-topk-words/r1 [main]   edit_file {"new_text":"// referenceTopK is a naive whole-string oracle with a lookahead formulation\n// of the same rules, for cro... -> OK edited words/words_test.go at line 168 (-1 +106 lines)
+15:22:17 a12-jsonpath/r1 [main] turn 13: prompt=14259 cached=13312 prefill=947 out=740 (think 311) 86.7s finish=tool_calls tools=2
+15:22:17 a12-jsonpath/r1 [main]   edit_file {"new_text":"\tif got, err := Query(q, `$[\"a\\\"b\"]`); err != nil || !reflect.DeepEqual(got, []any{1.0}) {\n\t\tt.Fata... -> OK edited jpath/zz_temp_test.go at line 53 (-4 +4 lines)
+15:22:17 a12-jsonpath/r1 [main]   edit_file {"new_text":"// ident parses an identifier [A-Za-z_][A-Za-z0-9_]* at position i; it must\n// match at least one characte... -> OK edited jpath/jpath.go at line 83 (-3 +7 lines)
+15:22:59 a12-jsonpath/r1 [main] turn 14: prompt=15057 cached=14240 prefill=817 out=235 (think 190) 41.7s finish=tool_calls tools=1
+15:22:59 a12-jsonpath/r1 [main]   run {"command":"go test ./jpath/ -count=1 2>&1 | tail -5"} -> OK (exit=0)
+15:23:36 a10-topk-words/r1 [main] turn 20: prompt=24837 cached=23200 prefill=1637 out=959 (think 831) 129.0s finish=tool_calls tools=1
+15:23:36 a10-topk-words/r1 [main]   edit_file {"new_text":"import (\n\t\"errors\"\n\t\"fmt\"\n\t\"io\"\n\t\"math/rand\"\n\t\"reflect\"\n\t\"sort\"\n\t\"strings\"\n\t\... -> OK edited words/words_test.go at line 3 (-8 +11 lines)
+15:23:59 a12-jsonpath/r1 [main] turn 15: prompt=15370 cached=15040 prefill=330 out=621 (think 386) 60.1s finish=tool_calls tools=1
+15:23:59 a12-jsonpath/r1 [main]   edit_file {"new_text":"\tif got, err := Query(doc, \"$..a\"); err != nil || !reflect.DeepEqual(got, []any{1.0, 4.0, 2.0, 3.0}) {\n... -> OK edited jpath/zz_temp_test.go at line 70 (-3 +4 lines)
+15:24:13 a10-topk-words/r1 [main] turn 21: prompt=25829 cached=24832 prefill=997 out=100 (think 45) 36.2s finish=tool_calls tools=1
+15:24:13 a10-topk-words/r1 [main]   run {"command":"gofmt -l . ; go vet ./... && go test ./... -count=1 2>&1 | tail -5"} -> ERROR exit_1: command failed (exit=1)
+15:24:29 a12-jsonpath/r1 [main] turn 16: prompt=16026 cached=15360 prefill=666 out=165 (think 120) 29.4s finish=tool_calls tools=1
+15:24:29 a12-jsonpath/r1 [main]   run {"command":"go test ./jpath/ -count=1 2>&1 | tail -5"} -> OK (exit=0)
+15:24:39 a10-topk-words/r1 [main] turn 22: prompt=26014 cached=25824 prefill=190 out=242 (think 163) 26.5s finish=tool_calls tools=1
+15:24:39 a10-topk-words/r1 [main]   edit_file {"new_text":"\t\treturn rune('a'+rng.Intn(5))","old_text":"\t\treturn 'a' + rng.Intn(5)","path":"words/words_test.go"} -> OK edited words/words_test.go at line 236 (-1 +1 lines)
+15:24:41 a12-jsonpath/r1 [main] turn 17: prompt=16229 cached=16000 prefill=229 out=99 (think 27) 12.4s finish=tool_calls tools=1
+15:24:42 a12-jsonpath/r1 [main]   run {"command":"rm jpath/zz_temp_test.go && gofmt -l . && go vet ./... && go test ./... -count=1"} -> OK (exit=0)
+15:24:55 a10-topk-words/r1 [main] turn 23: prompt=26290 cached=25984 prefill=306 out=131 (think 76) 15.7s finish=tool_calls tools=1
+15:24:56 a10-topk-words/r1 [main]   run {"command":"gofmt -l . ; go vet ./... && go test ./... -count=1 2>&1 | tail -5"} -> OK (exit=0)
+15:25:10 a10-topk-words/r1 [main] turn 24: prompt=26465 cached=26272 prefill=193 out=139 (think 52) 14.7s finish=tool_calls tools=1
+15:25:11 a10-topk-words/r1 [main]   run {"command":"gofmt -w words/words_test.go && gofmt -l . ; go vet ./... && go test ./... -count=1"} -> OK (exit=0)
+15:25:21 a12-jsonpath/r1 [main] turn 18: prompt=16366 cached=16224 prefill=142 out=296 (think 16) 39.4s finish=tool_calls tools=1
+15:25:21 a12-jsonpath/r1 [main]   finish {"summary":"Implemented `Query(doc any, path string) ([]any, error)` in jpath/jpath.go. The parser tokenizes the path af... -> OK acceptance check passed. Task complete.
+15:25:22 a12-jsonpath/r1 DONE success=true score=1.00 status=finished turns=18 wall=21.7min
+15:25:53 a10-topk-words/r1 [main] turn 25: prompt=26642 cached=26432 prefill=210 out=513 (think 374) 41.7s finish=tool_calls tools=2
+15:25:53 a10-topk-words/r1 [main]   run {"command":"go test ./... -count=1; echo \"exit=$?\""} -> OK (exit=0)
+15:25:53 a10-topk-words/r1 [main]   update_plan {"note":"All go test ./... passing, incl. 200-trial oracle property test","status":"done","step":"Implement words/words.... -> OK plan updated:
+15:26:03 a10-topk-words/r1 [main] turn 26: prompt=27243 cached=26624 prefill=619 out=92 (think 26) 10.1s finish=tool_calls tools=1
+15:26:03 a10-topk-words/r1 [main]   read_file {"end_line":135,"path":"words/words.go","start_line":75} -> OK words/words.go lines 75-135 of 181
+15:26:40 a10-topk-words/r1 [main] turn 27: prompt=28190 cached=27232 prefill=958 out=449 (think 180) 36.4s finish=tool_calls tools=1
+15:26:40 a10-topk-words/r1 [main]   finish {"summary":"Implemented `words.TopK` in words/words.go: it streams the reader in 1 MiB chunks through a rune-level state... -> OK acceptance check passed. Task complete.
+15:26:40 a10-topk-words/r1 DONE success=true score=1.00 status=finished turns=27 wall=42.9min
+Harness: 6e880e0d3539 — 12 runs over 12 tasks
+
+| metric | mean ± sd |
+|---|---|
+| success | 0.83 ± 0.39 |
+| score | 0.90 ± 0.29 |
+| wall (min) | 13.4 ± 11.2 |
+| turns | 12.1 ± 7.5 |
+| prefill tokens | 11120 ± 6851 |
+| re-prefill tokens | 0 ± 0 |
+| completion tokens | 7135 ± 6162 |
+| reasoning tokens | 3216 ± 4341 |
+| tool calls / errors / repaired | 178 / 10 (5.6%) / 0 |
+
+Failure codes: 
+
+| task | tier | success | score | status | turns | wall min | compactions |
+|---|---|---|---|---|---|---|---|
+| a01-lru-cache | tierA | 1.00 | 1.00 | finished | 7 | 7.1 | 0 |
+| a02-fix-race | tierA | 1.00 | 1.00 | finished | 4 | 3.5 | 0 |
+| a03-http-api | tierA | 1.00 | 1.00 | finished | 8 | 7.6 | 0 |
+| a04-cli-args | tierA | 0.00 | 0.75 | finished | 25 | 21.4 | 0 |
+| a05-ini-bugfix | tierA | 1.00 | 1.00 | finished | 7 | 11.5 | 0 |
+| a06-rename-refactor | tierA | 1.00 | 1.00 | finished | 12 | 6.4 | 0 |
+| a07-semver | tierA | 1.00 | 1.00 | finished | 11 | 9.7 | 0 |
+| a08-token-bucket | tierA | 0.00 | 0.00 | finished | 5 | 7.2 | 0 |
+| a09-csv-report | tierA | 1.00 | 1.00 | finished | 13 | 17.3 | 0 |
+| a10-topk-words | tierA | 1.00 | 1.00 | finished | 27 | 42.9 | 0 |
+| a11-bank-deadlock | tierA | 1.00 | 1.00 | finished | 8 | 4.5 | 0 |
+| a12-jsonpath | tierA | 1.00 | 1.00 | finished | 18 | 21.7 | 0 |

@@ -3,10 +3,10 @@
   "tier": "tierA",
   "rep": 1,
   "harness_hash": "6e880e0d3539",
-  "success": false,
-  "score": 0,
-  "tests_passed": 0,
-  "tests_total": 1,
+  "success": true,
+  "score": 1,
+  "tests_passed": 16,
+  "tests_total": 16,
   "outcome": {
     "Status": "finished",
     "CheckPassed": true,
@@ -30,5 +30,7 @@
     "Err": ""
   },
   "started": "2026-10-21T14:34:41Z",
-  "hidden_output": "FAIL\texample.com/ratelimit/ratelimit [build failed]"
+  "hidden_output": "=== RUN   TestPanicOnBadArgs\n=== RUN   TestPanicOnBadArgs/zero_rate\n--- PASS: TestPanicOnBadArgs/zero_rate (0.00s)\n=== RUN   TestPanicOnBadArgs/negative_rate\n--- PASS: TestPanicOnBadArgs/negative_rate (0.00s)\n=== RUN   TestPanicOnBadArgs/zero_burst\n--- PASS: TestPanicOnBadArgs/zero_burst (0.00s)\n=== RUN   TestPanicOnBadArgs/negative_burst\n--- PASS: TestPanicOnBadArgs/negative_burst (0.00s)\n--- PASS: TestPanicOnBadArgs (0.00s)\n=== RUN   TestNewWithNilClock\n--- PASS: TestNewWithNilClock (0.00s)\n=== RUN   TestStartsFull\n--- PASS: TestStartsFull (0.00s)\n=== RUN   TestAllowDrains\n--- PASS: TestAllowDrains (0.00s)\n=== RUN   TestFractionalRefill\n--- PASS: TestFractionalRefill (0.00s)\n=== RUN   TestCapAtBurst\n--- PASS: TestCapAtBurst (0.00s)\n=== RUN   TestAllowN\n--- PASS: TestAllowN (0.00s)\n=== RUN   TestReserve\n--- PASS: TestReserve (0.00s)\n=== RUN   TestReserveFractionalWait\n--- PASS: TestReserveFractionalWait (0.00s)\n=== RUN   TestConcurrentUse\n--- PASS: TestConcurrentUse (0.00s)\n=== RUN   TestHiddenBurstThenRefill\n--- PASS: TestHiddenBurstThenRefill (0.00s)\n=== RUN   TestHiddenAllowN\n--- PASS: TestHiddenAllowN (0.00s)\n=== RUN   TestHiddenReserve\n--- PASS: TestHiddenReserve (0.00s)\n=== RUN   TestHiddenPanics\n--- PASS: TestHiddenPanics (0.00s)\n=== RUN   TestHiddenConcurrent\n--- PASS: TestHiddenConcurrent (0.00s)\n=== RUN   TestHiddenNilClock\n--- PASS: TestHiddenNilClock (0.00s)\nPASS\nok  \texample.com/ratelimit/ratelimit\t1.021s",
+  "work": "/tmp/qh-runs/it0-baseline/a08-token-bucket-r1",
+  "rescored": true
 }

@@ -3,8 +3,15 @@
 # from the repo root; finished lines are moved to eval/queue.done. Safe to restart:
 # qh eval skips runs that already have result.json.
 # Usage: nohup eval/runner/queue.sh >> eval/queue.log 2>&1 &
+# Running? test -f eval/queue.pid && kill -0 $(cat eval/queue.pid)   (don't use pgrep -f: it matches itself)
 cd "$(dirname "$0")/../.."
 q=eval/queue.txt; done_f=eval/queue.done
+pidf=eval/queue.pid
+if [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; then
+  echo "queue already running (pid $(cat "$pidf"))"; exit 1
+fi
+echo $$ > "$pidf"
+trap 'rm -f "$pidf"' EXIT
 touch "$q" "$done_f"
 while true; do
   line=$(grep -v -E '^\s*(#|$)' "$q" | head -1)

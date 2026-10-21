@@ -1,0 +1,1 @@
+2026-10-21T15:33:08Z START ./bin/qh eval --harness harness/cand/test-compact --out eval/results/sanity-compact --only a04-cli-args,a07-semver --reps 1 --parallel 1 > eval/results/sanity-compact.log 2>&1

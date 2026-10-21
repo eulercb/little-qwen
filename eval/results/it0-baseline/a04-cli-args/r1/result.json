@@ -3,9 +3,9 @@
   "tier": "tierA",
   "rep": 1,
   "harness_hash": "6e880e0d3539",
-  "success": false,
-  "score": 0.75,
-  "tests_passed": 3,
+  "success": true,
+  "score": 1,
+  "tests_passed": 4,
   "tests_total": 4,
   "outcome": {
     "Status": "finished",
@@ -30,5 +30,7 @@
     "Err": ""
   },
   "started": "2026-10-21T14:12:40Z",
-  "hidden_output": "=== RUN   TestDefaults\n--- PASS: TestDefaults (0.00s)\n=== RUN   TestHiddenForms\n--- PASS: TestHiddenForms (0.00s)\n=== RUN   TestHiddenErrors\n    zz_hidden_test.go:62: [-vx]: error \"unknown flag -x: usage error\" does not mention -vx\n--- FAIL: TestHiddenErrors (0.00s)\n=== RUN   TestHiddenNilSlices\n--- PASS: TestHiddenNilSlices (0.00s)\nFAIL\nFAIL\texample.com/cli/cli\t0.003s"
+  "hidden_output": "=== RUN   TestDefaults\n--- PASS: TestDefaults (0.00s)\n=== RUN   TestHiddenForms\n--- PASS: TestHiddenForms (0.00s)\n=== RUN   TestHiddenErrors\n--- PASS: TestHiddenErrors (0.00s)\n=== RUN   TestHiddenNilSlices\n--- PASS: TestHiddenNilSlices (0.00s)\nPASS\nok  \texample.com/cli/cli\t0.004s",
+  "work": "/tmp/qh-runs/it0-baseline/a04-cli-args-r1",
+  "rescored": true
 }

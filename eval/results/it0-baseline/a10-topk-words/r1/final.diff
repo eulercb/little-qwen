@@ -1,0 +1,484 @@
+ words/words.go      | 181 +++++++++++++++++++++++++++++++++
+ words/words_test.go | 287 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 468 insertions(+)
+
+diff --git a/words/words.go b/words/words.go
+new file mode 100644
+index 0000000..901367b
+--- /dev/null
++++ b/words/words.go
+@@ -0,0 +1,181 @@
++// Package words provides word-frequency analysis over text streams.
++package words
++
++import (
++	"bufio"
++	"io"
++	"sort"
++	"strings"
++	"unicode"
++	"unicode/utf8"
++)
++
++// WordCount pairs a word with its number of occurrences.
++type WordCount struct {
++	Word  string
++	Count int
++}
++
++// TopK streams the reader r, counts word occurrences and returns the k most
++// frequent words. Words are maximal runs of Unicode letters or digits,
++// optionally containing an apostrophe between two letters (e.g. "don't");
++// leading and trailing apostrophes are not part of a word. Words are
++// lower-cased with strings.ToLower; words in stop (compared case
++// insensitively) are ignored.
++//
++// The result is ordered by count descending, ties broken by word ascending
++// (byte order). If there are fewer than k distinct words, all of them are
++// returned. k <= 0 returns an empty non-nil slice.
++//
++// The input is processed in a streaming fashion: only one read buffer plus
++// the map of distinct words is held in memory, so arbitrarily large inputs
++// and arbitrarily long lines are handled. Any read error from r is returned.
++func TopK(r io.Reader, k int, stop []string) ([]WordCount, error) {
++	if k <= 0 {
++		return []WordCount{}, nil
++	}
++
++	stopSet := make(map[string]struct{}, len(stop))
++	for _, w := range stop {
++		stopSet[strings.ToLower(w)] = struct{}{}
++	}
++
++	counts := make(map[string]int, 4096)
++	var wordBuf []rune
++	wordActive := false
++	pendingApostrophe := false
++
++	endWord := func() {
++		if !wordActive {
++			return
++		}
++		if pendingApostrophe {
++			// A trailing apostrophe never became an internal one.
++			wordBuf = wordBuf[:len(wordBuf)-1]
++		}
++		wordActive = false
++		pendingApostrophe = false
++		if len(wordBuf) > 0 {
++			w := strings.ToLower(string(wordBuf))
++			if _, isStop := stopSet[w]; !isStop {
++				counts[w]++
++			}
++		}
++		wordBuf = wordBuf[:0]
++	}
++
++	process := func(data []byte) {
++		for len(data) > 0 {
++			rn, size := utf8.DecodeRune(data)
++			data = data[size:]
++			isWordChar := unicode.IsLetter(rn) || unicode.IsDigit(rn)
++			switch {
++			case isWordChar:
++				if !wordActive {
++					wordBuf = wordBuf[:0]
++					wordActive = true
++				} else if pendingApostrophe && !unicode.IsLetter(rn) {
++					// An apostrophe counts only between two letters;
++					// a digit does not confirm it, so the word ends.
++					endWord()
++					wordBuf = wordBuf[:0]
++					wordActive = true
++				} else {
++					pendingApostrophe = false
++				}
++				wordBuf = append(wordBuf, rn)
++			case rn == '\'' && wordActive && !pendingApostrophe &&
++				unicode.IsLetter(wordBuf[len(wordBuf)-1]):
++				// Possibly an internal apostrophe; confirmed only if the
++				// next rune turns out to be a letter.
++				wordBuf = append(wordBuf, rn)
++				pendingApostrophe = true
++			default:
++				endWord()
++			}
++		}
++	}
++
++	const chunkSize = 1 << 20
++	br := bufio.NewReaderSize(r, chunkSize)
++	buf := make([]byte, chunkSize)
++	var tail []byte // a possibly-incomplete trailing UTF-8 sequence
++
++	for {
++		n, rerr := br.Read(buf)
++		if n > 0 {
++			var data []byte
++			if len(tail) > 0 {
++				// Copy into a fresh slice: tail may alias buf, which the
++				// next read would overwrite.
++				data = make([]byte, len(tail)+n)
++				copy(data, tail)
++				copy(data[len(tail):], buf[:n])
++				tail = nil
++			} else {
++				data = buf[:n]
++			}
++			complete, rest := splitComplete(data)
++			if len(rest) > 0 {
++				// Copy: rest may alias buf, which the next read reuses.
++				tail = make([]byte, len(rest))
++				copy(tail, rest)
++			}
++			process(complete)
++		}
++		if rerr == io.EOF {
++			if len(tail) > 0 {
++				process(tail)
++			}
++			break
++		}
++		if rerr != nil {
++			return nil, rerr
++		}
++	}
++	endWord()
++
++	res := make([]WordCount, 0, len(counts))
++	for w, c := range counts {
++		res = append(res, WordCount{Word: w, Count: c})
++	}
++	sort.Slice(res, func(i, j int) bool {
++		if res[i].Count != res[j].Count {
++			return res[i].Count > res[j].Count
++		}
++		return res[i].Word < res[j].Word
++	})
++	if len(res) > k {
++		res = res[:k]
++	}
++	return res, nil
++}
++
++// splitComplete splits data into the longest prefix that consists of complete
++// UTF-8 sequences and the trailing bytes that may be an incomplete final
++// sequence (to be prepended to the next chunk).
++func splitComplete(data []byte) (complete, rest []byte) {
++	for off := len(data) - 1; off >= 0; off-- {
++		b := data[off]
++		if b&0xC0 == 0x80 { // continuation byte: keep looking backwards
++			continue
++		}
++		// b starts a sequence (or is an invalid byte): find its length.
++		expected := 1
++		switch {
++		case b&0x80 == 0:
++			expected = 1
++		case b&0xE0 == 0xC0:
++			expected = 2
++		case b&0xF0 == 0xE0:
++			expected = 3
++		case b&0xF8 == 0xF0:
++			expected = 4
++		}
++		if expected > len(data)-off {
++			return data[:off], data[off:]
++		}
++		return data, nil
++	}
++	return data, nil
++}
+diff --git a/words/words_test.go b/words/words_test.go
+new file mode 100644
+index 0000000..14486b3
+--- /dev/null
++++ b/words/words_test.go
+@@ -0,0 +1,287 @@
++package words
++
++import (
++	"errors"
++	"fmt"
++	"io"
++	"math/rand"
++	"reflect"
++	"sort"
++	"strings"
++	"testing"
++	"unicode"
++)
++
++func mustTopK(t *testing.T, input string, k int, stop []string, want []WordCount) {
++	t.Helper()
++	got, err := TopK(strings.NewReader(input), k, stop)
++	if err != nil {
++		t.Fatalf("TopK(%q, %d, %v): %v", input, k, stop, err)
++	}
++	if want == nil {
++		want = []WordCount{}
++	}
++	if !reflect.DeepEqual(got, want) {
++		t.Fatalf("TopK(%q, %d, %v) = %+v, want %+v", input, k, stop, got, want)
++	}
++}
++
++func TestTopKBasic(t *testing.T) {
++	mustTopK(t, "hello world hello", 2, nil,
++		[]WordCount{{"hello", 2}, {"world", 1}})
++}
++
++func TestTopKCaseFolding(t *testing.T) {
++	mustTopK(t, "Hello hello HELLO", 5, nil,
++		[]WordCount{{"hello", 3}})
++}
++
++func TestTopKStopWords(t *testing.T) {
++	mustTopK(t, "the cat and the dog", 10, []string{"The", "dog"},
++		[]WordCount{{"and", 1}, {"cat", 1}})
++}
++
++func TestTopKApostrophes(t *testing.T) {
++	mustTopK(t, "don't o'clock 'hello' don''t", 10, nil,
++		[]WordCount{{"don", 1}, {"don't", 1}, {"hello", 1}, {"o'clock", 1}, {"t", 1}})
++}
++
++func TestTopKDigitsAndUnicode(t *testing.T) {
++	mustTopK(t, "café CAFÉ a1 b2 a1", 10, nil,
++		[]WordCount{{"a1", 2}, {"café", 2}, {"b2", 1}})
++}
++
++func TestTopKTiesByWordAscending(t *testing.T) {
++	mustTopK(t, "b a a b c", 2, nil,
++		[]WordCount{{"a", 2}, {"b", 2}})
++}
++
++func TestTopKLargerThanDistinct(t *testing.T) {
++	mustTopK(t, "a b", 100, nil,
++		[]WordCount{{"a", 1}, {"b", 1}})
++}
++
++func TestTopKZeroAndNegative(t *testing.T) {
++	for _, k := range []int{0, -1} {
++		got, err := TopK(strings.NewReader("a b a b a"), k, nil)
++		if err != nil {
++			t.Fatalf("k=%d: %v", k, err)
++		}
++		if got == nil || len(got) != 0 {
++			t.Fatalf("k=%d: got %+v, want empty non-nil", k, got)
++		}
++	}
++}
++
++func TestTopKSeparators(t *testing.T) {
++	mustTopK(t, `a-b, c.d; "e f" (g: 3:2)`, 10, nil,
++		[]WordCount{{"2", 1}, {"3", 1}, {"a", 1}, {"b", 1}, {"c", 1}, {"d", 1}, {"e", 1}, {"f", 1}, {"g", 1}})
++}
++
++type oneByteReader struct {
++	data  []byte
++	pos   int
++	fails bool // simulate a read error at the end
++}
++
++func (r *oneByteReader) Read(p []byte) (int, error) {
++	if r.pos >= len(r.data) {
++		if r.fails {
++			return 0, errors.New("boom")
++		}
++		return 0, io.EOF
++	}
++	p[0] = r.data[r.pos]
++	r.pos++
++	return 1, nil
++}
++
++func TestTopKStreamsByteByByte(t *testing.T) {
++	// Force every word to straddle chunk boundaries.
++	in := strings.Repeat("word ", 1000) + "don't 'x' café"
++	got, err := TopK(&oneByteReader{data: []byte(in)}, 10, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := []WordCount{
++		{"word", 1000},
++		{"café", 1}, {"don't", 1}, {"x", 1},
++	}
++	if !reflect.DeepEqual(got, want) {
++		t.Fatalf("got %+v, want %+v", got, want)
++	}
++}
++
++type errReader struct{}
++
++func (errReader) Read(p []byte) (int, error) { return 0, errors.New("read failure") }
++
++func TestTopKReadError(t *testing.T) {
++	if _, err := TopK(errReader{}, 5, nil); err == nil {
++		t.Fatal("expected an error, got nil")
++	}
++}
++
++func TestTopKLargeLongLine(t *testing.T) {
++	// A single 64 MiB line: 1000 copies of "x ", then a word, 1000 more.
++	var sb strings.Builder
++	for i := 0; i < 16384; i++ {
++		sb.WriteString("x ")
++	}
++	sb.WriteString("big ")
++	for i := 0; i < 16384; i++ {
++		sb.WriteString("x ")
++	}
++	data := sb.String()
++	if len(data) < 64*1024 {
++		t.Fatalf("test input too small: %d", len(data))
++	}
++	got, err := TopK(&oneByteReader{data: []byte(data)}, 5, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := []WordCount{{"x", 32768}, {"big", 1}}
++	if !reflect.DeepEqual(got, want) {
++		t.Fatalf("got %+v, want %+v", got, want)
++	}
++}
++
++func TestTopKSplitUTF8Sequence(t *testing.T) {
++	// "café" split across a 3-byte read boundary, byte-by-byte reader.
++	in := "café café"
++	got, err := TopK(&oneByteReader{data: []byte(in)}, 5, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if !reflect.DeepEqual(got, []WordCount{{"café", 2}}) {
++		t.Fatalf("got %+v", got)
++	}
++}
++
++func TestTopKStopOnly(t *testing.T) {
++	got, err := TopK(strings.NewReader("the the the"), 3, []string{"the"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if got == nil || len(got) != 0 {
++		t.Fatalf("got %+v, want empty", got)
++	}
++}
++
++// referenceTopK is a naive whole-string oracle with a lookahead formulation
++// of the same rules, for cross-checking the streaming implementation.
++func referenceTopK(t *testing.T, s string, k int, stop []string) []WordCount {
++	t.Helper()
++	if k <= 0 {
++		return []WordCount{}
++	}
++	stopSet := make(map[string]struct{}, len(stop))
++	for _, w := range stop {
++		stopSet[strings.ToLower(w)] = struct{}{}
++	}
++	counts := map[string]int{}
++	var rns []rune
++	for _, r := range s {
++		rns = append(rns, r)
++	}
++	isWord := func(i int) bool {
++		if i < 0 || i >= len(rns) {
++			return false
++		}
++		return unicode.IsLetter(rns[i]) || unicode.IsDigit(rns[i])
++	}
++	for i := 0; i < len(rns); {
++		if !isWord(i) {
++			i++
++			continue
++		}
++		start := i
++		for i < len(rns) {
++			if isWord(i) {
++				i++
++				continue
++			}
++			if rns[i] == '\'' && unicode.IsLetter(rns[i-1]) && i+1 < len(rns) && unicode.IsLetter(rns[i+1]) {
++				i++
++				continue
++			}
++			break
++		}
++		if i > start {
++			w := strings.ToLower(string(rns[start:i]))
++			if _, isStop := stopSet[w]; !isStop {
++				counts[w]++
++			}
++		}
++	}
++	res := make([]WordCount, 0, len(counts))
++	for w, c := range counts {
++		res = append(res, WordCount{w, c})
++	}
++	sort.Slice(res, func(a, b int) bool {
++		if res[a].Count != res[b].Count {
++			return res[a].Count > res[b].Count
++		}
++		return res[a].Word < res[b].Word
++	})
++	if len(res) > k {
++		res = res[:k]
++	}
++	return res
++}
++
++func TestTopKPropertyAgainstOracle(t *testing.T) {
++	rng := rand.New(rand.NewSource(1))
++	letter := func() rune {
++		return rune('a' + rng.Intn(5))
++	}
++	makeWord := func() string {
++		var sb strings.Builder
++		n := 1 + rng.Intn(5)
++		for i := 0; i < n; i++ {
++			switch {
++			case rng.Intn(6) == 0:
++				sb.WriteRune('\'')
++			case rng.Intn(8) == 0:
++				sb.WriteByte('0' + byte(rng.Intn(10)))
++			default:
++				sb.WriteRune(letter())
++			}
++		}
++		if rng.Intn(12) == 0 {
++			sb.WriteRune('\'') // trailing apostrophe
++		}
++		return sb.String()
++	}
++	seps := " ,.;:!?'\"()[]{}-_\n\t"
++	for trial := 0; trial < 200; trial++ {
++		var sb strings.Builder
++		for i := 0; i < 150; i++ {
++			sb.WriteString(makeWord())
++			sb.WriteByte(seps[rng.Intn(len(seps))])
++		}
++		input := sb.String()
++		k := rng.Intn(6)
++		stop := []string{makeWord()}
++		want := referenceTopK(t, input, k, stop)
++		got, err := TopK(strings.NewReader(input), k, stop)
++		if err != nil {
++			t.Fatalf("trial %d: %v", trial, err)
++		}
++		if !reflect.DeepEqual(got, want) {
++			t.Fatalf("trial %d:\n got  %+v\n want %+v\n input %q", trial, got, want, input)
++		}
++	}
++}
++
++func TestTopKManyTies(t *testing.T) {
++	var sb strings.Builder
++	words := []string{"banana", "apple", "cherry", "avocado", "blueberry"}
++	for i := 0; i < 3; i++ {
++		for _, w := range words {
++			fmt.Fprintf(&sb, "%s ", w)
++		}
++	}
++	mustTopK(t, sb.String(), 3, nil,
++		[]WordCount{{"apple", 3}, {"avocado", 3}, {"banana", 3}})
++}

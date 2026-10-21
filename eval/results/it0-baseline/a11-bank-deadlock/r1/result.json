@@ -30,5 +30,7 @@
     "Err": ""
   },
   "started": "2026-10-21T14:59:08Z",
-  "hidden_output": "=== RUN   TestTransfer\n--- PASS: TestTransfer (0.00s)\n=== RUN   TestOpposingTransfers\n--- PASS: TestOpposingTransfers (0.07s)\n=== RUN   TestHiddenRingNoDeadlock\n--- PASS: TestHiddenRingNoDeadlock (0.02s)\n=== RUN   TestHiddenTotalConsistentSnapshot\n--- PASS: TestHiddenTotalConsistentSnapshot (0.02s)\n=== RUN   TestHiddenErrorsKept\n--- PASS: TestHiddenErrorsKept (0.00s)\nPASS\nok  \texample.com/bank/bank\t1.123s"
+  "hidden_output": "=== RUN   TestTransfer\n--- PASS: TestTransfer (0.00s)\n=== RUN   TestOpposingTransfers\n--- PASS: TestOpposingTransfers (0.06s)\n=== RUN   TestHiddenRingNoDeadlock\n--- PASS: TestHiddenRingNoDeadlock (0.02s)\n=== RUN   TestHiddenTotalConsistentSnapshot\n--- PASS: TestHiddenTotalConsistentSnapshot (0.02s)\n=== RUN   TestHiddenErrorsKept\n--- PASS: TestHiddenErrorsKept (0.00s)\nPASS\nok  \texample.com/bank/bank\t1.115s",
+  "work": "/tmp/qh-runs/it0-baseline/a11-bank-deadlock-r1",
+  "rescored": true
 }

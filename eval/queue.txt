@@ -3,7 +3,6 @@
 ./bin/qh eval --out eval/results/it0-baseline --only heldout --reps 1 --parallel 1 > eval/results/it0-baseline-H.log 2>&1
 ./bin/qh eval --harness harness/cand/e1-fuzzy --out eval/results/exp1-fuzzy --only a04-cli-args,a05-ini-bugfix,h01-paginate-bugs,h02-config-merge --reps 1 --parallel 1 > eval/results/exp1-fuzzy.log 2>&1
 ./bin/qh eval --harness harness/cand/e1-sep --out eval/results/exp1-sep --only a04-cli-args,a05-ini-bugfix,h01-paginate-bugs,h02-config-merge --reps 1 --parallel 1 > eval/results/exp1-sep.log 2>&1
-./bin/qh eval --harness harness/cand/e2-review --out eval/results/exp2-review --only a04-cli-args,a07-semver,a09-csv-report,a12-jsonpath,h02-config-merge --reps 1 --parallel 1 > eval/results/exp2-review.log 2>&1
 ./bin/qh eval --harness harness/cand/e3-think --out eval/results/exp3-think --only a10-topk-words,a12-jsonpath,h03-worker-pool,h04-mini-template --reps 1 --parallel 1 > eval/results/exp3-think.log 2>&1
 ./bin/qh eval --harness harness/cand/e4-strip --out eval/results/exp4-strip --only a04-cli-args,a05-ini-bugfix,a10-topk-words,a12-jsonpath,h03-worker-pool,h04-mini-template --reps 1 --parallel 1 > eval/results/exp4-strip.log 2>&1
 ./bin/qh eval --out eval/results/it0-baseline --only tierB --reps 1 --parallel 1 > eval/results/it0-baseline-B.log 2>&1
