@@ -35,3 +35,8 @@ Template:
   is a reasonable reading of the prompt, so the test now accepts either.
 - **Eval fix:** a08 baseline 0.00 was a helper-name collision (`fakeClock`) between hidden and agent tests;
   all hidden helpers are now `zzh*`-prefixed and self-contained.
+- **E3 (a10-topk-words r1, turn 3):** one turn produced 7,804 tokens of which 7,692 were reasoning
+  (799 s ≈ 13 min at ~10 tok/s under 2× load) before two tool calls — designing the apostrophe/streaming
+  tokenizer in its head. Class F4-ish (runaway thinking at `medium`). Candidate lever: a streaming thinking
+  budget (`think_budget_tokens`): abort the turn when reasoning exceeds N tokens before any action, append a
+  "decide and act" hint, and let the next turn run unbudgeted. Prompt was cached, so the retry costs only the hint.

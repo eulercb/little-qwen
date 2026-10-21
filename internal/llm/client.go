@@ -72,7 +72,13 @@ type Request struct {
 	Temperature     *float64
 	TopP            *float64
 	PresencePenalty *float64
+	// MaxThinkChars aborts the stream (ErrThinkBudget) when the reasoning
+	// grows past this many characters before any content or tool call.
+	MaxThinkChars int
 }
+
+// ErrThinkBudget is returned when Request.MaxThinkChars is exceeded.
+var ErrThinkBudget = errors.New("thinking budget exceeded")
 
 // Usage mirrors the server's usage + metrics blocks.
 type Usage struct {
@@ -207,9 +213,11 @@ func (c *Client) Chat(ctx context.Context, req Request) (*Response, error) {
 	retries := 0
 	for {
 		resp, err := c.once(ctx, req)
-		if err == nil {
-			resp.Retries = retries
-			return resp, nil
+		if err == nil || errors.Is(err, ErrThinkBudget) {
+			if resp != nil {
+				resp.Retries = retries
+			}
+			return resp, err
 		}
 		var rt retryable
 		if !errors.As(err, &rt) {
@@ -349,6 +357,9 @@ func (c *Client) once(ctx context.Context, req Request) (*Response, error) {
 					out.TTFTMS = time.Since(t0).Milliseconds()
 				}
 				reasoning.WriteString(*d.ReasoningContent)
+				if req.MaxThinkChars > 0 && reasoning.Len() > req.MaxThinkChars && !sawContent && len(tcs) == 0 {
+					return &Response{Message: Message{Role: "assistant", ReasoningContent: reasoning.String()}, LatencyMS: time.Since(t0).Milliseconds()}, ErrThinkBudget
+				}
 			}
 			if d.Content != nil && *d.Content != "" {
 				if out.TTFTMS == 0 {

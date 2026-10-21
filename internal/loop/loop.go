@@ -65,20 +65,21 @@ type Agent struct {
 	IsSub   bool
 	MaxTurn int
 
-	cfg      harness.Config
-	msgs     []llm.Message
-	segment  int
-	lastProm int
-	loops    *repair.LoopDetector
-	out      Outcome
-	finishOK bool
-	subN     int
-	nudges   int
-	errSeen  map[string]int
-	start    time.Time
-	reviewed bool
-	allowed  map[string]bool // nil = all tools allowed
-	prevProm int             // prompt tokens of the previous request (for cache-loss accounting)
+	cfg        harness.Config
+	msgs       []llm.Message
+	segment    int
+	lastProm   int
+	loops      *repair.LoopDetector
+	out        Outcome
+	finishOK   bool
+	subN       int
+	nudges     int
+	errSeen    map[string]int
+	start      time.Time
+	reviewed   bool
+	allowed    map[string]bool // nil = all tools allowed
+	overBudget bool            // previous turn hit the thinking budget
+	prevProm   int             // prompt tokens of the previous request (for cache-loss accounting)
 }
 
 // New creates the top-level agent.
@@ -182,10 +183,29 @@ func (a *Agent) Run(ctx context.Context) Outcome {
 		}
 		a.out.Turns = turn
 		effort := a.effort(turn)
+		thinkChars := 0
+		if a.cfg.ThinkBudgetTokens > 0 && !a.overBudget {
+			thinkChars = int(float64(a.cfg.ThinkBudgetTokens) * 3.5)
+		}
 		resp, err := a.Client.Chat(ctx, llm.Request{
 			Messages: a.msgs, Tools: a.Tools, MaxTokens: a.cfg.MaxTokens, ReasoningEffort: effort,
 			Temperature: a.cfg.Temperature, TopP: a.cfg.TopP, PresencePenalty: a.cfg.PresencePenalty,
+			MaxThinkChars: thinkChars,
 		})
+		if errors.Is(err, llm.ErrThinkBudget) {
+			// Runaway thinking: drop the partial turn (never sent back, so the
+			// prefix is unchanged) and ask for a decision. The next turn runs
+			// without the budget so a genuinely hard step can still finish.
+			a.overBudget = true
+			a.code(trace.F4ThinkOverflow)
+			a.Tr.Event(trace.Event{Agent: a.Name, Turn: turn, Name: "think_budget", Code: trace.F4ThinkOverflow,
+				Data: map[string]any{"reasoning_chars": len(resp.Message.ReasoningContent), "latency_ms": resp.LatencyMS}})
+			a.logf("turn %d: thinking budget exceeded after %.0fs; asking for a decision", turn, float64(resp.LatencyMS)/1000)
+			a.push(llm.Message{Role: "user", Content: llm.Str(fmt.Sprintf(
+				"(harness) Your reasoning for this step exceeded ~%d tokens without acting. Settle on the simplest approach that meets the requirements, then make the tool call. You can refine it after running the tests.", a.cfg.ThinkBudgetTokens))})
+			continue
+		}
+		a.overBudget = false
 		if err != nil {
 			if errors.Is(err, llm.ErrContextOverflow) && !a.IsSub {
 				a.code(trace.F5Context)
