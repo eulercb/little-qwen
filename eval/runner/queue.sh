@@ -16,6 +16,8 @@ touch "$q" "$done_f"
 while true; do
   line=$(grep -v -E '^\s*(#|$)' "$q" | head -1)
   if [ -z "$line" ]; then echo "$(date -u +%FT%TZ) queue empty"; exit 0; fi
+  # Never overlap with an eval started elsewhere: qh eval holds eval/.eval.lock (its pid).
+  while [ -f eval/.eval.lock ] && kill -0 "$(cat eval/.eval.lock 2>/dev/null)" 2>/dev/null; do sleep 30; done
   echo "$(date -u +%FT%TZ) START $line"
   bash -c "$line"
   rc=$?

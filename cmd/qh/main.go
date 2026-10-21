@@ -165,6 +165,11 @@ func cmdEval(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Advertise the running eval so queues never start a concurrent one.
+	if lock := filepath.Join("eval", ".eval.lock"); dirExists("eval") {
+		_ = os.WriteFile(lock, []byte(fmt.Sprint(os.Getpid())), 0o644)
+		defer os.Remove(lock)
+	}
 	var filter []string
 	if *only != "" {
 		filter = strings.Split(*only, ",")
@@ -211,6 +216,11 @@ func cmdEval(ctx context.Context, args []string) error {
 					continue
 				}
 				_ = os.RemoveAll(od)
+				// Write into a staging dir and move it into place when the run
+				// ends, so the results tree only ever holds finished runs.
+				final := od
+				od = filepath.Join(*out, ".inprogress", j.t.ID, fmt.Sprintf("r%d", j.rep))
+				_ = os.RemoveAll(od)
 				lg := logger(fmt.Sprintf("%s/r%d ", j.t.ID, j.rep))
 				lg("start (harness %s, agent %q)", h.Hash, *agent)
 				var r *eval.Result
@@ -224,6 +234,10 @@ func cmdEval(ctx context.Context, args []string) error {
 					lg("ERROR %v", err)
 					continue
 				}
+				_ = os.MkdirAll(filepath.Dir(final), 0o755)
+				if err := os.Rename(od, final); err != nil {
+					lg("ERROR moving results: %v", err)
+				}
 				lg("DONE success=%v score=%.2f status=%s turns=%d wall=%.1fmin", r.Success, r.Score, r.Outcome.Status, r.Outcome.Turns, r.Outcome.WallSeconds/60)
 			}
 		}()
@@ -236,6 +250,7 @@ func cmdEval(ctx context.Context, args []string) error {
 	}
 	close(ch)
 	wg.Wait()
+	_ = os.RemoveAll(filepath.Join(*out, ".inprogress"))
 	res, err := eval.LoadResults(*out)
 	if err != nil {
 		return err
@@ -350,4 +365,9 @@ func doneOK(resultPath string) bool {
 		return false
 	}
 	return r.Outcome.Status != "error"
+}
+
+func dirExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.IsDir()
 }

@@ -18,6 +18,9 @@ func LoadResults(dir string) ([]Result, error) {
 		if err != nil {
 			return nil
 		}
+		if info.IsDir() && info.Name() == ".inprogress" {
+			return filepath.SkipDir
+		}
 		if info.Name() == "result.json" {
 			b, err := os.ReadFile(p)
 			if err != nil {

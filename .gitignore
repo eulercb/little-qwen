@@ -2,3 +2,9 @@ bin/
 *.test
 /tmp/
 eval/queue.pid
+
+# live eval outputs (moved into place / committed by the queue when done)
+eval/results/*.log
+eval/results/**/.inprogress/
+eval/queue.log
+eval/.eval.lock
