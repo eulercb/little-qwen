@@ -1,0 +1,177 @@
+ cli/cli.go | 159 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 158 insertions(+), 1 deletion(-)
+
+diff --git a/cli/cli.go b/cli/cli.go
+index b437c96..0d1c877 100644
+--- a/cli/cli.go
++++ b/cli/cli.go
+@@ -1,7 +1,11 @@
+ // Package cli parses the command line of the frob tool.
+ package cli
+ 
+-import "errors"
++import (
++	"errors"
++	"fmt"
++	"strconv"
++)
+ 
+ // ErrUsage is wrapped by every parse error.
+ var ErrUsage = errors.New("usage error")
+@@ -14,3 +18,156 @@ type Config struct {
+ 	Tags    []string
+ 	Args    []string
+ }
++
++// Parse parses command-line arguments into a Config without using the flag
++// package. All errors wrap ErrUsage and mention the offending flag.
++func Parse(args []string) (Config, error) {
++	cfg := Config{Count: 1, Output: "-"}
++
++	i := 0
++	for i < len(args) {
++		arg := args[i]
++		i++
++
++		if arg == "--" {
++			cfg.Args = append(cfg.Args, args[i:]...)
++			break
++		}
++		if arg == "-" || !hasPrefix(arg, "-") {
++			cfg.Args = append(cfg.Args, arg)
++			continue
++		}
++
++		if hasPrefix(arg, "--") {
++			name := arg[2:]
++			var value string
++			var hasValue bool
++			if eq := indexByte(name, '='); eq >= 0 {
++				name, value, hasValue = name[:eq], name[eq+1:], true
++			}
++			if name == "" {
++				return cfg, usagef("%s is not a valid flag", arg)
++			}
++			switch name {
++			case "verbose":
++				cfg.Verbose = true
++			case "count":
++				n, err := countValue(name, value, hasValue, &i, args)
++				if err != nil {
++					return cfg, err
++				}
++				cfg.Count = n
++			case "output":
++				v, err := stringValue(name, value, hasValue, &i, args)
++				if err != nil {
++					return cfg, err
++				}
++				cfg.Output = v
++			case "tag":
++				v, err := stringValue(name, value, hasValue, &i, args)
++				if err != nil {
++					return cfg, err
++				}
++				cfg.Tags = append(cfg.Tags, v)
++			default:
++				return cfg, usagef("unknown flag --%s", name)
++			}
++			continue
++		}
++
++		// Short flags, e.g. -v, -vv, -n 3, -n=3.
++		body := arg[1:]
++		for len(body) > 0 {
++			c := body[0]
++			body = body[1:]
++			switch c {
++			case 'v':
++				cfg.Verbose = true
++				continue
++			case 'n', 'o':
++				var value string
++				var hasValue bool
++				if len(body) > 0 {
++					if body[0] == '=' {
++						body = body[1:]
++					}
++					value, hasValue = body, true
++				}
++				flag := fmt.Sprintf("-%c", c)
++				if c == 'n' {
++					n, err := countValue(flag, value, hasValue, &i, args)
++					if err != nil {
++						return cfg, err
++					}
++					cfg.Count = n
++				} else {
++					v, err := stringValue(flag, value, hasValue, &i, args)
++					if err != nil {
++						return cfg, err
++					}
++					cfg.Output = v
++				}
++				body = ""
++			default:
++				return cfg, usagef("unknown flag -%c", c)
++			}
++		}
++	}
++	return cfg, nil
++}
++
++// countValue resolves the value for a count flag, consuming a following
++// argument when no value was attached.
++func countValue(flag, value string, hasValue bool, ip *int, args []string) (int, error) {
++	if !hasValue {
++		if *ip >= len(args) {
++			return 0, usagef("%s requires a value", flag)
++		}
++		value, hasValue = args[*ip], true
++		*ip++
++	}
++	if !hasValue {
++		return 0, usagef("%s requires a value", flag)
++	}
++	n, err := strconv.Atoi(value)
++	if err != nil {
++		return 0, usagef("%s value %q is not an integer", flag, value)
++	}
++	if n < 0 {
++		return 0, usagef("%s value %d is negative", flag, n)
++	}
++	return n, nil
++}
++
++// stringValue resolves the value for a string flag, consuming a following
++// argument when no value was attached.
++func stringValue(flag, value string, hasValue bool, ip *int, args []string) (string, error) {
++	if !hasValue {
++		if *ip >= len(args) {
++			return "", usagef("%s requires a value", flag)
++		}
++		value, hasValue = args[*ip], true
++		*ip++
++	}
++	if !hasValue {
++		return "", usagef("%s requires a value", flag)
++	}
++	return value, nil
++}
++
++func usagef(format string, a ...any) error {
++	return fmt.Errorf("%w: %s", ErrUsage, fmt.Sprintf(format, a...))
++}
++
++func hasPrefix(s, prefix string) bool {
++	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
++}
++
++func indexByte(s string, b byte) int {
++	for i := 0; i < len(s); i++ {
++		if s[i] == b {
++			return i
++		}
++	}
++	return -1
++}

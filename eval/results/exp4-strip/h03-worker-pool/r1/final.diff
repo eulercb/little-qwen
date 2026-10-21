@@ -1,0 +1,286 @@
+ pool/pool.go      |  51 ++++++++++-----
+ pool/pool_test.go | 182 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 216 insertions(+), 17 deletions(-)
+
+diff --git a/pool/pool.go b/pool/pool.go
+index ba7e123..dcbc71b 100644
+--- a/pool/pool.go
++++ b/pool/pool.go
+@@ -5,6 +5,7 @@ import (
+ 	"context"
+ 	"fmt"
+ 	"sync"
++	"sync/atomic"
+ )
+ 
+ // IndexError reports which input failed.
+@@ -35,37 +36,53 @@ func Map[T, R any](ctx context.Context, in []T, workers int, fn func(context.Con
+ 	type result struct {
+ 		r   R
+ 		err error
+-		i   int
+ 	}
++	results := make([]result, len(in))
+ 	jobs := make(chan int)
+-	results := make(chan result)
++	var failed int32 // set once any call errors; dispatcher and workers stop taking work
+ 	var wg sync.WaitGroup
+ 	for w := 0; w < workers; w++ {
+ 		wg.Add(1)
+ 		go func() {
+ 			defer wg.Done()
+ 			for i := range jobs {
++				if ctx.Err() != nil {
++					break // stop taking new work after cancellation
++				}
++				// Each index is dispatched exactly once, so writes to
++				// results[i] never race.
+ 				r, err := fn(ctx, in[i])
+-				results <- result{r, err, i}
++				results[i] = result{r, err}
++				if err != nil {
++					atomic.StoreInt32(&failed, 1)
++				}
+ 			}
+ 		}()
+ 	}
+-	go func() {
+-		for i := range in {
+-			jobs <- i
++	for i := range in {
++		if ctx.Err() != nil || atomic.LoadInt32(&failed) == 1 {
++			break // stop handing out new inputs
+ 		}
+-		close(jobs)
+-	}()
+-	go func() {
+-		wg.Wait()
+-		close(results)
+-	}()
+-	var out []R
+-	for res := range results {
+-		if res.err != nil {
+-			return nil, &IndexError{Index: res.i, Err: res.err}
++		jobs <- i
++	}
++	close(jobs) // workers drain or drop the buffered jobs, then exit
++	wg.Wait()
++
++	var first *IndexError
++	for i, res := range results {
++		if res.err != nil && (first == nil || i < first.Index) {
++			first = &IndexError{Index: i, Err: res.err}
+ 		}
+-		out = append(out, res.r)
++	}
++	if first != nil {
++		return nil, first
++	}
++	if err := ctx.Err(); err != nil {
++		return nil, err
++	}
++	out := make([]R, len(in))
++	for i, res := range results {
++		out[i] = res.r
+ 	}
+ 	return out, nil
+ }
+diff --git a/pool/pool_test.go b/pool/pool_test.go
+index 4217e40..a7423f2 100644
+--- a/pool/pool_test.go
++++ b/pool/pool_test.go
+@@ -2,12 +2,194 @@ package pool
+ 
+ import (
+ 	"context"
++	"errors"
++	"fmt"
++	"runtime"
++	"sync/atomic"
+ 	"testing"
++	"time"
+ )
+ 
++// leakGoroutines reports how many goroutines are currently live.
++func leakGoroutines() int { return runtime.NumGoroutine() }
++
+ func TestSquares(t *testing.T) {
+ 	out, err := Map(context.Background(), []int{1, 2, 3}, 1, func(_ context.Context, x int) (int, error) { return x * x, nil })
+ 	if err != nil || len(out) != 3 || out[2] != 9 {
+ 		t.Fatal(out, err)
+ 	}
+ }
++
++// Workers may finish out of order; out[i] must still be fn(in[i]).
++func TestOrderPreserved(t *testing.T) {
++	in := make([]int, 100)
++	for i := range in {
++		in[i] = i
++	}
++	out, err := Map(context.Background(), in, 8, func(_ context.Context, x int) (int, error) {
++		if x%7 == 0 {
++			time.Sleep(time.Millisecond)
++		}
++		return x * 2, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	for i := range in {
++		if out[i] != in[i]*2 {
++			t.Fatalf("out[%d] = %d, want %d", i, out[i], in[i]*2)
++		}
++	}
++}
++
++// On failure, the error must be an *IndexError for the LOWEST failing index,
++// even if a higher-indexed error arrives first. Higher indices finish first:
++// higher x sleeps less.
++func TestErrorLowestIndex(t *testing.T) {
++	in := make([]int, 10)
++	for i := range in {
++		in[i] = i
++	}
++	out, err := Map(context.Background(), in, 10, func(_ context.Context, x int) (int, error) {
++		if x >= 2 {
++			time.Sleep(time.Duration(20-x) * time.Millisecond)
++			return 0, fmt.Errorf("boom %d", x)
++		}
++		return x, nil
++	})
++	if out != nil {
++		t.Fatalf("out = %v, want nil", out)
++	}
++	var idx *IndexError
++	if !errors.As(err, &idx) {
++		t.Fatalf("err = %v, want *IndexError", err)
++	}
++	if idx.Index != 2 {
++		t.Fatalf("idx.Index = %d, want 2", idx.Index)
++	}
++	if idx.Err.Error() != "boom 2" {
++		t.Fatalf("idx.Err = %q, want %q", idx.Err, "boom 2")
++	}
++}
++
++// Cancellation must not hang and must return ctx.Err().
++func TestContextCancelNoHang(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	var running int32
++	in := make([]int, 100)
++	for i := range in {
++		in[i] = i
++	}
++	done := make(chan struct{})
++	var err error
++	go func() {
++		_, err = Map(ctx, in, 8, func(ctx context.Context, x int) (int, error) {
++			atomic.AddInt32(&running, 1)
++			defer atomic.AddInt32(&running, -1)
++			<-ctx.Done() // each running call exits promptly on cancel
++			return 0, nil
++		})
++		close(done)
++	}()
++	cancel()
++	select {
++	case <-done:
++	case <-time.After(5 * time.Second):
++		t.Fatal("Map did not return after cancellation")
++	}
++	if err != context.Canceled {
++		t.Fatalf("err = %v, want context.Canceled", err)
++	}
++}
++
++// Map must not leak workers: by the time it returns, all worker goroutines
++// have exited.
++func TestNoWorkerLeak(t *testing.T) {
++	base := leakGoroutines()
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	in := make([]int, 20)
++	for i := range in {
++		in[i] = i
++	}
++	_, _ = Map(ctx, in, 5, func(_ context.Context, x int) (int, error) { return x, nil })
++	if n := leakGoroutines() - base; n > 0 {
++		t.Fatalf("goroutine leak: %+d extra", n)
++	}
++}
++
++func TestNoWorkerLeakOnCancel(t *testing.T) {
++	base := leakGoroutines()
++	ctx, cancel := context.WithCancel(context.Background())
++	in := make([]int, 20)
++	for i := range in {
++		in[i] = i
++	}
++	done := make(chan struct{})
++	go func() {
++		_, _ = Map(ctx, in, 5, func(ctx context.Context, x int) (int, error) {
++			<-ctx.Done()
++			return 0, nil
++		})
++		close(done)
++	}()
++	cancel()
++	<-done
++	if n := leakGoroutines() - base; n > 0 {
++		t.Fatalf("goroutine leak after cancel: %+d extra", n)
++	}
++}
++
++// A failing fn must stop the rest of the work from starting.
++func TestStopsOnFirstFailure(t *testing.T) {
++	var started int32
++	in := make([]int, 100)
++	for i := range in {
++		in[i] = i
++	}
++	_, err := Map(context.Background(), in, 8, func(_ context.Context, x int) (int, error) {
++		atomic.AddInt32(&started, 1)
++		if x == 3 {
++			return 0, errors.New("boom")
++		}
++		time.Sleep(5 * time.Millisecond)
++		return x, nil
++	})
++	if err == nil {
++		t.Fatal("want error")
++	}
++	if n := atomic.LoadInt32(&started); n >= 50 {
++		t.Fatalf("started = %d, want most inputs never attempted after failure", n)
++	}
++}
++
++// If a fn error is already reported when the ctx gets cancelled, the
++// *IndexError must win over ctx.Err().
++func TestErrorWinsOverCancel(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	in := make([]int, 10)
++	for i := range in {
++		in[i] = i
++	}
++	errSeen := make(chan struct{})
++	done := make(chan struct{})
++	var err error
++	go func() {
++		_, err = Map(ctx, in, 1, func(_ context.Context, x int) (int, error) {
++			if x == 2 {
++				close(errSeen)
++				return 0, errors.New("boom")
++			}
++			time.Sleep(20 * time.Millisecond)
++			return x, nil
++		})
++		close(done)
++	}()
++	<-errSeen
++	cancel()
++	<-done
++	var idx *IndexError
++	if !errors.As(err, &idx) || idx.Index != 2 {
++		t.Fatalf("err = %v, want *IndexError index 2", err)
++	}
++}

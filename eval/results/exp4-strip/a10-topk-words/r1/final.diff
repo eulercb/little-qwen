@@ -1,0 +1,259 @@
+ words/words.go      | 134 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ words/words_test.go | 109 ++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 243 insertions(+)
+
+diff --git a/words/words.go b/words/words.go
+new file mode 100644
+index 0000000..9157d03
+--- /dev/null
++++ b/words/words.go
+@@ -0,0 +1,134 @@
++// Package words implements streaming word-count utilities.
++package words
++
++import (
++	"bufio"
++	"io"
++	"sort"
++	"strings"
++	"unicode"
++)
++
++// WordCount pairs a word with the number of times it occurred.
++type WordCount struct {
++	Word  string
++	Count int
++}
++
++// TopK streams r in chunks and returns the k most frequent words,
++// by count descending, ties broken by the word ascending (byte order).
++// If there are fewer than k distinct words, all of them are returned.
++// A k <= 0 returns an empty (non-nil) slice.
++//
++// A word is a maximal run of Unicode letters or digits, optionally
++// containing internal apostrophes between letters (don't, o'clock);
++// leading and trailing apostrophes are not part of the word, and any
++// other rune separates words. Words are case-folded with
++// strings.ToLower, and words present in stop (compared
++// case-insensitively) are ignored.
++func TopK(r io.Reader, k int, stop []string) ([]WordCount, error) {
++	if k <= 0 {
++		return []WordCount{}, nil
++	}
++	stopSet := make(map[string]struct{}, len(stop))
++	for _, w := range stop {
++		stopSet[strings.ToLower(w)] = struct{}{}
++	}
++
++	counts := make(map[string]int)
++	flush := func(word []rune) {
++		w := strings.ToLower(string(word))
++		if _, ok := stopSet[w]; !ok {
++			counts[w]++
++		}
++	}
++
++	br := bufio.NewReaderSize(r, 256*1024)
++	var word []rune
++	inWord := false
++	endWord := func() {
++		flush(word)
++		inWord = false
++		word = nil
++	}
++
++	for {
++		ch, _, err := br.ReadRune()
++		if err == io.EOF {
++			if inWord {
++				flush(word)
++			}
++			break
++		}
++		if err != nil {
++			return nil, err
++		}
++		switch {
++		case isLetterDigit(ch):
++			word = append(word, ch)
++			inWord = true
++		case isApostrophe(ch):
++			if !inWord {
++				// Leading apostrophe: not part of a word.
++				continue
++			}
++			if !unicode.IsLetter(word[len(word)-1]) {
++				// Apostrophe after a digit: separator.
++				endWord()
++				continue
++			}
++			// Possibly an internal apostrophe: it belongs to the
++			// word only when another letter follows.
++			nch, _, nerr := br.ReadRune()
++			switch {
++			case nerr == io.EOF:
++				// Trailing apostrophe at end of input.
++				endWord()
++			case nerr != nil:
++				return nil, nerr
++			case unicode.IsLetter(nch):
++				word = append(word, ch, nch)
++			default:
++				// Trailing apostrophe.
++				if uerr := br.UnreadRune(); uerr != nil {
++					return nil, uerr
++				}
++				endWord()
++			}
++		default:
++			// Any other rune separates words.
++			if inWord {
++				endWord()
++			}
++		}
++	}
++
++	result := make([]WordCount, 0, len(counts))
++	for w, c := range counts {
++		result = append(result, WordCount{Word: w, Count: c})
++	}
++	sort.Slice(result, func(i, j int) bool {
++		if result[i].Count != result[j].Count {
++			return result[i].Count > result[j].Count
++		}
++		return result[i].Word < result[j].Word
++	})
++	if k < len(result) {
++		result = result[:k]
++	}
++	return result, nil
++}
++
++// isLetterDigit reports whether ch is a Unicode letter or digit.
++func isLetterDigit(ch rune) bool {
++	return unicode.IsLetter(ch) || unicode.IsDigit(ch)
++}
++
++// isApostrophe reports whether ch is an apostrophe.
++func isApostrophe(ch rune) bool {
++	switch ch {
++	case '\'', '’', '‘':
++		return true
++	}
++	return false
++}
+diff --git a/words/words_test.go b/words/words_test.go
+new file mode 100644
+index 0000000..5e0a4d3
+--- /dev/null
++++ b/words/words_test.go
+@@ -0,0 +1,109 @@
++package words
++
++import (
++	"io"
++	"reflect"
++	"strings"
++	"testing"
++)
++
++func TestTopKBasics(t *testing.T) {
++	in := strings.Repeat("Don't don't DON'T the the cat cat cat a a the o'clock o'clock don't ", 10)
++	got, err := TopK(strings.NewReader(in), 5, []string{"The"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := []WordCount{
++		{"don't", 40},
++		{"cat", 30},
++		{"a", 20},
++		{"o'clock", 20},
++	}
++	if !reflect.DeepEqual(got, want) {
++		t.Fatalf("got %v want %v", got, want)
++	}
++}
++
++func TestTopKLeadingTrailing(t *testing.T) {
++	got, err := TopK(strings.NewReader("'quoted' and 'it's ok"), 10, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	// 'quoted' -> quoted; 'it's -> it's (internal apostrophe); ok.
++	want := []WordCount{
++		{"and", 1},
++		{"it's", 1},
++		{"ok", 1},
++		{"quoted", 1},
++	}
++	if !reflect.DeepEqual(got, want) {
++		t.Fatalf("got %v want %v", got, want)
++	}
++}
++
++func TestTopKZeroAndFewer(t *testing.T) {
++	got, err := TopK(strings.NewReader("a b c"), 0, nil)
++	if err != nil || got == nil || len(got) != 0 {
++		t.Fatalf("k=0: got %v err %v", got, err)
++	}
++	got, err = TopK(strings.NewReader("a b c"), 5, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(got) != 3 {
++		t.Fatalf("want all 3, got %v", got)
++	}
++	if got[0].Word != "a" || got[1].Word != "b" || got[2].Word != "c" {
++		t.Fatalf("tie order: %v", got)
++	}
++}
++
++type shortReader struct{}
++
++func (shortReader) Read(p []byte) (int, error) {
++	n := copy(p, []byte("abc"))
++	return n, io.ErrUnexpectedEOF
++}
++
++func TestTopKPropagatesError(t *testing.T) {
++	_, err := TopK(shortReader{}, 2, nil)
++	if err != io.ErrUnexpectedEOF {
++		t.Fatalf("want io.ErrUnexpectedEOF, got %v", err)
++	}
++}
++
++func TestTopKUnicodeAndDigits(t *testing.T) {
++	got, err := TopK(strings.NewReader("héllo 123 héllo x9 x9"), 10, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := []WordCount{{"héllo", 2}, {"x9", 2}, {"123", 1}}
++	if !reflect.DeepEqual(got, want) {
++		t.Fatalf("got %v want %v", got, want)
++	}
++}
++
++// A single very long line must not cause problems.
++func TestTopKLongLine(t *testing.T) {
++	var sb strings.Builder
++	for i := 0; i < 200000; i++ {
++		sb.WriteString("word ")
++	}
++	got, err := TopK(strings.NewReader(sb.String()), 1, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if !reflect.DeepEqual(got, []WordCount{{"word", 200000}}) {
++		t.Fatalf("got %v", got)
++	}
++}
++
++func TestTopKStopCaseInsensitive(t *testing.T) {
++	got, err := TopK(strings.NewReader("The the THE x"), 10, []string{"tHe"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if !reflect.DeepEqual(got, []WordCount{{"x", 1}}) {
++		t.Fatalf("got %v", got)
++	}
++}

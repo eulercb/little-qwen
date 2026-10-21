@@ -1,0 +1,67 @@
+ ini/ini.go | 39 +++++++++++++++++++++++++++------------
+ 1 file changed, 27 insertions(+), 12 deletions(-)
+
+diff --git a/ini/ini.go b/ini/ini.go
+index dc53235..a0b9aeb 100644
+--- a/ini/ini.go
++++ b/ini/ini.go
+@@ -51,32 +51,47 @@ func Parse(r io.Reader) (File, error) {
+ 	n := 0
+ 	for sc.Scan() {
+ 		n++
+-		line := sc.Text()
+-		if line == "" || line[0] == ';' {
++		raw := sc.Text()
++		line := strings.TrimSpace(raw)
++		if line == "" || line[0] == ';' || line[0] == '#' {
+ 			continue
+ 		}
+ 		if line[0] == '[' && line[len(line)-1] == ']' {
+-			section = strings.TrimSpace(line[1 : len(line)-1])
++			section = strings.ToLower(strings.TrimSpace(line[1 : len(line)-1]))
+ 			continue
+ 		}
+-		i := strings.LastIndex(line, "=")
++		i := strings.Index(line, "=")
+ 		if i < 0 {
+-			return nil, &SyntaxError{Line: n, Text: line}
++			return nil, &SyntaxError{Line: n, Text: raw}
+ 		}
+ 		key := strings.ToLower(strings.TrimSpace(line[:i]))
+ 		val := strings.TrimSpace(line[i+1:])
+-		if j := strings.Index(val, ";"); j >= 0 {
+-			val = strings.TrimSpace(val[:j])
+-		}
+ 		if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+-			val = strings.TrimSpace(val[1 : len(val)-1])
++			// Quoted value: drop the quotes, keep inner whitespace exactly.
++			val = val[1 : len(val)-1]
++		} else if j := commentPos(val); j >= 0 {
++			// Unquoted value: an inline comment starts at " ;" or " #".
++			val = strings.TrimSpace(val[:j])
+ 		}
+ 		if f[section] == nil {
+ 			f[section] = map[string]string{}
+ 		}
+-		if _, exists := f[section][key]; !exists {
+-			f[section][key] = val
+-		}
++		f[section][key] = val
+ 	}
+ 	return f, sc.Err()
+ }
++
++// commentPos reports the position in v of the start of an inline comment:
++// a ';' or '#' at position 0 or preceded by whitespace. It returns -1 if
++// there is none.
++func commentPos(v string) int {
++	for i, c := range v {
++		if c != ';' && c != '#' {
++			continue
++		}
++		if i == 0 || v[i-1] == ' ' || v[i-1] == '\t' {
++			return i
++		}
++	}
++	return -1
++}

@@ -1,0 +1,38 @@
+{
+  "task_id": "h03-worker-pool",
+  "tier": "heldout",
+  "rep": 1,
+  "harness_hash": "517a13effe81",
+  "success": true,
+  "score": 1,
+  "tests_passed": 14,
+  "tests_total": 14,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Rewrote `Map` in pool/pool.go: results are now stored into a preallocated `[]result` by index (so order is preserved regardless of completion order), the dispatcher stops sending jobs on ctx cancel or first error, workers stop taking jobs on cancel, and on the way out it picks the lowest-index error as an `*IndexError` (falling back to `ctx.Err()`). Added tests: ordering with 100 inputs/8 workers, lowest-index error with reverse arrival order, no-hang cancellation returning `ctx.Err()`, worker non-leak (NumGoroutine before/after, both normal and cancelled paths), work-stop-on-failure, and error-wins-over-cancel precedence. Verified with `go test -race -count=3 ./...` and the acceptance command `go test -race -count=1 ./...`, both passing.",
+    "Turns": 20,
+    "Compactions": 0,
+    "PromptTokens": 145764,
+    "PrefillTokens": 7876,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 27378,
+    "ReasoningTokens": 21802,
+    "ToolCalls": 21,
+    "ToolErrors": 3,
+    "Repaired": 0,
+    "Nudges": 1,
+    "LoopHints": 1,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F3": 1,
+      "F4": 1
+    },
+    "WallSeconds": 1718.137961435,
+    "Err": ""
+  },
+  "started": "2026-10-21T19:02:06Z",
+  "hidden_output": "=== RUN   TestSquares\n--- PASS: TestSquares (0.00s)\n=== RUN   TestOrderPreserved\n--- PASS: TestOrderPreserved (0.00s)\n=== RUN   TestErrorLowestIndex\n--- PASS: TestErrorLowestIndex (0.02s)\n=== RUN   TestContextCancelNoHang\n--- PASS: TestContextCancelNoHang (0.00s)\n=== RUN   TestNoWorkerLeak\n--- PASS: TestNoWorkerLeak (0.00s)\n=== RUN   TestNoWorkerLeakOnCancel\n--- PASS: TestNoWorkerLeakOnCancel (0.00s)\n=== RUN   TestStopsOnFirstFailure\n--- PASS: TestStopsOnFirstFailure (0.01s)\n=== RUN   TestErrorWinsOverCancel\n--- PASS: TestErrorWinsOverCancel (0.04s)\n=== RUN   TestHiddenOrder\n--- PASS: TestHiddenOrder (0.01s)\n=== RUN   TestHiddenLowestIndexError\n--- PASS: TestHiddenLowestIndexError (0.00s)\n=== RUN   TestHiddenLowestIndexDeterministic\n--- PASS: TestHiddenLowestIndexDeterministic (0.05s)\n=== RUN   TestHiddenCancelNoHangNoLeak\n--- PASS: TestHiddenCancelNoHangNoLeak (0.07s)\n=== RUN   TestHiddenEarlyErrorNoLeak\n--- PASS: TestHiddenEarlyErrorNoLeak (0.05s)\n=== RUN   TestHiddenEmptyAndZeroWorkers\n--- PASS: TestHiddenEmptyAndZeroWorkers (0.00s)\nPASS\nok  \texample.com/pool/pool\t1.276s",
+  "work": "/tmp/qh-runs/exp4-strip/h03-worker-pool-r1"
+}
