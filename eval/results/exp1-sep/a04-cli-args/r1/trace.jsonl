@@ -1,4 +1,0 @@
-{"type":"event","t":"2026-10-21T16:59:04.121562554Z","agent":"main","turn":0,"name":"warmup","data":{"cached_tokens":0,"latency_ms":12705,"prompt_tokens":1896}}
-{"type":"turn","t":"2026-10-21T16:59:11.763658884Z","agent":"main","segment":0,"turn":1,"prompt_tokens":2368,"cached_tokens":1888,"prefill_tokens":480,"reprefill_tokens":0,"completion_tokens":67,"reasoning_tokens":10,"latency_ms":7641,"ttft_ms":5920,"finish_reason":"tool_calls","cache_status":"hit","tool_calls":2,"effort":"medium"}
-{"type":"tool","t":"2026-10-21T16:59:11.764011714Z","agent":"main","turn":1,"tool":"read_file","args_hash":"ea3bc7652d678a81","args_preview":"{\"path\":\"cli/cli.go\"}","ok":true,"out_chars":457,"dur_ms":0}
-{"type":"tool","t":"2026-10-21T16:59:11.764124695Z","agent":"main","turn":1,"tool":"read_file","args_hash":"a0943a05a8ad342c","args_preview":"{\"path\":\"cli/cli_test.go\"}","ok":true,"out_chars":292,"dur_ms":0}
