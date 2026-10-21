@@ -1,0 +1,11 @@
+`reference/cron.py` is the reference implementation of our cron-expression library (Python 3, standard library only; `python3 reference/cron.py --help` shows a small CLI). Port it to Go as package `cron` (directory `cron/`) with **identical behaviour**, including error cases.
+
+Go API (keep exactly):
+```go
+type Schedule struct { /* unexported fields */ }
+func Parse(expr string) (*Schedule, error)                 // same accepted syntax and errors as parse()
+func (s *Schedule) Next(after time.Time) (time.Time, error) // same as next_run(): first match strictly after `after`, in after's location
+func (s *Schedule) String() string                         // same as describe()
+```
+Error messages must match the Python `CronError` messages exactly (the text, without the exception type).
+Write tests in `cron/cron_test.go`. Python 3 is available: comparing your Go results against the reference on many inputs is a good way to verify.
