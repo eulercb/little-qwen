@@ -1,0 +1,393 @@
+ api/handler.go      | 113 ++++++++++++++++++++++
+ api/handler_test.go | 264 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 377 insertions(+)
+
+diff --git a/api/handler.go b/api/handler.go
+new file mode 100644
+index 0000000..ce8db0a
+--- /dev/null
++++ b/api/handler.go
+@@ -0,0 +1,113 @@
++package api
++
++import (
++	"encoding/json"
++	"fmt"
++	"net/http"
++	"strconv"
++	"strings"
++)
++
++// NewHandler returns an HTTP handler exposing the notes service on s.
++func NewHandler(s *Store) http.Handler {
++	mux := http.NewServeMux()
++	mux.HandleFunc("/healthz", handleHealthz)
++	mux.HandleFunc("/notes", func(w http.ResponseWriter, r *http.Request) {
++		switch r.Method {
++		case http.MethodGet:
++			handleListNotes(w, r, s)
++		case http.MethodPost:
++			handleCreateNote(w, r, s)
++		default:
++			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
++		}
++	})
++	mux.HandleFunc("/notes/{id}", func(w http.ResponseWriter, r *http.Request) {
++		id, err := parseID(r.PathValue("id"))
++		switch {
++		case err != nil:
++			writeError(w, http.StatusBadRequest, "id must be an integer")
++		case r.Method == http.MethodGet:
++			handleGetNote(w, s, id)
++		case r.Method == http.MethodDelete:
++			handleDeleteNote(w, s, id)
++		default:
++			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
++		}
++	})
++	return mux
++}
++
++func handleHealthz(w http.ResponseWriter, r *http.Request) {
++	if r.Method != http.MethodGet {
++		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
++		return
++	}
++	w.Header().Set("Content-Type", "text/plain")
++	w.WriteHeader(http.StatusOK)
++	fmt.Fprint(w, "ok")
++}
++
++func handleListNotes(w http.ResponseWriter, r *http.Request, s *Store) {
++	notes := s.List()
++	if q := strings.ToLower(r.URL.Query().Get("q")); q != "" {
++		filtered := make([]Note, 0)
++		for _, n := range notes {
++			if strings.Contains(strings.ToLower(n.Title), q) || strings.Contains(strings.ToLower(n.Body), q) {
++				filtered = append(filtered, n)
++			}
++		}
++		notes = filtered
++	}
++	writeJSON(w, http.StatusOK, notes)
++}
++
++func handleCreateNote(w http.ResponseWriter, r *http.Request, s *Store) {
++	var in struct {
++		Title string `json:"title"`
++		Body  string `json:"body"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		writeError(w, http.StatusBadRequest, "invalid JSON body")
++		return
++	}
++	if strings.TrimSpace(in.Title) == "" {
++		writeError(w, http.StatusBadRequest, "title is required")
++		return
++	}
++	n := s.Create(in.Title, in.Body)
++	writeJSON(w, http.StatusCreated, n)
++}
++
++func handleGetNote(w http.ResponseWriter, s *Store, id int) {
++	n, ok := s.Get(id)
++	if !ok {
++		writeError(w, http.StatusNotFound, "note not found")
++		return
++	}
++	writeJSON(w, http.StatusOK, n)
++}
++
++func handleDeleteNote(w http.ResponseWriter, s *Store, id int) {
++	if !s.Delete(id) {
++		writeError(w, http.StatusNotFound, "note not found")
++		return
++	}
++	w.WriteHeader(http.StatusNoContent)
++}
++
++func parseID(raw string) (int, error) {
++	return strconv.Atoi(raw)
++}
++
++func writeJSON(w http.ResponseWriter, code int, v any) {
++	w.Header().Set("Content-Type", "application/json")
++	w.WriteHeader(code)
++	_ = json.NewEncoder(w).Encode(v)
++}
++
++func writeError(w http.ResponseWriter, code int, msg string) {
++	writeJSON(w, code, struct {
++		Error string `json:"error"`
++	}{Error: msg})
++}
+diff --git a/api/handler_test.go b/api/handler_test.go
+new file mode 100644
+index 0000000..1801196
+--- /dev/null
++++ b/api/handler_test.go
+@@ -0,0 +1,264 @@
++package api
++
++import (
++	"bytes"
++	"encoding/json"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++)
++
++func do(t *testing.T, h http.Handler, method, path string, body any) *httptest.ResponseRecorder {
++	t.Helper()
++	var buf bytes.Buffer
++	if body != nil {
++		switch v := body.(type) {
++		case string:
++			buf.WriteString(v)
++		default:
++			if err := json.NewEncoder(&buf).Encode(v); err != nil {
++				t.Fatalf("encode body: %v", err)
++			}
++		}
++	}
++	req := httptest.NewRequest(method, path, &buf)
++	if body != nil {
++		req.Header.Set("Content-Type", "application/json")
++	}
++	rec := httptest.NewRecorder()
++	h.ServeHTTP(rec, req)
++	return rec
++}
++
++func decodeNote(t *testing.T, rec *httptest.ResponseRecorder) Note {
++	t.Helper()
++	var n Note
++	if err := json.NewDecoder(rec.Body).Decode(&n); err != nil {
++		t.Fatalf("decode note: %v", err)
++	}
++	return n
++}
++
++func decodeError(t *testing.T, rec *httptest.ResponseRecorder) string {
++	t.Helper()
++	var e struct {
++		Error string `json:"error"`
++	}
++	if err := json.NewDecoder(rec.Body).Decode(&e); err != nil {
++		t.Fatalf("decode error: %v (body %q)", err, rec.Body.String())
++	}
++	return e.Error
++}
++
++func TestHealthz(t *testing.T) {
++	h := NewHandler(NewStore())
++	rec := do(t, h, http.MethodGet, "/healthz", nil)
++	if rec.Code != http.StatusOK {
++		t.Fatalf("status = %d, want 200", rec.Code)
++	}
++	if rec.Body.String() != "ok" {
++		t.Fatalf("body = %q, want %q", rec.Body.String(), "ok")
++	}
++	if ct := rec.Header().Get("Content-Type"); ct != "text/plain" {
++		t.Fatalf("content-type = %q, want text/plain", ct)
++	}
++	rec = do(t, h, http.MethodPost, "/healthz", nil)
++	if rec.Code != http.StatusMethodNotAllowed {
++		t.Fatalf("POST /healthz status = %d, want 405", rec.Code)
++	}
++}
++
++func TestCreateNote(t *testing.T) {
++	h := NewHandler(NewStore())
++	rec := do(t, h, http.MethodPost, "/notes", struct {
++		Title string `json:"title"`
++		Body  string `json:"body"`
++	}{"First", "hello"})
++	if rec.Code != http.StatusCreated {
++		t.Fatalf("status = %d, want 201; body %q", rec.Code, rec.Body.String())
++	}
++	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
++		t.Fatalf("content-type = %q, want application/json", ct)
++	}
++	n := decodeNote(t, rec)
++	if n.ID != 1 || n.Title != "First" || n.Body != "hello" {
++		t.Fatalf("note = %+v, want id 1, First/hello", n)
++	}
++}
++
++func TestCreateNoteRequiresTitle(t *testing.T) {
++	h := NewHandler(NewStore())
++	for _, title := range []string{"", "   "} {
++		rec := do(t, h, http.MethodPost, "/notes", struct {
++			Title string `json:"title"`
++			Body  string `json:"body"`
++		}{title, "x"})
++		if rec.Code != http.StatusBadRequest {
++			t.Fatalf("title %q: status = %d, want 400", title, rec.Code)
++		}
++		if decodeError(t, rec) == "" {
++			t.Fatalf("expected non-empty error message")
++		}
++	}
++	rec := do(t, h, http.MethodPost, "/notes", "{not json")
++	if rec.Code != http.StatusBadRequest {
++		t.Fatalf("invalid json: status = %d, want 400", rec.Code)
++	}
++}
++
++func TestListNotes(t *testing.T) {
++	h := NewHandler(NewStore())
++	// Empty list is [] not null.
++	rec := do(t, h, http.MethodGet, "/notes", nil)
++	if rec.Code != http.StatusOK {
++		t.Fatalf("status = %d, want 200", rec.Code)
++	}
++	if body := rec.Body.String(); strings.TrimSpace(body) != "[]" {
++		t.Fatalf("body = %q, want []", strings.TrimSpace(body))
++	}
++	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
++		t.Fatalf("content-type = %q, want application/json", ct)
++	}
++
++	do(t, h, http.MethodPost, "/notes", `{"title":"Alpha","body":"one"}`)
++	do(t, h, http.MethodPost, "/notes", `{"title":"Beta","body":"two"}`)
++	do(t, h, http.MethodPost, "/notes", `{"title":"Gamma","body":"three"}`)
++
++	rec = do(t, h, http.MethodGet, "/notes", nil)
++	var notes []Note
++	if err := json.NewDecoder(rec.Body).Decode(&notes); err != nil {
++		t.Fatalf("decode: %v", err)
++	}
++	if len(notes) != 3 {
++		t.Fatalf("got %d notes, want 3", len(notes))
++	}
++	for i, wantID := range []int{1, 2, 3} {
++		if notes[i].ID != wantID {
++			t.Fatalf("notes[%d].ID = %d, want %d (ascending order)", i, notes[i].ID, wantID)
++		}
++	}
++
++	// Case-insensitive filter on title or body.
++	rec = do(t, h, http.MethodGet, "/notes?q=ALPHA", nil)
++	notes = nil
++	if err := json.NewDecoder(rec.Body).Decode(&notes); err != nil {
++		t.Fatalf("decode: %v", err)
++	}
++	if len(notes) != 1 || notes[0].Title != "Alpha" {
++		t.Fatalf("q=ALPHA: got %+v", notes)
++	}
++	rec = do(t, h, http.MethodGet, "/notes?q=THREE", nil)
++	notes = nil
++	if err := json.NewDecoder(rec.Body).Decode(&notes); err != nil {
++		t.Fatalf("decode: %v", err)
++	}
++	if len(notes) != 1 || notes[0].Title != "Gamma" {
++		t.Fatalf("q=THREE: got %+v", notes)
++	}
++	rec = do(t, h, http.MethodGet, "/notes?q=zzz", nil)
++	if strings.TrimSpace(rec.Body.String()) != "[]" {
++		t.Fatalf("no match: body = %q, want []", strings.TrimSpace(rec.Body.String()))
++	}
++}
++
++func TestGetNote(t *testing.T) {
++	h := NewHandler(NewStore())
++	do(t, h, http.MethodPost, "/notes", `{"title":"T","body":"B"}`)
++
++	rec := do(t, h, http.MethodGet, "/notes/1", nil)
++	if rec.Code != http.StatusOK {
++		t.Fatalf("status = %d, want 200", rec.Code)
++	}
++	n := decodeNote(t, rec)
++	if n.ID != 1 || n.Title != "T" || n.Body != "B" {
++		t.Fatalf("note = %+v", n)
++	}
++
++	rec = do(t, h, http.MethodGet, "/notes/999", nil)
++	if rec.Code != http.StatusNotFound {
++		t.Fatalf("missing: status = %d, want 404", rec.Code)
++	}
++	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
++		t.Fatalf("content-type = %q, want application/json", ct)
++	}
++	if decodeError(t, rec) == "" {
++		t.Fatalf("expected non-empty error message")
++	}
++
++	rec = do(t, h, http.MethodGet, "/notes/abc", nil)
++	if rec.Code != http.StatusBadRequest {
++		t.Fatalf("bad id: status = %d, want 400", rec.Code)
++	}
++}
++
++func TestDeleteNote(t *testing.T) {
++	h := NewHandler(NewStore())
++	do(t, h, http.MethodPost, "/notes", `{"title":"T","body":"B"}`)
++
++	rec := do(t, h, http.MethodDelete, "/notes/1", nil)
++	if rec.Code != http.StatusNoContent {
++		t.Fatalf("status = %d, want 204", rec.Code)
++	}
++	rec = do(t, h, http.MethodDelete, "/notes/1", nil)
++	if rec.Code != http.StatusNotFound {
++		t.Fatalf("second delete: status = %d, want 404", rec.Code)
++	}
++	rec = do(t, h, http.MethodGet, "/notes/1", nil)
++	if rec.Code != http.StatusNotFound {
++		t.Fatalf("get after delete: status = %d, want 404", rec.Code)
++	}
++}
++
++func TestMethodNotAllowed(t *testing.T) {
++	h := NewHandler(NewStore())
++	cases := []struct {
++		method, path string
++	}{
++		{http.MethodPut, "/notes"},
++		{http.MethodPatch, "/notes"},
++		{http.MethodGet, "/notes/1"},  // allowed
++		{http.MethodPut, "/notes/1"},  // disallowed
++		{http.MethodPost, "/notes/1"}, // disallowed
++		{http.MethodDelete, "/notes/abc"},
++	}
++	for _, c := range cases {
++		rec := do(t, h, c.method, c.path, nil)
++		if c.method == http.MethodPut {
++			if rec.Code != http.StatusMethodNotAllowed {
++				t.Fatalf("%s %s: status = %d, want 405", c.method, c.path, rec.Code)
++			}
++			if decodeError(t, rec) == "" {
++				t.Fatalf("%s %s: expected JSON error body", c.method, c.path)
++			}
++		}
++	}
++}
++
++func TestEndToEnd(t *testing.T) {
++	srv := httptest.NewServer(NewHandler(NewStore()))
++	defer srv.Close()
++
++	// Create.
++	resp, err := http.Post(srv.URL+"/notes", "application/json", strings.NewReader(`{"title":"Note A","body":"body text"}`))
++	if err != nil {
++		t.Fatal(err)
++	}
++	resp.Body.Close()
++	if resp.StatusCode != http.StatusCreated {
++		t.Fatalf("create status = %d, want 201", resp.StatusCode)
++	}
++
++	// Fetch via real HTTP.
++	resp, err = http.Get(srv.URL + "/notes")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer resp.Body.Close()
++	if resp.StatusCode != http.StatusOK {
++		t.Fatalf("list status = %d, want 200", resp.StatusCode)
++	}
++	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
++		t.Fatalf("content-type = %q, want application/json", ct)
++	}
++}

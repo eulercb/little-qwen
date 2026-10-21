@@ -1,0 +1,137 @@
+ cli/cli.go | 119 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 118 insertions(+), 1 deletion(-)
+
+diff --git a/cli/cli.go b/cli/cli.go
+index b437c96..8d923f6 100644
+--- a/cli/cli.go
++++ b/cli/cli.go
+@@ -1,7 +1,12 @@
+ // Package cli parses the command line of the frob tool.
+ package cli
+ 
+-import "errors"
++import (
++	"errors"
++	"fmt"
++	"strconv"
++	"strings"
++)
+ 
+ // ErrUsage is wrapped by every parse error.
+ var ErrUsage = errors.New("usage error")
+@@ -14,3 +19,115 @@ type Config struct {
+ 	Tags    []string
+ 	Args    []string
+ }
++
++// Parse parses the command line arguments.
++func Parse(args []string) (Config, error) {
++	c := Config{Count: 1, Output: "-"}
++
++	// errf returns a usage error mentioning the offending construct.
++	errf := func(format string, a ...any) (Config, error) {
++		return c, fmt.Errorf("%w: %s", ErrUsage, fmt.Sprintf(format, a...))
++	}
++
++	for i := 0; i < len(args); i++ {
++		arg := args[i]
++		switch {
++		case arg == "--":
++			// Everything after -- is positional, even "-" or "-x".
++			c.Args = append(c.Args, args[i+1:]...)
++			i = len(args)
++			continue
++		case arg == "-":
++			c.Args = append(c.Args, arg)
++		case strings.HasPrefix(arg, "--"):
++			name, value, hasValue := splitEq(arg)
++			switch name {
++			case "--verbose":
++				// Boolean flag; ignore any =value.
++				c.Verbose = true
++				continue
++			}
++			if !hasValue {
++				if i+1 >= len(args) {
++					return errf("flag %s requires an argument", name)
++				}
++				i++
++				value = args[i]
++				hasValue = true
++			}
++			switch name {
++			case "--count":
++				n, ok := parseCount(value)
++				if !ok {
++					return errf("invalid value %q for %s: must be an integer >= 0", value, name)
++				}
++				c.Count = n
++			case "--output":
++				c.Output = value
++			case "--tag":
++				c.Tags = append(c.Tags, value)
++			default:
++				return errf("unknown flag %s", name)
++			}
++		case arg[0] == '-':
++			body := arg[1:]
++			switch body[0] {
++			case 'v':
++				// Boolean flag; combined forms like -vv repeat it.
++				for _, r := range body {
++					if r != 'v' {
++						return errf("invalid flag %s", arg)
++					}
++				}
++				c.Verbose = true
++			case 'n', 'o':
++				name := "-" + string(body[0])
++				var value string
++				hasValue := false
++				if len(body) > 1 {
++					value = body[1:]
++					if value[0] == '=' {
++						value = value[1:]
++						hasValue = true
++					}
++				}
++				if !hasValue && value == "" {
++					if i+1 >= len(args) {
++						return errf("flag %s requires an argument", name)
++					}
++					i++
++					value = args[i]
++				}
++				if name == "-n" {
++					n, ok := parseCount(value)
++					if !ok {
++						return errf("invalid value %q for %s: must be an integer >= 0", value, name)
++					}
++					c.Count = n
++				} else {
++					c.Output = value
++				}
++			default:
++				return errf("unknown flag %s", arg)
++			}
++		default:
++			c.Args = append(c.Args, arg)
++		}
++	}
++	return c, nil
++}
++
++// parseCount parses value as a non-negative integer.
++func parseCount(value string) (int, bool) {
++	n, err := strconv.Atoi(value)
++	return n, err == nil && n >= 0
++}
++
++// splitEq splits a long flag like "--name=value" into the flag name and
++// value, reporting whether an explicit value was present.
++func splitEq(arg string) (name, value string, hasValue bool) {
++	if eq := strings.IndexByte(arg, '='); eq >= 0 {
++		return arg[:eq], arg[eq+1:], true
++	}
++	return arg, "", false
++}

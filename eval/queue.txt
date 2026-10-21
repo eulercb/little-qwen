@@ -1,5 +1,4 @@
 # One command per line, run sequentially by eval/runner/queue.sh (see STATUS.md).
-./bin/qh eval --out eval/results/it0-base-p1 --only a03-http-api,a04-cli-args,a05-ini-bugfix,a07-semver,a09-csv-report,a10-topk-words,a12-jsonpath --reps 1 --parallel 1 > eval/results/it0-base-p1.log 2>&1
 ./bin/qh eval --harness harness/cand/a-think-off --out eval/results/exp6-think-off --only a03-http-api,a05-ini-bugfix,a07-semver,a09-csv-report,a10-topk-words,a12-jsonpath,h02-config-merge,h04-mini-template --reps 1 --parallel 1 > eval/results/exp6-think-off.log 2>&1
 ./bin/qh eval --harness harness/cand/a-think-adaptive --out eval/results/exp7-think-adaptive --only a03-http-api,a05-ini-bugfix,a07-semver,a09-csv-report,a10-topk-words,a12-jsonpath,h02-config-merge,h04-mini-template --reps 1 --parallel 1 > eval/results/exp7-think-adaptive.log 2>&1
 ./bin/qh eval --out eval/results/it0-baseline --only tierB --reps 1 --parallel 1 > eval/results/it0-baseline-B.log 2>&1

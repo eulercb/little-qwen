@@ -1,0 +1,360 @@
+ jpath/jpath.go            | 233 ++++++++++++++++++++++++++++++++++++++++++++++
+ jpath/jpath_extra_test.go | 111 ++++++++++++++++++++++
+ 2 files changed, 344 insertions(+)
+
+diff --git a/jpath/jpath.go b/jpath/jpath.go
+new file mode 100644
+index 0000000..f83546d
+--- /dev/null
++++ b/jpath/jpath.go
+@@ -0,0 +1,233 @@
++// Package jpath implements a tiny path query language over decoded JSON
++// documents (the values produced by encoding/json).
++package jpath
++
++import (
++	"errors"
++	"fmt"
++	"sort"
++)
++
++// A step is one segment of a path after the root `$`.
++type step interface{}
++
++type memberStep struct{ name string }
++type indexStep struct{ i int }
++type starStep struct{}
++type recursiveStep struct{ name string }
++
++// Query evaluates path against doc and returns the matching values.
++func Query(doc any, path string) ([]any, error) {
++	steps, err := parse(path)
++	if err != nil {
++		return nil, err
++	}
++	nodes := []any{doc}
++	for _, st := range steps {
++		nodes = apply(nodes, st)
++	}
++	return nodes, nil
++}
++
++func parse(path string) ([]step, error) {
++	if path == "" || path[0] != '$' {
++		return nil, errors.New("jpath: path must start with '$'")
++	}
++	rest := path[1:]
++	var steps []step
++	for rest != "" {
++		switch rest[0] {
++		case '.':
++			rest = rest[1:]
++			if rest != "" && rest[0] == '.' {
++				// Recursive descent: ..name
++				rest = rest[1:]
++				name, r, err := ident(rest)
++				if err != nil {
++					return nil, fmt.Errorf("jpath: .. must be followed by a name: %s", err)
++				}
++				steps = append(steps, recursiveStep{name: name})
++				rest = r
++				continue
++			}
++			if rest != "" && rest[0] == '*' {
++				steps = append(steps, starStep{})
++				rest = rest[1:]
++				continue
++			}
++			name, r, err := ident(rest)
++			if err != nil {
++				return nil, fmt.Errorf("jpath: invalid member name: %s", err)
++			}
++			steps = append(steps, memberStep{name: name})
++			rest = r
++		case '[':
++			rest = rest[1:]
++			if rest != "" && rest[0] == '*' {
++				if len(rest) < 2 || rest[1] != ']' {
++					return nil, errors.New("jpath: expected ']' after '*'")
++				}
++				steps = append(steps, starStep{})
++				rest = rest[2:]
++				continue
++			}
++			if rest != "" && rest[0] == '"' {
++				key, r, err := quoted(rest)
++				if err != nil {
++					return nil, fmt.Errorf("jpath: invalid quoted key: %s", err)
++				}
++				if r == "" || r[0] != ']' {
++					return nil, errors.New(`jpath: expected ']' after quoted key`)
++				}
++				steps = append(steps, memberStep{name: key})
++				rest = r[1:]
++				continue
++			}
++			// Numeric index, possibly negative.
++			neg := false
++			if rest != "" && rest[0] == '-' {
++				neg = true
++				rest = rest[1:]
++			}
++			d := 0
++			haveDigit := false
++			for rest != "" && rest[0] >= '0' && rest[0] <= '9' {
++				d = d*10 + int(rest[0]-'0')
++				rest = rest[1:]
++				haveDigit = true
++			}
++			if !haveDigit {
++				return nil, errors.New("jpath: invalid index")
++			}
++			if rest == "" || rest[0] != ']' {
++				return nil, errors.New(`jpath: expected ']' after index`)
++			}
++			i := d
++			if neg {
++				i = -i
++			}
++			steps = append(steps, indexStep{i: i})
++			rest = rest[1:]
++		default:
++			return nil, fmt.Errorf("jpath: invalid character %q in path", rest[0])
++		}
++	}
++	if steps == nil {
++		steps = []step{}
++	}
++	return steps, nil
++}
++
++func ident(s string) (name, rest string, err error) {
++	if s == "" || !isIdentStart(s[0]) {
++		return "", "", errors.New("expected [A-Za-z_]")
++	}
++	name = string(s[0])
++	i := 1
++	for i < len(s) && isIdentChar(s[i]) {
++		name += string(s[i])
++		i++
++	}
++	return name, s[i:], nil
++}
++
++func isIdentStart(c byte) bool {
++	return c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
++}
++
++func isIdentChar(c byte) bool {
++	return isIdentStart(c) || (c >= '0' && c <= '9')
++}
++
++// quoted parses a double-quoted key starting at s[0] == '"'.
++func quoted(s string) (key, rest string, err error) {
++	// s starts with the opening quote.
++	i := 1
++	var b []byte
++	for i < len(s) {
++		c := s[i]
++		if c == '\\' {
++			if i+1 >= len(s) {
++				return "", "", errors.New("dangling escape")
++			}
++			switch s[i+1] {
++			case '"', '\\':
++				b = append(b, s[i+1])
++			default:
++				return "", "", fmt.Errorf("unsupported escape %q", s[i+1])
++			}
++			i += 2
++			continue
++		}
++		if c == '"' {
++			return string(b), s[i+1:], nil
++		}
++		b = append(b, c)
++		i++
++	}
++	return "", "", errors.New("unterminated quoted key")
++}
++
++func apply(nodes []any, st step) []any {
++	out := []any{}
++	for _, n := range nodes {
++		switch s := st.(type) {
++		case memberStep:
++			if m, ok := n.(map[string]any); ok {
++				if v, ok := m[s.name]; ok {
++					out = append(out, v)
++				}
++			}
++		case indexStep:
++			if a, ok := n.([]any); ok {
++				i := s.i
++				if i < 0 {
++					i += len(a)
++				}
++				if i >= 0 && i < len(a) {
++					out = append(out, a[i])
++				}
++			}
++		case starStep:
++			switch v := n.(type) {
++			case []any:
++				out = append(out, v...)
++			case map[string]any:
++				keys := make([]string, 0, len(v))
++				for k := range v {
++					keys = append(keys, k)
++				}
++				sort.Strings(keys)
++				for _, k := range keys {
++					out = append(out, v[k])
++				}
++			}
++		case recursiveStep:
++			recursiveDescend(n, s.name, &out)
++		}
++	}
++	return out
++}
++
++// recursiveDescend visits n in pre-order, appending the named member of n
++// (if it is an object) and then the named members of every descendant.
++func recursiveDescend(n any, name string, out *[]any) {
++	switch v := n.(type) {
++	case map[string]any:
++		if m, ok := v[name]; ok {
++			*out = append(*out, m)
++		}
++		keys := make([]string, 0, len(v))
++		for k := range v {
++			keys = append(keys, k)
++		}
++		sort.Strings(keys)
++		for _, k := range keys {
++			recursiveDescend(v[k], name, out)
++		}
++	case []any:
++		for _, e := range v {
++			recursiveDescend(e, name, out)
++		}
++	}
++}
+diff --git a/jpath/jpath_extra_test.go b/jpath/jpath_extra_test.go
+new file mode 100644
+index 0000000..9a696ef
+--- /dev/null
++++ b/jpath/jpath_extra_test.go
+@@ -0,0 +1,111 @@
++package jpath
++
++import (
++	"reflect"
++	"testing"
++)
++
++func mustQuery(t *testing.T, d any, path string) []any {
++	t.Helper()
++	got, err := Query(d, path)
++	if err != nil {
++		t.Fatalf("Query(%q) error: %v", path, err)
++	}
++	return got
++}
++
++func eq(t *testing.T, got, want []any) {
++	t.Helper()
++	if !reflect.DeepEqual(got, want) {
++		t.Fatalf("got %v, want %v", got, want)
++	}
++}
++
++func TestRoot(t *testing.T) {
++	d := doc(t, `{"a":1}`)
++	got := mustQuery(t, d, "$")
++	if !reflect.DeepEqual(got, []any{d}) {
++		t.Fatalf("got %v", got)
++	}
++}
++
++func TestStarObject(t *testing.T) {
++	d := doc(t, `{"b":2,"a":1}`)
++	eq(t, mustQuery(t, d, "$.*"), []any{1.0, 2.0})
++}
++
++func TestStarArray(t *testing.T) {
++	d := doc(t, `[1,2,3]`)
++	eq(t, mustQuery(t, d, "$.*"), []any{1.0, 2.0, 3.0})
++}
++
++func TestStarArrayDotStar(t *testing.T) {
++	d := doc(t, `[[1,2],[3]]`)
++	eq(t, mustQuery(t, d, "$.*.*"), []any{1.0, 2.0, 3.0})
++}
++
++func TestNegativeIndex(t *testing.T) {
++	d := doc(t, `[1,2,3]`)
++	eq(t, mustQuery(t, d, "$[-1]"), []any{3.0})
++	eq(t, mustQuery(t, d, "$[0]"), []any{1.0})
++	eq(t, mustQuery(t, d, "$[-5]"), []any{})
++	eq(t, mustQuery(t, d, "$[5]"), []any{})
++}
++
++func TestIndexOnNonArray(t *testing.T) {
++	d := doc(t, `{"a":1}`)
++	eq(t, mustQuery(t, d, "$[0]"), []any{})
++}
++
++func TestMemberMissing(t *testing.T) {
++	d := doc(t, `{"a":1}`)
++	eq(t, mustQuery(t, d, "$.b.a"), []any{})
++}
++
++func TestQuotedKey(t *testing.T) {
++	d := doc(t, `{"weird key":"v","q":"x"}`)
++	eq(t, mustQuery(t, d, `$["weird key"]`), []any{"v"})
++	eq(t, mustQuery(t, d, `$["q"]`), []any{"x"})
++	// Escapes.
++	d2 := doc(t, `{"a\"b\\c":"v"}`)
++	eq(t, mustQuery(t, d2, `$["a\"b\\c"]`), []any{"v"})
++}
++
++func TestRecursive(t *testing.T) {
++	d := doc(t, `{"x":{"y":1},"z":[{"y":2},{"y":3}]}`)
++	eq(t, mustQuery(t, d, "$..y"), []any{1.0, 2.0, 3.0})
++	eq(t, mustQuery(t, d, "$..z"), []any{[]any{map[string]any{"y": 2.0}, map[string]any{"y": 3.0}}})
++	eq(t, mustQuery(t, d, "$..nope"), []any{})
++}
++
++func TestRecursiveOnArray(t *testing.T) {
++	d := doc(t, `[{"a":1},{"b":{"a":2}}]`)
++	eq(t, mustQuery(t, d, "$..a"), []any{1.0, 2.0})
++}
++
++func TestNoMatchEmptyNonNil(t *testing.T) {
++	d := doc(t, `{"a":1}`)
++	got := mustQuery(t, d, "$.missing")
++	if got == nil {
++		t.Fatal("want empty non-nil slice")
++	}
++	if len(got) != 0 {
++		t.Fatalf("want empty, got %v", got)
++	}
++}
++
++func TestMalformed(t *testing.T) {
++	d := doc(t, `{"a":{"b":1}}`)
++	for _, p := range []string{
++		"$.", "$[", "$[1", `$["x]`, `$.1abc`, "$[abc]", "a.b", "", ".",
++		"$..", `$["x`, "$[0", "$[+1]", "$[1a]", "$.", "a", "$[x]",
++	} {
++		got, err := Query(d, p)
++		if err == nil {
++			t.Errorf("path %q: want error, got %v", p, got)
++		}
++		if got != nil {
++			t.Errorf("path %q: want nil result, got %v", p, got)
++		}
++	}
++}
