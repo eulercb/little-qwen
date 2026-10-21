@@ -1,0 +1,37 @@
+{
+  "task_id": "a10-topk-words",
+  "tier": "tierA",
+  "rep": 1,
+  "harness_hash": "13c005f2aeb0",
+  "success": true,
+  "score": 1,
+  "tests_passed": 6,
+  "tests_total": 6,
+  "outcome": {
+    "Status": "wall_clock",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 41,
+    "Compactions": 0,
+    "PromptTokens": 1357617,
+    "PrefillTokens": 63505,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 55582,
+    "ReasoningTokens": 41588,
+    "ToolCalls": 47,
+    "ToolErrors": 1,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1
+    },
+    "WallSeconds": 3632.163286707,
+    "Err": ""
+  },
+  "started": "2026-10-21T20:38:32Z",
+  "hidden_output": "=== RUN   TestHiddenBasicTies\n--- PASS: TestHiddenBasicTies (0.00s)\n=== RUN   TestHiddenApostrophes\n--- PASS: TestHiddenApostrophes (0.00s)\n=== RUN   TestHiddenUnicodeAndStop\n--- PASS: TestHiddenUnicodeAndStop (0.00s)\n=== RUN   TestHiddenKZero\n--- PASS: TestHiddenKZero (0.00s)\n=== RUN   TestHiddenLongLine\n--- PASS: TestHiddenLongLine (0.02s)\n=== RUN   TestHiddenReadError\n--- PASS: TestHiddenReadError (0.00s)\nPASS\nok  \texample.com/words/words\t0.027s",
+  "work": "/tmp/qh-runs/exp5-low/a10-topk-words-r1"
+}

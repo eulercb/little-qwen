@@ -1,0 +1,233 @@
+ words/words.go | 224 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 224 insertions(+)
+
+diff --git a/words/words.go b/words/words.go
+new file mode 100644
+index 0000000..ee0880a
+--- /dev/null
++++ b/words/words.go
+@@ -0,0 +1,224 @@
++// Package words provides utilities for word frequency analysis over streams.
++package words
++
++import (
++	"io"
++	"sort"
++	"strings"
++	"unicode"
++	"unicode/utf8"
++)
++
++// WordCount is a word together with the number of times it occurred.
++type WordCount struct {
++	Word  string
++	Count int
++}
++
++const chunkSize = 256 * 1024
++
++// TopK reads r until EOF, counts words, and returns the k most frequent
++// words, ordered by count descending with ties broken by the word ascending
++// (byte order). If there are fewer than k distinct words, all of them are
++// returned. For k <= 0 an empty (non-nil) slice is returned.
++//
++// A word is a maximal run of Unicode letters or digits, optionally containing
++// apostrophes between letters (e.g. "don't", "o'clock"); leading and trailing
++// apostrophes are not part of the word. Words are compared and counted in
++// lower case, and words listed in stop (case-insensitively) are ignored.
++//
++// The input is processed in a streaming fashion so arbitrarily large inputs
++// and very long lines are handled without reading them all into memory.
++// Any read error from r is returned.
++func TopK(r io.Reader, k int, stop []string) ([]WordCount, error) {
++	if k <= 0 {
++		return []WordCount{}, nil
++	}
++
++	stopSet := make(map[string]struct{}, len(stop))
++	for _, w := range stop {
++		stopSet[strings.ToLower(w)] = struct{}{}
++	}
++
++	counts := make(map[string]int)
++	buf := make([]byte, chunkSize)
++
++	var (
++		word      []byte // bytes of the word being accumulated
++		inWord    bool   // a word is currently being accumulated
++		pendingAp bool   // an apostrophe seen after a word character, not yet
++		// confirmed internal by a following word character
++		carry []byte // trailing bytes of a rune split across a read
++	)
++
++	flush := func() {
++		if inWord {
++			w := strings.ToLower(string(word))
++			if _, isStop := stopSet[w]; !isStop {
++				counts[w]++
++			}
++		}
++		inWord = false
++		pendingAp = false
++		word = word[:0]
++	}
++
++	// addASCII appends an ASCII letter or digit to the current word,
++	// committing any pending apostrophe (which then has word characters on
++	// both sides, so it is internal).
++	addASCII := func(b byte) {
++		if pendingAp {
++			word = append(word, '\'')
++			pendingAp = false
++		}
++		if !inWord {
++			inWord = true
++			word = word[:0]
++		}
++		word = append(word, b)
++	}
++
++	addRune := func(r rune) {
++		if pendingAp {
++			word = append(word, '\'')
++			pendingAp = false
++		}
++		if !inWord {
++			inWord = true
++			word = word[:0]
++		}
++		word = utf8.AppendRune(word, r)
++	}
++
++	// process scans a chunk of input. If a multi-byte rune is split across
++	// a read boundary, the trailing partial sequence is kept in carry to be
++	// completed with the next chunk. Any word completed during the scan is
++	// counted.
++	process := func(data []byte) {
++		for i := 0; i < len(data); {
++			b := data[i]
++			if b < utf8.RuneSelf {
++				i++
++				switch {
++				case isASCIIWordByte(b):
++					addASCII(b)
++				case b == '\'':
++					if inWord && !pendingAp {
++						// A word character precedes; the apostrophe may be
++						// internal if a word character follows.
++						pendingAp = true
++					} else {
++						// A leading apostrophe, or an apostrophe after an
++						// unconfirmed apostrophe: not part of the word and
++						// separates words.
++						flush()
++					}
++				default:
++					flush()
++				}
++				continue
++			}
++			rn, size := utf8.DecodeRune(data[i:])
++			if size == 0 {
++				// Defensive; DecodeRune always consumes at least one byte.
++				i++
++				flush()
++				continue
++			}
++			if rn == utf8.RuneError && size == 1 {
++				if utf8.RuneStart(b) {
++					if l := utf8LeadLen(b); l > 0 && i+l > len(data) {
++						// The leading byte promises a multi-byte rune that
++						// does not fit in this chunk: carry the partial
++						// sequence to be completed with the next chunk.
++						carry = append(carry[:0], data[i:]...)
++						return
++					}
++				}
++				// Invalid UTF-8 byte: treat it as a word separator.
++				i++
++				flush()
++				continue
++			}
++			i += size
++			if unicode.IsLetter(rn) || unicode.IsDigit(rn) {
++				addRune(rn)
++			} else {
++				// Includes the non-ASCII apostrophe: not a word character,
++				// so it separates words.
++				flush()
++			}
++		}
++		carry = carry[:0]
++	}
++
++	for {
++		n, err := r.Read(buf)
++		if n > 0 {
++			data := buf[:n]
++			if len(carry) > 0 {
++				full := make([]byte, len(carry)+n)
++				copy(full, carry)
++				copy(full[len(carry):], data)
++				data = full
++			}
++			carry = carry[:0]
++			process(data)
++		}
++		if err == io.EOF {
++			break
++		}
++		if err != nil {
++			return nil, err
++		}
++	}
++	flush()
++
++	res := make([]WordCount, 0, len(counts))
++	for w, c := range counts {
++		res = append(res, WordCount{Word: w, Count: c})
++	}
++	sort.Slice(res, func(i, j int) bool {
++		if res[i].Count != res[j].Count {
++			return res[i].Count > res[j].Count
++		}
++		return res[i].Word < res[j].Word
++	})
++	if len(res) > k {
++		res = res[:k]
++	}
++	return res, nil
++}
++
++// isASCIIWordByte reports whether b is an ASCII letter or digit.
++func isASCIIWordByte(b byte) bool {
++	switch {
++	case b >= 'a' && b <= 'z':
++		return true
++	case b >= 'A' && b <= 'Z':
++		return true
++	case b >= '0' && b <= '9':
++		return true
++	}
++	return false
++}
++
++// utf8LeadLen returns the number of bytes in the UTF-8 sequence that starts
++// with leading byte b, or -1 if b cannot start a valid sequence.
++func utf8LeadLen(b byte) int {
++	switch {
++	case b&0xE0 == 0xC0: // two-byte sequence
++		if b < 0xC2 {
++			return -1 // would be overlong
++		}
++		return 2
++	case b&0xF0 == 0xE0: // three-byte sequence
++		return 3
++	case b&0xF8 == 0xF0: // four-byte sequence
++		if b > 0xF4 {
++			return -1 // beyond U+10FFFF
++		}
++		return 4
++	}
++	return -1
++}

@@ -1,0 +1,386 @@
+ jpath/jpath.go            | 245 ++++++++++++++++++++++++++++++++++++++++++++++
+ jpath/jpath_extra_test.go | 125 +++++++++++++++++++++++
+ 2 files changed, 370 insertions(+)
+
+diff --git a/jpath/jpath.go b/jpath/jpath.go
+new file mode 100644
+index 0000000..5ffd8ba
+--- /dev/null
++++ b/jpath/jpath.go
+@@ -0,0 +1,245 @@
++// Package jpath implements a tiny path query language over decoded JSON
++// values (any as produced by encoding/json).
++package jpath
++
++import (
++	"fmt"
++	"sort"
++	"strconv"
++	"strings"
++)
++
++type stepKind int
++
++const (
++	kindMember stepKind = iota
++	kindIndex
++	kindWildcard
++	kindRecursive
++)
++
++type step struct {
++	kind  stepKind
++	name  string // member / recursive descent name
++	index int    // array index (may be negative)
++}
++
++// Query evaluates path against doc and returns the matching nodes in
++// document order. A path must start with '$'; '$' alone matches doc.
++// A query that matches nothing returns an empty non-nil slice. A
++// malformed path returns a non-nil error and a nil result.
++func Query(doc any, path string) ([]any, error) {
++	steps, err := parsePath(path)
++	if err != nil {
++		return nil, err
++	}
++	result := []any{doc}
++	for _, st := range steps {
++		result = apply(result, st)
++	}
++	return result, nil
++}
++
++func parsePath(path string) ([]step, error) {
++	if !strings.HasPrefix(path, "$") {
++		return nil, fmt.Errorf("jpath: path must start with '$': %q", path)
++	}
++	rest := path[1:]
++	var steps []step
++	for rest != "" {
++		var st step
++		var err error
++		st, rest, err = parseStep(rest)
++		if err != nil {
++			return nil, err
++		}
++		steps = append(steps, st)
++	}
++	return steps, nil
++}
++
++func parseStep(s string) (step, string, error) {
++	if s[0] == '.' {
++		rest := s[1:]
++		if strings.HasPrefix(rest, ".") {
++			name, rem, ok := ident(rest[1:])
++			if !ok {
++				return step{}, "", fmt.Errorf("jpath: invalid name in %q", s)
++			}
++			return step{kind: kindRecursive, name: name}, rem, nil
++		}
++		if strings.HasPrefix(rest, "*") {
++			return step{kind: kindWildcard}, rest[1:], nil
++		}
++		name, rem, ok := ident(rest)
++		if !ok {
++			return step{}, "", fmt.Errorf("jpath: invalid name in %q", s)
++		}
++		return step{kind: kindMember, name: name}, rem, nil
++	}
++	if s[0] == '[' {
++		return parseBracket(s)
++	}
++	return step{}, "", fmt.Errorf("jpath: invalid path at %q", s)
++}
++
++func parseBracket(s string) (step, string, error) {
++	body := s[1:]
++	if body == "" || body[0] == ']' {
++		return step{}, "", fmt.Errorf("jpath: empty brackets in %q", s)
++	}
++	switch c := body[0]; {
++	case c == '*':
++		if len(body) < 2 || body[1] != ']' {
++			return step{}, "", fmt.Errorf("jpath: invalid wildcard in %q", s)
++		}
++		return step{kind: kindWildcard}, s[3:], nil
++	case c == '-' || (c >= '0' && c <= '9'):
++		i := 1
++		if body[0] == '-' {
++			if len(body) < 2 || body[1] < '0' || body[1] > '9' {
++				return step{}, "", fmt.Errorf("jpath: invalid index in %q", s)
++			}
++			i = 2
++		}
++		for i < len(body) && body[i] >= '0' && body[i] <= '9' {
++			i++
++		}
++		if i >= len(body) || body[i] != ']' {
++			return step{}, "", fmt.Errorf("jpath: invalid index in %q", s)
++		}
++		n, _ := strconv.Atoi(body[:i])
++		return step{kind: kindIndex, index: n}, s[2+i:], nil
++	case c == '"':
++		str, rem, err := parseQuoted(body)
++		if err != nil {
++			return step{}, "", err
++		}
++		if len(rem) < 1 || rem[0] != ']' {
++			return step{}, "", fmt.Errorf("jpath: expected ']' in %q", s)
++		}
++		return step{kind: kindMember, name: str}, rem[1:], nil
++	default:
++		return step{}, "", fmt.Errorf("jpath: invalid selector in %q", s)
++	}
++}
++
++// parseQuoted parses a double-quoted string; s must start with '"'.
++// Supported escapes: \" and \\. Returns the decoded string and the
++// remainder of s after the closing quote.
++func parseQuoted(s string) (string, string, error) {
++	var b strings.Builder
++	i := 1
++	for i < len(s) {
++		c := s[i]
++		switch {
++		case c == '\\':
++			if i+1 >= len(s) {
++				return "", "", fmt.Errorf("jpath: unterminated string in %q", s)
++			}
++			i++
++			switch c = s[i]; c {
++			case '"', '\\':
++				b.WriteByte(c)
++			default:
++				return "", "", fmt.Errorf("jpath: unsupported escape '\\%c' in %q", c, s)
++			}
++		case c == '"':
++			return b.String(), s[i+1:], nil
++		default:
++			b.WriteByte(c)
++		}
++		i++
++	}
++	return "", "", fmt.Errorf("jpath: unterminated string in %q", s)
++}
++
++func ident(s string) (name, rest string, ok bool) {
++	if s == "" || !isIdentStart(s[0]) {
++		return "", "", false
++	}
++	i := 1
++	for i < len(s) && isIdentChar(s[i]) {
++		i++
++	}
++	return s[:i], s[i:], true
++}
++
++func isIdentStart(c byte) bool {
++	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
++}
++
++func isIdentChar(c byte) bool {
++	return isIdentStart(c) || (c >= '0' && c <= '9')
++}
++
++// apply maps each node in nodes through the step, appending every result
++// in order. Steps that do not apply to a node contribute nothing.
++func apply(nodes []any, st step) []any {
++	out := make([]any, 0, len(nodes))
++	for _, n := range nodes {
++		switch st.kind {
++		case kindMember:
++			if m, ok := n.(map[string]any); ok {
++				if v, ok := m[st.name]; ok {
++					out = append(out, v)
++				}
++			}
++		case kindIndex:
++			if a, ok := n.([]any); ok {
++				i := st.index
++				if i < 0 {
++					i += len(a)
++				}
++				if i >= 0 && i < len(a) {
++					out = append(out, a[i])
++				}
++			}
++		case kindWildcard:
++			switch v := n.(type) {
++			case []any:
++				out = append(out, v...)
++			case map[string]any:
++				for _, k := range sortedKeys(v) {
++					out = append(out, v[k])
++				}
++			}
++		case kindRecursive:
++			out = append(out, recurse(n, st.name)...)
++		}
++	}
++	return out
++}
++
++// recurse collects the named member of n and of every descendant in
++// pre-order: a node's own match first, then its children in order
++// (object children ordered by key ascending).
++func recurse(n any, name string) []any {
++	switch v := n.(type) {
++	case map[string]any:
++		var out []any
++		if val, ok := v[name]; ok {
++			out = append(out, val)
++		}
++		for _, k := range sortedKeys(v) {
++			out = append(out, recurse(v[k], name)...)
++		}
++		return out
++	case []any:
++		var out []any
++		for _, e := range v {
++			out = append(out, recurse(e, name)...)
++		}
++		return out
++	}
++	return nil
++}
++
++func sortedKeys(m map[string]any) []string {
++	keys := make([]string, 0, len(m))
++	for k := range m {
++		keys = append(keys, k)
++	}
++	sort.Strings(keys)
++	return keys
++}
+diff --git a/jpath/jpath_extra_test.go b/jpath/jpath_extra_test.go
+new file mode 100644
+index 0000000..edd9a25
+--- /dev/null
++++ b/jpath/jpath_extra_test.go
+@@ -0,0 +1,125 @@
++package jpath
++
++import (
++	"reflect"
++	"testing"
++)
++
++func TestRoot(t *testing.T) {
++	d := doc(t, `{"a":1}`)
++	got, err := Query(d, "$")
++	if err != nil || !reflect.DeepEqual(got, []any{d}) {
++		t.Fatalf("%v %v", got, err)
++	}
++}
++
++func TestIndexAndNegative(t *testing.T) {
++	d := doc(t, `{"l":[10,20,30]}`)
++	cases := map[string][]any{
++		"$.l[0]":   {10.0},
++		"$.l[2]":   {30.0},
++		"$.l[-1]":  {30.0},
++		"$.l[-3]":  {10.0},
++		"$.l[-4]":  {},
++		"$.l[3]":   {},
++		"$.l[-9]":  {},
++		"$.l[0]x":  nil, // malformed
++	}
++	for path, want := range cases {
++		got, err := Query(d, path)
++		if want == nil {
++			if err == nil {
++				t.Errorf("%s: expected error, got %v", path, got)
++			}
++			continue
++		}
++		if err != nil {
++			t.Errorf("%s: %v", path, err)
++			continue
++		}
++		if !reflect.DeepEqual(got, want) {
++			t.Errorf("%s: got %v want %v", path, got, want)
++		}
++	}
++}
++
++func TestQuotedKey(t *testing.T) {
++	d := doc(t, `{"a b":1, "c\"d":2, "e\\f":3, "g]h":4}`)
++	cases := map[string][]any{
++		`$["a b"]`:  {1.0},
++		`$["c\"d"]`: {2.0},
++		`$["e\\f"]`: {3.0},
++		`$["g]h"]`:  {4.0},
++		`$["zz"]`:   {},
++	}
++	for path, want := range cases {
++		got, err := Query(d, path)
++		if err != nil {
++			t.Errorf("%s: %v", path, err)
++			continue
++		}
++		if !reflect.DeepEqual(got, want) {
++			t.Errorf("%s: got %v want %v", path, got, want)
++		}
++	}
++}
++
++func TestWildcard(t *testing.T) {
++	d := doc(t, `{"z":1,"b":{"y":2,"a":3},"arr":[4,5],"s":"x"}`)
++	got, err := Query(d, "$.*")
++	if err != nil || !reflect.DeepEqual(got, []any{[]any{4.0, 5.0}, map[string]any{"y": 2.0, "a": 3.0}, "x", 1.0}) {
++		t.Fatalf("%v %v", got, err)
++	}
++	got, err = Query(d, "$.arr[*]")
++	if err != nil || !reflect.DeepEqual(got, []any{4.0, 5.0}) {
++		t.Fatalf("%v %v", got, err)
++	}
++	got, err = Query(d, "$.s.*")
++	if err != nil || !reflect.DeepEqual(got, []any{}) {
++		t.Fatalf("%v %v", got, err)
++	}
++	if got == nil {
++		t.Fatal("empty result must be non-nil")
++	}
++}
++
++func TestRecursive(t *testing.T) {
++	d := doc(t, `{"a":{"b":{"a":2}},"x":[1,{"a":3}]}`)
++	got, err := Query(d, "$..a")
++	if err != nil || !reflect.DeepEqual(got, []any{map[string]any{"b": map[string]any{"a": 2.0}}, 2.0, 3.0}) {
++		t.Fatalf("%v %v", got, err)
++	}
++	// self-nested match: the matched child is also descended into
++	d2 := doc(t, `{"a":{"a":1,"b":{"a":2}}}`)
++	got, err = Query(d2, "$..a")
++	if err != nil || !reflect.DeepEqual(got, []any{map[string]any{"a": 1.0, "b": map[string]any{"a": 2.0}}, 1.0, 2.0}) {
++		t.Fatalf("%v %v", got, err)
++	}
++}
++
++func TestNonMatchingStepsNotErrors(t *testing.T) {
++	d := doc(t, `{"a":[1]}`)
++	for _, p := range []string{"$.a.b", "$.a[5]", "$.a[0].x", "$.nope", "$.a[0][0]"} {
++		got, err := Query(d, p)
++		if err != nil {
++			t.Errorf("%s: %v", p, err)
++			continue
++		}
++		if got == nil || len(got) != 0 {
++			t.Errorf("%s: got %v", p, got)
++		}
++	}
++}
++
++func TestMalformed(t *testing.T) {
++	d := doc(t, `{"a":1}`)
++	for _, p := range []string{"", "a.b", "$.", "$[", "$[1", `$["x]`, "$.1abc", "$[abc]", "$[ ]", "$[]", "$[+1]", "$[1.5]", "$..", "$..1abc", `$["a`, "$[x", "$.a..", "$..", "$a"} {
++		got, err := Query(d, p)
++		if err == nil {
++			t.Errorf("%s: expected error, got %v", p, got)
++		}
++		if got != nil {
++			t.Errorf("%s: expected nil result, got %v", p, got)
++		}
++	}
++}
