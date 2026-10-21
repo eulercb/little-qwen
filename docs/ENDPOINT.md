@@ -38,11 +38,21 @@ take ~12–20 minutes. Cache discipline is therefore the single most important p
   calls therefore cost their length again in prefill (≈1K tokens ≈ 8 s).
 - A divergence in the middle of the prompt falls back to the last ~4K checkpoint before it
   (test: divergence at ~6.4K → 4,096 matched).
-- A shared system prompt is reused across *different* conversations (cross-task cache sharing works), so the
-  harness keeps the system message identical across tasks and sub-agents.
+- A shared prefix is reused across *different* conversations only if a cached checkpoint lies inside it.
+  In the probe the whole first request was the shared system prompt (so its end-checkpoint was reusable);
+  in real runs the ~2K-token system+tools prefix is shorter than the ~4K checkpoint interval and the first
+  turn of each task is a full miss (a03 T1: cached=0). The harness still keeps the system message identical
+  across tasks and sub-agents so a prefix warm-up (idea, not implemented) could make it reusable.
 - History `reasoning_content` is rendered back into the prompt by default (`preserve_thinking`): a 280-token thought
   added 281 prompt tokens. Keeping it verbatim keeps the prefix stable; `preserve_thinking:false` strips it.
 
 ## Cloudflare constraints
 - Quick tunnels cut responses that send nothing for ~100 s → the client always **streams**.
 - Transient 502s happen while the origin restarts → the client retries with backoff for up to 45 minutes.
+
+## Concurrency (measured from it0-baseline traces, 2 concurrent agents)
+- Decode per stream: median 14 tok/s (p10 6.7, p90 19.1) → ~28 tok/s total, i.e. no gain over one stream.
+- Prefill under load: median 44 tok/s (vs 80–140 alone).
+- Conclusion: the server is effectively single-throughput. Run evals with `--parallel 1`: same total
+  throughput, cleaner per-task latency. Compare wall time only between runs made at the same concurrency;
+  compare success/turns/tokens across any runs.

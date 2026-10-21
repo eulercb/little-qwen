@@ -1,14 +1,15 @@
 package jpath
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
 
-const store = `{"store":{"book":[{"title":"A","price":8,"tags":["x"]},{"title":"B","price":12},{"title":"C","price":5,"meta":{"price":1}}],"bike":{"price":100,"color":"red"}},"odd key":{"q\"k":7}}`
+const zzhStore = `{"store":{"book":[{"title":"A","price":8,"tags":["x"]},{"title":"B","price":12},{"title":"C","price":5,"meta":{"price":1}}],"bike":{"price":100,"color":"red"}},"odd key":{"q\"k":7}}`
 
 func TestHiddenTable(t *testing.T) {
-	d := doc(t, store)
+	d := zzhDoc(t, zzhStore)
 	cases := []struct {
 		path string
 		want []any
@@ -39,11 +40,19 @@ func TestHiddenTable(t *testing.T) {
 }
 
 func TestHiddenSyntaxErrors(t *testing.T) {
-	d := doc(t, store)
+	d := zzhDoc(t, zzhStore)
 	for _, p := range []string{"", "a.b", "$.", "$[", "$[1", `$["x]`, "$.1abc", "$[abc]", "$..", "$ .a", "$.a[]"} {
 		got, err := Query(d, p)
 		if err == nil || got != nil {
 			t.Errorf("%q: expected error, got %v %v", p, got, err)
 		}
 	}
+}
+
+func zzhDoc(t *testing.T, s string) any {
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		t.Fatal(err)
+	}
+	return v
 }

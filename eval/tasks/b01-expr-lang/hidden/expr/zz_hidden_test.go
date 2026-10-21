@@ -87,7 +87,7 @@ func TestHiddenFunctions(t *testing.T) {
 	}
 }
 
-func wantErr(t *testing.T, err error, pos int, msg string) {
+func zzhWantErr(t *testing.T, err error, pos int, msg string) {
 	t.Helper()
 	var e *Error
 	if !errors.As(err, &e) {
@@ -97,14 +97,14 @@ func wantErr(t *testing.T, err error, pos int, msg string) {
 	if e.Pos != pos || e.Msg != msg {
 		t.Errorf("got {%d,%q} want {%d,%q}", e.Pos, e.Msg, pos, msg)
 	}
-	if e.Error() != errorString(pos, msg) {
+	if e.Error() != zzhErrorString(pos, msg) {
 		t.Errorf("Error() = %q", e.Error())
 	}
 }
 
-func errorString(pos int, msg string) string { return itoa(pos) + ": " + msg }
+func zzhErrorString(pos int, msg string) string { return zzhItoa(pos) + ": " + msg }
 
-func itoa(n int) string {
+func zzhItoa(n int) string {
 	if n == 0 {
 		return "0"
 	}
@@ -118,38 +118,38 @@ func itoa(n int) string {
 
 func TestHiddenCompileErrors(t *testing.T) {
 	_, err := Compile("1 + $")
-	wantErr(t, err, 4, "unexpected character '$'")
+	zzhWantErr(t, err, 4, "unexpected character '$'")
 	_, err = Compile("(1 + 2")
-	wantErr(t, err, 6, `expected ")"`)
+	zzhWantErr(t, err, 6, `expected ")"`)
 	_, err = Compile("1 ? 2 3")
-	wantErr(t, err, 6, `expected ":"`)
+	zzhWantErr(t, err, 6, `expected ":"`)
 	_, err = Compile("   ")
-	wantErr(t, err, 3, "unexpected end of input")
+	zzhWantErr(t, err, 3, "unexpected end of input")
 	_, err = Compile("1 2")
-	wantErr(t, err, 2, `unexpected token "2"`)
+	zzhWantErr(t, err, 2, `unexpected token "2"`)
 	_, err = Compile("1 + * 2")
-	wantErr(t, err, 4, `unexpected token "*"`)
+	zzhWantErr(t, err, 4, `unexpected token "*"`)
 	_, err = Compile("foo(1)")
-	wantErr(t, err, 0, `unknown function "foo"`)
+	zzhWantErr(t, err, 0, `unknown function "foo"`)
 	_, err = Compile("1 + clamp(1, 2)")
-	wantErr(t, err, 4, `function "clamp" expects 3 arguments, got 2`)
+	zzhWantErr(t, err, 4, `function "clamp" expects 3 arguments, got 2`)
 	_, err = Compile("min()")
-	wantErr(t, err, 0, `function "min" expects at least 1 argument, got 0`)
+	zzhWantErr(t, err, 0, `function "min" expects at least 1 argument, got 0`)
 	_, err = Compile("2 *")
-	wantErr(t, err, 3, "unexpected end of input")
+	zzhWantErr(t, err, 3, "unexpected end of input")
 }
 
 func TestHiddenRuntimeErrors(t *testing.T) {
 	_, err := Eval("1 + 2 / (x - x)", map[string]float64{"x": 1})
-	wantErr(t, err, 6, "division by zero")
+	zzhWantErr(t, err, 6, "division by zero")
 	_, err = Eval("5 % 0", nil)
-	wantErr(t, err, 2, "division by zero")
+	zzhWantErr(t, err, 2, "division by zero")
 	_, err = Eval("a + bee", map[string]float64{"a": 1})
-	wantErr(t, err, 4, `unknown variable "bee"`)
+	zzhWantErr(t, err, 4, `unknown variable "bee"`)
 	_, err = Eval("1 + sqrt(-4)", nil)
-	wantErr(t, err, 4, "sqrt of negative number")
+	zzhWantErr(t, err, 4, "sqrt of negative number")
 	_, err = Eval("10 ^ 400", nil)
-	wantErr(t, err, 0, "result is not finite")
+	zzhWantErr(t, err, 0, "result is not finite")
 }
 
 func TestHiddenProgramReuseAndVars(t *testing.T) {

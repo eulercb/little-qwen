@@ -59,9 +59,9 @@ func TestHiddenLongLine(t *testing.T) {
 	}
 }
 
-type errReader struct{ n int }
+type zzhErrReader struct{ n int }
 
-func (e *errReader) Read(p []byte) (int, error) {
+func (e *zzhErrReader) Read(p []byte) (int, error) {
 	if e.n == 0 {
 		e.n++
 		return copy(p, "hello world "), nil
@@ -70,7 +70,7 @@ func (e *errReader) Read(p []byte) (int, error) {
 }
 
 func TestHiddenReadError(t *testing.T) {
-	_, err := TopK(&errReader{}, 2, nil)
+	_, err := TopK(&zzhErrReader{}, 2, nil)
 	if err == nil || err == io.EOF || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("err = %v", err)
 	}

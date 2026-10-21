@@ -1,0 +1,458 @@
+ ratelimit/limiter.go        | 104 ++++++++++++++++++++++
+ ratelimit/limiter_test.go   | 208 ++++++++++++++++++++++++++++++++++++++++++++
+ ratelimit/zz_hidden_test.go | 123 ++++++++++++++++++++++++++
+ 3 files changed, 435 insertions(+)
+
+diff --git a/ratelimit/limiter.go b/ratelimit/limiter.go
+new file mode 100644
+index 0000000..a4279f2
+--- /dev/null
++++ b/ratelimit/limiter.go
+@@ -0,0 +1,104 @@
++package ratelimit
++
++import (
++	"sync"
++	"time"
++)
++
++// Limiter is a token-bucket rate limiter. Tokens refill continuously at
++// rate tokens per second, capped at burst. Safe for concurrent use.
++type Limiter struct {
++	rate  float64
++	burst int
++	clk   Clock
++
++	mu     sync.Mutex
++	tokens float64
++	last   time.Time
++}
++
++// New creates a Limiter that adds rate tokens per second, up to burst.
++// The bucket starts full. If clk is nil the real clock is used.
++// It panics if rate <= 0 or burst < 1.
++func New(rate float64, burst int, clk Clock) *Limiter {
++	if rate <= 0 {
++		panic("ratelimit: rate must be positive")
++	}
++	if burst < 1 {
++		panic("ratelimit: burst must be at least 1")
++	}
++	if clk == nil {
++		clk = RealClock
++	}
++	now := clk.Now()
++	return &Limiter{
++		rate:   rate,
++		burst:  burst,
++		clk:    clk,
++		tokens: float64(burst),
++		last:   now,
++	}
++}
++
++// refill adds tokens accumulated since the last operation.
++// Callers must hold l.mu.
++func (l *Limiter) refill(now time.Time) {
++	elapsed := now.Sub(l.last)
++	if elapsed <= 0 {
++		return
++	}
++	l.last = now
++	l.tokens += elapsed.Seconds() * l.rate
++	if l.tokens > float64(l.burst) {
++		l.tokens = float64(l.burst)
++	}
++}
++
++// Allow takes one token if available and reports whether it was allowed.
++func (l *Limiter) Allow() bool {
++	return l.AllowN(1)
++}
++
++// AllowN atomically takes n tokens if all are available.
++// n > burst always returns false; n <= 0 returns true and takes nothing.
++func (l *Limiter) AllowN(n int) bool {
++	if n <= 0 {
++		return true
++	}
++	l.mu.Lock()
++	defer l.mu.Unlock()
++	if n > l.burst {
++		return false
++	}
++	l.refill(l.clk.Now())
++	if l.tokens >= float64(n) {
++		l.tokens -= float64(n)
++		return true
++	}
++	return false
++}
++
++// Tokens reports the currently available tokens after refilling up to now.
++func (l *Limiter) Tokens() float64 {
++	l.mu.Lock()
++	defer l.mu.Unlock()
++	l.refill(l.clk.Now())
++	return l.tokens
++}
++
++// Reserve takes one token now even if that makes the balance negative and
++// returns how long the caller must wait until that token would have been
++// available (0 if one was available immediately).
++func (l *Limiter) Reserve() time.Duration {
++	l.mu.Lock()
++	defer l.mu.Unlock()
++	now := l.clk.Now()
++	l.refill(now)
++	var wait time.Duration
++	if l.tokens < 1 {
++		wait = time.Duration((1 - l.tokens) / l.rate * float64(time.Second))
++	}
++	l.tokens--
++	l.last = now
++	return wait
++}
+diff --git a/ratelimit/limiter_test.go b/ratelimit/limiter_test.go
+new file mode 100644
+index 0000000..2840dd1
+--- /dev/null
++++ b/ratelimit/limiter_test.go
+@@ -0,0 +1,208 @@
++package ratelimit
++
++import (
++	"sync"
++	"testing"
++	"time"
++)
++
++// fakeClock is a manually advanced clock for tests.
++type fakeClock struct {
++	mu  sync.Mutex
++	now time.Time
++}
++
++func newFakeClock() *fakeClock { return &fakeClock{now: time.Unix(0, 0)} }
++
++func (c *fakeClock) Now() time.Time {
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	return c.now
++}
++
++// Advance moves the fake clock forward.
++func (c *fakeClock) Advance(d time.Duration) {
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	c.now = c.now.Add(d)
++}
++
++func newTestLimiter(rate float64, burst int) (*Limiter, *fakeClock) {
++	clk := newFakeClock()
++	return New(rate, burst, clk), clk
++}
++
++func TestPanicOnBadArgs(t *testing.T) {
++	clk := newFakeClock()
++	for _, tc := range []struct {
++		name  string
++		rate  float64
++		burst int
++	}{
++		{"zero rate", 0, 5},
++		{"negative rate", -1, 5},
++		{"zero burst", 10, 0},
++		{"negative burst", 10, -3},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			defer func() {
++				if recover() == nil {
++					t.Fatalf("New(%v, %v) did not panic", tc.rate, tc.burst)
++				}
++			}()
++			New(tc.rate, tc.burst, clk)
++		})
++	}
++}
++
++func TestNewWithNilClock(t *testing.T) {
++	l := New(1, 1, nil)
++	if got := l.Tokens(); got != 1 {
++		t.Fatalf("Tokens() = %v, want 1", got)
++	}
++}
++
++func TestStartsFull(t *testing.T) {
++	l, _ := newTestLimiter(1, 5)
++	if got := l.Tokens(); got != 5 {
++		t.Fatalf("Tokens() = %v, want 5", got)
++	}
++}
++
++func TestAllowDrains(t *testing.T) {
++	l, clk := newTestLimiter(1, 3) // 1 token/sec, burst 3
++	for i := 0; i < 3; i++ {
++		if !l.Allow() {
++			t.Fatalf("Allow %d: got false, want true", i+1)
++		}
++	}
++	if l.Allow() {
++		t.Fatal("Allow after burst drained: got true, want false")
++	}
++	clk.Advance(1 * time.Second)
++	if !l.Allow() {
++		t.Fatal("Allow after 1s refill: got false, want true")
++	}
++	if l.Allow() {
++		t.Fatal("second Allow without refill: got true, want false")
++	}
++}
++
++func TestFractionalRefill(t *testing.T) {
++	l, clk := newTestLimiter(10, 1) // 10 tokens/sec
++	l.Allow()
++	if l.Allow() {
++		t.Fatal("immediately after drain: got true, want false")
++	}
++	clk.Advance(100 * time.Millisecond) // +1 token
++	if !l.Allow() {
++		t.Fatal("after 100ms at 10/sec: got false, want true")
++	}
++	clk.Advance(50 * time.Millisecond) // +0.5 token
++	if l.Allow() {
++		t.Fatal("after only 0.5 refilled: got true, want false")
++	}
++}
++
++func TestCapAtBurst(t *testing.T) {
++	l, clk := newTestLimiter(1, 2)
++	clk.Advance(1 * time.Hour)
++	if got := l.Tokens(); got != 2 {
++		t.Fatalf("Tokens() after long idle = %v, want 2 (capped)", got)
++	}
++}
++
++func TestAllowN(t *testing.T) {
++	l, _ := newTestLimiter(1, 3)
++	if !l.AllowN(2) {
++		t.Fatal("AllowN(2) on full bucket: got false, want true")
++	}
++	if !l.AllowN(1) {
++		t.Fatal("AllowN(1) after 2 taken: got false, want true")
++	}
++	if l.AllowN(1) {
++		t.Fatal("AllowN(1) on empty bucket: got true, want false")
++	}
++	if l.AllowN(4) {
++		t.Fatal("AllowN(4) > burst: got true, want false")
++	}
++	if !l.AllowN(0) {
++		t.Fatal("AllowN(0): got false, want true")
++	}
++	if !l.AllowN(-5) {
++		t.Fatal("AllowN(-5): got false, want true")
++	}
++	if got := l.Tokens(); got != 0 {
++		t.Fatalf("Tokens() after AllowN(0/-5) = %v, want 0", got)
++	}
++}
++
++func TestReserve(t *testing.T) {
++	l, _ := newTestLimiter(1, 2)
++	if w := l.Reserve(); w != 0 {
++		t.Fatalf("Reserve with token available: wait = %v, want 0", w)
++	}
++	w := l.Reserve() // 1 token left -> immediate
++	if w != 0 {
++		t.Fatalf("Reserve with 1 token left: wait = %v, want 0", w)
++	}
++	w = l.Reserve() // empty, rate 1/s -> wait 1s
++	if w != 1*time.Second {
++		t.Fatalf("Reserve on empty bucket: wait = %v, want 1s", w)
++	}
++	if got := l.Tokens(); got != -1 {
++		t.Fatalf("Tokens() after overdraw = %v, want -1", got)
++	}
++}
++
++func TestReserveFractionalWait(t *testing.T) {
++	l, clk := newTestLimiter(4, 1) // 4 tokens/sec
++	l.Allow()
++	clk.Advance(150 * time.Millisecond) // 0.6 tokens refilled
++	w := l.Reserve()
++	if w != 100*time.Millisecond { // (1-0.6)/4 = 0.1s
++		t.Fatalf("Reserve wait = %v, want 100ms", w)
++	}
++	// Overdrawn balance means the token is gone.
++	if l.Allow() {
++		t.Fatal("Allow after negative balance: got true, want false")
++	}
++	// The reserved token was consumed, leaving a negative balance: not
++	// immediately available again.
++	clk.Advance(100 * time.Millisecond) // balance back to 0
++	if l.Allow() {
++		t.Fatal("Allow with 0 balance: got true, want false")
++	}
++	// 1.4 more tokens at 4/s (350ms) brings the balance to 1.
++	clk.Advance(250 * time.Millisecond)
++	if got := l.Tokens(); got != 1 {
++		t.Fatalf("Tokens() = %v, want 1", got)
++	}
++	if !l.Allow() {
++		t.Fatal("Allow with 1 token: got false, want true")
++	}
++}
++
++func TestConcurrentUse(t *testing.T) {
++	l, _ := newTestLimiter(100, 10)
++	var (
++		wg      sync.WaitGroup
++		mu      sync.Mutex
++		allowed int
++	)
++	for i := 0; i < 50; i++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			if l.AllowN(1) {
++				mu.Lock()
++				allowed++
++				mu.Unlock()
++			}
++		}()
++	}
++	wg.Wait()
++	if allowed != 10 {
++		t.Fatalf("concurrent allowed = %d, want 10 (burst)", allowed)
++	}
++}
+diff --git a/ratelimit/zz_hidden_test.go b/ratelimit/zz_hidden_test.go
+new file mode 100644
+index 0000000..2e03d2b
+--- /dev/null
++++ b/ratelimit/zz_hidden_test.go
+@@ -0,0 +1,123 @@
++package ratelimit
++
++import (
++	"math"
++	"sync"
++	"testing"
++	"time"
++)
++
++type fakeClock struct {
++	mu sync.Mutex
++	t  time.Time
++}
++
++func (f *fakeClock) Now() time.Time { f.mu.Lock(); defer f.mu.Unlock(); return f.t }
++func (f *fakeClock) Add(d time.Duration) { f.mu.Lock(); f.t = f.t.Add(d); f.mu.Unlock() }
++
++func near(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
++
++func TestHiddenBurstThenRefill(t *testing.T) {
++	c := &fakeClock{t: time.Unix(1000, 0)}
++	l := New(2, 3, c)
++	for i := 0; i < 3; i++ {
++		if !l.Allow() {
++			t.Fatalf("burst %d denied", i)
++		}
++	}
++	if l.Allow() {
++		t.Fatal("should be empty")
++	}
++	c.Add(250 * time.Millisecond)
++	if l.Allow() || !near(l.Tokens(), 0.5) {
++		t.Fatalf("tokens = %v", l.Tokens())
++	}
++	c.Add(250 * time.Millisecond)
++	if !l.Allow() {
++		t.Fatal("refilled token denied")
++	}
++	c.Add(time.Hour)
++	if !near(l.Tokens(), 3) {
++		t.Fatalf("cap: %v", l.Tokens())
++	}
++}
++
++func TestHiddenAllowN(t *testing.T) {
++	c := &fakeClock{t: time.Unix(0, 0)}
++	l := New(1, 5, c)
++	if l.AllowN(6) {
++		t.Fatal("n > burst")
++	}
++	if !l.AllowN(0) || !near(l.Tokens(), 5) {
++		t.Fatal("n=0")
++	}
++	if !l.AllowN(4) || l.AllowN(2) || !near(l.Tokens(), 1) {
++		t.Fatalf("atomic AllowN: %v", l.Tokens())
++	}
++}
++
++func TestHiddenReserve(t *testing.T) {
++	c := &fakeClock{t: time.Unix(0, 0)}
++	l := New(4, 1, c)
++	if d := l.Reserve(); d != 0 {
++		t.Fatalf("first reserve %v", d)
++	}
++	if d := l.Reserve(); d != 250*time.Millisecond {
++		t.Fatalf("second reserve %v", d)
++	}
++	if d := l.Reserve(); d != 500*time.Millisecond {
++		t.Fatalf("third reserve %v", d)
++	}
++	if l.Allow() {
++		t.Fatal("debt must block Allow")
++	}
++	c.Add(750 * time.Millisecond)
++	if !near(l.Tokens(), 1) {
++		t.Fatalf("after debt paid: %v", l.Tokens())
++	}
++}
++
++func TestHiddenPanics(t *testing.T) {
++	for _, f := range []func(){func() { New(0, 1, nil) }, func() { New(1, 0, nil) }} {
++		func() {
++			defer func() {
++				if recover() == nil {
++					t.Error("expected panic")
++				}
++			}()
++			f()
++		}()
++	}
++}
++
++func TestHiddenConcurrent(t *testing.T) {
++	c := &fakeClock{t: time.Unix(0, 0)}
++	l := New(1, 100, c)
++	var wg sync.WaitGroup
++	var mu sync.Mutex
++	got := 0
++	for i := 0; i < 10; i++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for j := 0; j < 20; j++ {
++				if l.Allow() {
++					mu.Lock()
++					got++
++					mu.Unlock()
++				}
++			}
++		}()
++	}
++	wg.Wait()
++	if got != 100 {
++		t.Fatalf("allowed %d", got)
++	}
++}
++
++func TestHiddenNilClock(t *testing.T) {
++	l := New(1000, 1, nil)
++	if !l.Allow() {
++		t.Fatal("real clock")
++	}
++}

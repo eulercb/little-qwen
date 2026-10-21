@@ -7,18 +7,18 @@ import (
 	"time"
 )
 
-type fakeClock struct {
+type zzhFakeClock struct {
 	mu sync.Mutex
 	t  time.Time
 }
 
-func (f *fakeClock) Now() time.Time { f.mu.Lock(); defer f.mu.Unlock(); return f.t }
-func (f *fakeClock) Add(d time.Duration) { f.mu.Lock(); f.t = f.t.Add(d); f.mu.Unlock() }
+func (f *zzhFakeClock) Now() time.Time      { f.mu.Lock(); defer f.mu.Unlock(); return f.t }
+func (f *zzhFakeClock) Add(d time.Duration) { f.mu.Lock(); f.t = f.t.Add(d); f.mu.Unlock() }
 
-func near(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
+func zzhNear(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
 
 func TestHiddenBurstThenRefill(t *testing.T) {
-	c := &fakeClock{t: time.Unix(1000, 0)}
+	c := &zzhFakeClock{t: time.Unix(1000, 0)}
 	l := New(2, 3, c)
 	for i := 0; i < 3; i++ {
 		if !l.Allow() {
@@ -29,7 +29,7 @@ func TestHiddenBurstThenRefill(t *testing.T) {
 		t.Fatal("should be empty")
 	}
 	c.Add(250 * time.Millisecond)
-	if l.Allow() || !near(l.Tokens(), 0.5) {
+	if l.Allow() || !zzhNear(l.Tokens(), 0.5) {
 		t.Fatalf("tokens = %v", l.Tokens())
 	}
 	c.Add(250 * time.Millisecond)
@@ -37,27 +37,27 @@ func TestHiddenBurstThenRefill(t *testing.T) {
 		t.Fatal("refilled token denied")
 	}
 	c.Add(time.Hour)
-	if !near(l.Tokens(), 3) {
+	if !zzhNear(l.Tokens(), 3) {
 		t.Fatalf("cap: %v", l.Tokens())
 	}
 }
 
 func TestHiddenAllowN(t *testing.T) {
-	c := &fakeClock{t: time.Unix(0, 0)}
+	c := &zzhFakeClock{t: time.Unix(0, 0)}
 	l := New(1, 5, c)
 	if l.AllowN(6) {
 		t.Fatal("n > burst")
 	}
-	if !l.AllowN(0) || !near(l.Tokens(), 5) {
+	if !l.AllowN(0) || !zzhNear(l.Tokens(), 5) {
 		t.Fatal("n=0")
 	}
-	if !l.AllowN(4) || l.AllowN(2) || !near(l.Tokens(), 1) {
+	if !l.AllowN(4) || l.AllowN(2) || !zzhNear(l.Tokens(), 1) {
 		t.Fatalf("atomic AllowN: %v", l.Tokens())
 	}
 }
 
 func TestHiddenReserve(t *testing.T) {
-	c := &fakeClock{t: time.Unix(0, 0)}
+	c := &zzhFakeClock{t: time.Unix(0, 0)}
 	l := New(4, 1, c)
 	if d := l.Reserve(); d != 0 {
 		t.Fatalf("first reserve %v", d)
@@ -72,7 +72,7 @@ func TestHiddenReserve(t *testing.T) {
 		t.Fatal("debt must block Allow")
 	}
 	c.Add(750 * time.Millisecond)
-	if !near(l.Tokens(), 1) {
+	if !zzhNear(l.Tokens(), 1) {
 		t.Fatalf("after debt paid: %v", l.Tokens())
 	}
 }
@@ -91,7 +91,7 @@ func TestHiddenPanics(t *testing.T) {
 }
 
 func TestHiddenConcurrent(t *testing.T) {
-	c := &fakeClock{t: time.Unix(0, 0)}
+	c := &zzhFakeClock{t: time.Unix(0, 0)}
 	l := New(1, 100, c)
 	var wg sync.WaitGroup
 	var mu sync.Mutex

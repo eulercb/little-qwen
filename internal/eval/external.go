@@ -54,9 +54,8 @@ func RunExternal(ctx context.Context, agentCmd string, t TaskSpec, rep int, outD
 		o.CheckPassed = c == 0
 	}
 	res := &Result{TaskID: t.ID, Tier: t.Tier, Rep: rep, HarnessHash: "external", Outcome: o, Started: start.UTC().Format(time.RFC3339)}
+	saveDiff(ctx, work, outDir)
 	scoreHidden(ctx, t, work, res)
-	diff, _, _ := tools.Shell(ctx, work, RunEnv(work), "git add -A -- . ':!.qh' ':!opencode.json' >/dev/null 2>&1; git diff --cached --stat; echo; git diff --cached | head -c 60000", time.Minute)
-	_ = os.WriteFile(filepath.Join(outDir, "final.diff"), []byte(diff), 0o644)
 	b, _ := json.MarshalIndent(res, "", "  ")
 	return res, os.WriteFile(filepath.Join(outDir, "result.json"), b, 0o644)
 }

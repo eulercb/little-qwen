@@ -1,0 +1,500 @@
+ semver/semver.go         | 226 +++++++++++++++++++++++++++++++++++++++++++++++
+ semver/semver_test.go    | 194 ++++++++++++++++++++++++++++++++++++++++
+ semver/zz_hidden_test.go |  57 ++++++++++++
+ 3 files changed, 477 insertions(+)
+
+diff --git a/semver/semver.go b/semver/semver.go
+new file mode 100644
+index 0000000..e569584
+--- /dev/null
++++ b/semver/semver.go
+@@ -0,0 +1,226 @@
++// Package semver implements Semantic Versioning 2.0.0 parsing and precedence.
++//
++// See https://semver.org for the specification.
++package semver
++
++import (
++	"fmt"
++	"strconv"
++	"strings"
++)
++
++// Version is a parsed semantic version.
++type Version struct {
++	Major uint64
++	Minor uint64
++	Patch uint64
++	Pre   []string
++	Build []string
++}
++
++// Parse parses s as a semantic version. An optional leading "v" is accepted.
++// The version must have MAJOR.MINOR.PATCH numeric parts without leading
++// zeros. Pre-release and build identifiers must be non-empty, contain only
++// [0-9A-Za-z-], and numeric pre-release identifiers must not have leading
++// zeros. Build metadata is parsed but ignored by Compare.
++func Parse(s string) (Version, error) {
++	var v Version
++	rest := s
++	if strings.HasPrefix(rest, "v") {
++		rest = rest[1:]
++	}
++	// Split off build metadata.
++	if i := strings.IndexByte(rest, '+'); i >= 0 {
++		meta := rest[i+1:]
++		rest = rest[:i]
++		ids := strings.Split(meta, ".")
++		for _, id := range ids {
++			if err := checkIdentifier(id, false); err != nil {
++				return Version{}, fmt.Errorf("semver: invalid build metadata in %q: %w", s, err)
++			}
++		}
++		v.Build = ids
++	}
++	// Split off pre-release.
++	if i := strings.IndexByte(rest, '-'); i >= 0 {
++		pre := rest[i+1:]
++		rest = rest[:i]
++		ids := strings.Split(pre, ".")
++		for _, id := range ids {
++			if err := checkIdentifier(id, true); err != nil {
++				return Version{}, fmt.Errorf("semver: invalid pre-release in %q: %w", s, err)
++			}
++		}
++		v.Pre = ids
++	}
++	// Core numeric parts.
++	parts := strings.Split(rest, ".")
++	if len(parts) != 3 {
++		return Version{}, fmt.Errorf("semver: invalid version %q: expected MAJOR.MINOR.PATCH", s)
++	}
++	nums := make([]uint64, 3)
++	for i, p := range parts {
++		if err := checkNumeric(p); err != nil {
++			return Version{}, fmt.Errorf("semver: invalid version %q: %w", s, err)
++		}
++		n, err := strconv.ParseUint(p, 10, 64)
++		if err != nil {
++			return Version{}, fmt.Errorf("semver: invalid version %q: %w", s, err)
++		}
++		nums[i] = n
++	}
++	v.Major, v.Minor, v.Patch = nums[0], nums[1], nums[2]
++	return v, nil
++}
++
++// MustParse is like Parse but panics if s is invalid.
++func MustParse(s string) Version {
++	v, err := Parse(s)
++	if err != nil {
++		panic(err)
++	}
++	return v
++}
++
++// String returns the canonical string form of v, without the "v" prefix.
++func (v Version) String() string {
++	s := strconv.FormatUint(v.Major, 10) + "." +
++		strconv.FormatUint(v.Minor, 10) + "." +
++		strconv.FormatUint(v.Patch, 10)
++	if len(v.Pre) > 0 {
++		s += "-" + strings.Join(v.Pre, ".")
++	}
++	if len(v.Build) > 0 {
++		s += "+" + strings.Join(v.Build, ".")
++	}
++	return s
++}
++
++// Compare returns -1, 0, or +1 if a is lower than, equal to, or higher
++// than b in semantic version precedence. Build metadata is ignored.
++func Compare(a, b Version) int {
++	if c := compareUint(a.Major, b.Major); c != 0 {
++		return c
++	}
++	if c := compareUint(a.Minor, b.Minor); c != 0 {
++		return c
++	}
++	if c := compareUint(a.Patch, b.Patch); c != 0 {
++		return c
++	}
++	return comparePre(a.Pre, b.Pre)
++}
++
++func compareUint(a, b uint64) int {
++	switch {
++	case a < b:
++		return -1
++	case a > b:
++		return 1
++	default:
++		return 0
++	}
++}
++
++// comparePre compares pre-release identifier lists. A version without a
++// pre-release has higher precedence than the same version with one.
++// Identifiers are compared left to right: numeric identifiers numerically,
++// alphanumeric identifiers by ASCII order, numeric identifiers always lower
++// than alphanumeric ones, and a shorter list is lower when all preceding
++// identifiers are equal.
++func comparePre(a, b []string) int {
++	if len(a) == 0 && len(b) == 0 {
++		return 0
++	}
++	if len(a) == 0 {
++		return 1 // no pre-release outranks a pre-release
++	}
++	if len(b) == 0 {
++		return -1
++	}
++	for i := 0; i < len(a) && i < len(b); i++ {
++		if c := compareIdentifier(a[i], b[i]); c != 0 {
++			return c
++		}
++	}
++	switch {
++	case len(a) < len(b):
++		return -1
++	case len(a) > len(b):
++		return 1
++	default:
++		return 0
++	}
++}
++
++func compareIdentifier(a, b string) int {
++	an := isNumeric(a)
++	bn := isNumeric(b)
++	switch {
++	case an && bn:
++		return compareUint(parseUint(a), parseUint(b))
++	case an && !bn:
++		return -1
++	case !an && bn:
++		return 1
++	default:
++		switch {
++		case a < b:
++			return -1
++		case a > b:
++			return 1
++		default:
++			return 0
++		}
++	}
++}
++
++func isNumeric(s string) bool {
++	if s == "" {
++		return false
++	}
++	for _, c := range s {
++		if c < '0' || c > '9' {
++			return false
++		}
++	}
++	return true
++}
++
++func parseUint(s string) uint64 {
++	var n uint64
++	for i := 0; i < len(s); i++ {
++		n = n*10 + uint64(s[i]-'0')
++	}
++	return n
++}
++
++func checkNumeric(s string) error {
++	if s == "" {
++		return fmt.Errorf("missing numeric part")
++	}
++	for i, c := range s {
++		if c < '0' || c > '9' {
++			return fmt.Errorf("invalid character %q in numeric part %q", c, s)
++		}
++		if i == 0 && c == '0' && len(s) > 1 {
++			return fmt.Errorf("leading zero in numeric part %q", s)
++		}
++	}
++	return nil
++}
++
++func checkIdentifier(s string, pre bool) error {
++	if s == "" {
++		return fmt.Errorf("empty identifier")
++	}
++	for _, c := range s {
++		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '-') {
++			return fmt.Errorf("invalid character %q in identifier %q", c, s)
++		}
++	}
++	if pre && len(s) > 1 && s[0] == '0' && s[1] >= '0' && s[1] <= '9' && isNumeric(s) {
++		return fmt.Errorf("leading zero in numeric pre-release identifier %q", s)
++	}
++	return nil
++}
+diff --git a/semver/semver_test.go b/semver/semver_test.go
+new file mode 100644
+index 0000000..c0910b8
+--- /dev/null
++++ b/semver/semver_test.go
+@@ -0,0 +1,194 @@
++package semver
++
++import (
++	"testing"
++)
++
++func TestParseValid(t *testing.T) {
++	tests := []struct {
++		in   string
++		maj  uint64
++		min  uint64
++		pat  uint64
++		pre  []string
++		bild []string
++	}{
++		{"1.2.3", 1, 2, 3, nil, nil},
++		{"v1.2.3", 1, 2, 3, nil, nil},
++		{"0.0.0", 0, 0, 0, nil, nil},
++		{"1.0.0-alpha", 1, 0, 0, []string{"alpha"}, nil},
++		{"1.0.0-0", 1, 0, 0, []string{"0"}, nil},
++		{"1.0.0-0.3.7", 1, 0, 0, []string{"0", "3", "7"}, nil},
++		{"1.0.0-x.7.z.92", 1, 0, 0, []string{"x", "7", "z", "92"}, nil},
++		{"1.0.0-alpha-1", 1, 0, 0, []string{"alpha-1"}, nil},
++		{"1.0.0+20130313144700", 1, 0, 0, nil, []string{"20130313144700"}},
++		{"1.0.0-beta+exp.sha.5114f85", 1, 0, 0, []string{"beta"}, []string{"exp", "sha", "5114f85"}},
++		{"v1.0.0-rc.1+build.5", 1, 0, 0, []string{"rc", "1"}, []string{"build", "5"}},
++		{"10.20.30", 10, 20, 30, nil, nil},
++	}
++	for _, tc := range tests {
++		v, err := Parse(tc.in)
++		if err != nil {
++			t.Errorf("Parse(%q) unexpected error: %v", tc.in, err)
++			continue
++		}
++		if v.Major != tc.maj || v.Minor != tc.min || v.Patch != tc.pat {
++			t.Errorf("Parse(%q) = %v, want %d.%d.%d", tc.in, v, tc.maj, tc.min, tc.pat)
++		}
++		if !equalStrs(v.Pre, tc.pre) {
++			t.Errorf("Parse(%q).Pre = %v, want %v", tc.in, v.Pre, tc.pre)
++		}
++		if !equalStrs(v.Build, tc.bild) {
++			t.Errorf("Parse(%q).Build = %v, want %v", tc.in, v.Build, tc.bild)
++		}
++	}
++}
++
++func TestParseInvalid(t *testing.T) {
++	invalid := []string{
++		"",                 // empty
++		"v",                // only the prefix
++		"1",                // missing parts
++		"1.2",              // missing parts
++		"1.2.3.4",          // extra part
++		"01.2.3",           // leading zero major
++		"1.02.3",           // leading zero minor
++		"1.2.03",           // leading zero patch
++		"1.2.3-01",         // leading zero in numeric pre-release id
++		"1.2.3-alpha..1",   // empty identifier
++		"1.2.3..4",         // empty core identifier
++		"1.2.3-alpha_beta", // invalid character
++		"1.2.3+b_ui-ld",    // invalid character in build
++		"1.2.3-+",          // empty pre and build
++		"1.2.3-beta+",      // trailing empty build id
++		"v1.2.3-",          // trailing empty pre id
++		"-1.2.3",           // bad prefix
++		"1.2.-3",           // leading dash in core
++		"1..3",             // empty minor
++	}
++	for _, in := range invalid {
++		if _, err := Parse(in); err == nil {
++			t.Errorf("Parse(%q) succeeded, want error", in)
++		}
++	}
++}
++
++func equalStrs(a, b []string) bool {
++	if len(a) != len(b) {
++		return false
++	}
++	for i := range a {
++		if a[i] != b[i] {
++			return false
++		}
++	}
++	return true
++}
++
++func TestString(t *testing.T) {
++	tests := []struct {
++		in   string
++		want string
++	}{
++		{"1.2.3", "1.2.3"},
++		{"v1.2.3", "1.2.3"},
++		{"1.0.0-alpha", "1.0.0-alpha"},
++		{"1.0.0-alpha.1", "1.0.0-alpha.1"},
++		{"1.0.0+build.5", "1.0.0+build.5"},
++		{"1.0.0-rc.1+b.2", "1.0.0-rc.1+b.2"},
++	}
++	for _, tc := range tests {
++		v, err := Parse(tc.in)
++		if err != nil {
++			t.Fatalf("Parse(%q): %v", tc.in, err)
++		}
++		got := v.String()
++		if got != tc.want {
++			t.Errorf("String of %q = %q, want %q", tc.in, got, tc.want)
++		}
++		// Round-trip must be stable.
++		v2, err := Parse(got)
++		if err != nil {
++			t.Fatalf("re-parse of %q: %v", got, err)
++		}
++		if v2.String() != got {
++			t.Errorf("round-trip of %q changed to %q", got, v2.String())
++		}
++	}
++}
++
++func TestCompare(t *testing.T) {
++	// The canonical example ordering from the SemVer spec.
++	order := []string{
++		"1.0.0-alpha",
++		"1.0.0-alpha.1",
++		"1.0.0-alpha.beta",
++		"1.0.0-beta",
++		"1.0.0-beta.2",
++		"1.0.0-beta.11",
++		"1.0.0-rc.1",
++		"1.0.0",
++	}
++	for i := 0; i < len(order); i++ {
++		for j := i + 1; j < len(order); j++ {
++			a := MustParse(order[i])
++			b := MustParse(order[j])
++			if got := Compare(a, b); got != -1 {
++				t.Errorf("Compare(%s, %s) = %d, want -1", a, b, got)
++			}
++			if got := Compare(b, a); got != 1 {
++				t.Errorf("Compare(%s, %s) = %d, want 1", b, a, got)
++			}
++		}
++	}
++}
++
++func TestCompareEquality(t *testing.T) {
++	pairs := [][2]string{
++		{"1.2.3", "1.2.3"},
++		{"v1.2.3", "1.2.3"},
++		{"1.0.0+build.1", "1.0.0+build.2"}, // build metadata ignored
++		{"1.0.0-alpha+exp", "1.0.0-alpha+exp.sha"},
++	}
++	for _, p := range pairs {
++		a, errA := Parse(p[0])
++		b, errB := Parse(p[1])
++		if errA != nil || errB != nil {
++			t.Fatalf("parse %q / %q: %v / %v", p[0], p[1], errA, errB)
++		}
++		if got := Compare(a, b); got != 0 {
++			t.Errorf("Compare(%s, %s) = %d, want 0", a, b, got)
++		}
++	}
++}
++
++func TestCompareNumericParts(t *testing.T) {
++	cases := []struct {
++		a, b string
++		want int
++	}{
++		{"2.0.0", "1.9.9", 1},
++		{"1.2.0", "1.10.0", -1}, // 2 < 10 numerically
++		{"1.0.2", "1.0.10", -1},
++		{"1.0.0", "2.0.0-alpha", -1},
++		{"1.0.0", "1.0.1-alpha", -1},
++		{"1.0.1-alpha", "1.0.1", -1}, // pre-release lower than release
++		{"1.0.0-1", "1.0.0-2", -1},   // numeric pre ids numerically
++		{"1.0.0-1", "1.0.0-alpha", -1},
++	}
++	for _, tc := range cases {
++		a, b := MustParse(tc.a), MustParse(tc.b)
++		if got := Compare(a, b); got != tc.want {
++			t.Errorf("Compare(%s, %s) = %d, want %d", tc.a, tc.b, got, tc.want)
++		}
++	}
++}
++
++func TestMustParsePanics(t *testing.T) {
++	defer func() {
++		if recover() == nil {
++			t.Error("MustParse(1.2) did not panic")
++		}
++	}()
++	MustParse("1.2")
++}
+diff --git a/semver/zz_hidden_test.go b/semver/zz_hidden_test.go
+new file mode 100644
+index 0000000..cd4a3ad
+--- /dev/null
++++ b/semver/zz_hidden_test.go
+@@ -0,0 +1,57 @@
++package semver
++
++import (
++	"reflect"
++	"testing"
++)
++
++func TestHiddenParseValid(t *testing.T) {
++	v, err := Parse("v1.2.3-alpha.1+build.5")
++	if err != nil {
++		t.Fatal(err)
++	}
++	if v.Major != 1 || v.Minor != 2 || v.Patch != 3 || !reflect.DeepEqual(v.Pre, []string{"alpha", "1"}) || !reflect.DeepEqual(v.Build, []string{"build", "5"}) {
++		t.Fatalf("%+v", v)
++	}
++	if v.String() != "1.2.3-alpha.1+build.5" {
++		t.Fatal(v.String())
++	}
++	for _, s := range []string{"0.0.0", "1.0.0-0A.is.legal", "1.0.0+001", "1.0.0-x-y-z.--", "10.20.30"} {
++		if _, err := Parse(s); err != nil {
++			t.Errorf("%s: %v", s, err)
++		}
++	}
++}
++
++func TestHiddenParseInvalid(t *testing.T) {
++	for _, s := range []string{"1.2", "1.2.3.4", "01.2.3", "1.02.3", "1.0.0-01", "1.0.0-alpha..1", "1.0.0-al$pha", "", "a.b.c", "1.0.0+", "1.0.0-"} {
++		if _, err := Parse(s); err == nil {
++			t.Errorf("%q: expected error", s)
++		}
++	}
++}
++
++func TestHiddenPrecedenceChain(t *testing.T) {
++	chain := []string{"1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.0.1", "1.1.0", "2.0.0"}
++	for i := 0; i+1 < len(chain); i++ {
++		a, b := MustParse(chain[i]), MustParse(chain[i+1])
++		if Compare(a, b) != -1 || Compare(b, a) != 1 {
++			t.Errorf("%s < %s failed", chain[i], chain[i+1])
++		}
++	}
++}
++
++func TestHiddenBuildIgnored(t *testing.T) {
++	if Compare(MustParse("1.0.0+a"), MustParse("1.0.0+b")) != 0 {
++		t.Fatal("build metadata must be ignored")
++	}
++}
++
++func TestHiddenMustParsePanics(t *testing.T) {
++	defer func() {
++		if recover() == nil {
++			t.Fatal("no panic")
++		}
++	}()
++	MustParse("nope")
++}

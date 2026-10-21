@@ -10,21 +10,21 @@ import (
 	"time"
 )
 
-type clk struct {
+type zzhClk struct {
 	mu sync.Mutex
 	t  time.Time
 }
 
-func (c *clk) now() time.Time      { c.mu.Lock(); defer c.mu.Unlock(); return c.t }
-func (c *clk) add(d time.Duration) { c.mu.Lock(); c.t = c.t.Add(d); c.mu.Unlock() }
+func (c *zzhClk) now() time.Time      { c.mu.Lock(); defer c.mu.Unlock(); return c.t }
+func (c *zzhClk) add(d time.Duration) { c.mu.Lock(); c.t = c.t.Add(d); c.mu.Unlock() }
 
-func newS() (*Store, *clk) {
-	c := &clk{t: time.Unix(1_700_000_000, 0)}
+func zzhNewS() (*Store, *zzhClk) {
+	c := &zzhClk{t: time.Unix(1_700_000_000, 0)}
 	return New(c.now), c
 }
 
 func TestHiddenExpiry(t *testing.T) {
-	s, c := newS()
+	s, c := zzhNewS()
 	s.Set("a", "1", 10*time.Second)
 	s.Set("b", "2", 0)
 	if s.TTL("a") != 10*time.Second || s.TTL("b") != -1 || s.TTL("zz") != -2 {
@@ -43,7 +43,7 @@ func TestHiddenExpiry(t *testing.T) {
 }
 
 func TestHiddenExpirePersist(t *testing.T) {
-	s, c := newS()
+	s, c := zzhNewS()
 	if s.Expire("nope", time.Second) {
 		t.Fatal("expire missing")
 	}
@@ -67,7 +67,7 @@ func TestHiddenExpirePersist(t *testing.T) {
 }
 
 func TestHiddenDelIncr(t *testing.T) {
-	s, c := newS()
+	s, c := zzhNewS()
 	s.Set("a", "1", 0)
 	s.Set("b", "x", time.Second)
 	c.add(time.Second)
@@ -92,7 +92,7 @@ func TestHiddenDelIncr(t *testing.T) {
 }
 
 func TestHiddenKeysGlob(t *testing.T) {
-	s, c := newS()
+	s, c := zzhNewS()
 	for _, k := range []string{"user:1", "user:2", "user:10", "users", "a/b/c", "x*y", "cat", "cot", "cut", "c[t"} {
 		s.Set(k, "v", 0)
 	}
@@ -123,7 +123,7 @@ func TestHiddenKeysGlob(t *testing.T) {
 }
 
 func TestHiddenSnapshot(t *testing.T) {
-	s, c := newS()
+	s, c := zzhNewS()
 	s.Set("b", "2", 0)
 	s.Set("a", "1", 90*time.Second)
 	s.Set("gone", "x", time.Second)
@@ -136,7 +136,7 @@ func TestHiddenSnapshot(t *testing.T) {
 	if !strings.Contains(out, `"version":1`) || strings.Contains(out, "gone") || strings.Index(out, `"a"`) > strings.Index(out, `"b"`) {
 		t.Fatalf("snapshot %s", out)
 	}
-	s2, c2 := newS()
+	s2, c2 := zzhNewS()
 	c2.t = c.t
 	s2.Set("old", "x", 0)
 	if err := s2.Load(strings.NewReader(out)); err != nil {
@@ -146,7 +146,7 @@ func TestHiddenSnapshot(t *testing.T) {
 		t.Fatalf("load: len=%d ttl=%v", s2.Len(), s2.TTL("a"))
 	}
 	c2.add(100 * time.Second)
-	s3, c3 := newS()
+	s3, c3 := zzhNewS()
 	c3.t = c2.t
 	s3.Load(strings.NewReader(out))
 	if s3.Exists("a") || !s3.Exists("b") {
@@ -158,7 +158,7 @@ func TestHiddenSnapshot(t *testing.T) {
 }
 
 func TestHiddenConcurrent(t *testing.T) {
-	s, _ := newS()
+	s, _ := zzhNewS()
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)

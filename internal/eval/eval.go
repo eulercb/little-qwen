@@ -89,6 +89,8 @@ type Result struct {
 	Outcome     loop.Outcome `json:"outcome"`
 	Started     string       `json:"started"`
 	HiddenOut   string       `json:"hidden_output"`
+	Work        string       `json:"work,omitempty"`
+	Rescored    bool         `json:"rescored,omitempty"`
 }
 
 func copyTree(src, dst string) error {
@@ -175,11 +177,10 @@ func RunOne(ctx context.Context, c *llm.Client, h *harness.Harness, t TaskSpec, 
 	ag.Log = logf
 	started := time.Now().UTC().Format(time.RFC3339)
 	o := ag.Run(ctx)
-	res := &Result{TaskID: t.ID, Tier: t.Tier, Rep: rep, HarnessHash: h.Hash, Outcome: o, Started: started}
+	res := &Result{TaskID: t.ID, Tier: t.Tier, Rep: rep, HarnessHash: h.Hash, Outcome: o, Started: started, Work: work}
+	// Keep the final diff as an artifact (before hidden files are copied in).
+	saveDiff(ctx, work, outDir)
 	scoreHidden(ctx, t, work, res)
-	// Keep the final diff as an artifact.
-	diff, _, _ := tools.Shell(ctx, work, env.RunEnv, "git add -A -- . ':!.qh' >/dev/null 2>&1; git diff --cached --stat; echo; git diff --cached | head -c 60000", time.Minute)
-	_ = os.WriteFile(filepath.Join(outDir, "final.diff"), []byte(diff), 0o644)
 	b, _ := json.MarshalIndent(res, "", "  ")
 	if err := os.WriteFile(filepath.Join(outDir, "result.json"), b, 0o644); err != nil {
 		return nil, err
@@ -289,4 +290,45 @@ func tailLines(s string, n int) string {
 		lines = lines[len(lines)-n:]
 	}
 	return strings.Join(lines, "\n")
+}
+
+func saveDiff(ctx context.Context, work, outDir string) {
+	diff, _, _ := tools.Shell(ctx, work, RunEnv(work), "git add -A -- . ':!.qh' ':!opencode.json' >/dev/null 2>&1; git diff --cached --stat; echo; git diff --cached | head -c 60000", time.Minute)
+	_ = os.WriteFile(filepath.Join(outDir, "final.diff"), []byte(diff), 0o644)
+}
+
+// Rescore re-runs hidden scoring for an existing result whose workdir still
+// exists (e.g. after fixing a hidden test). Hidden files are removed first so
+// the saved diff only shows the agent's work.
+func Rescore(ctx context.Context, t TaskSpec, resPath string) (*Result, error) {
+	b, err := os.ReadFile(resPath)
+	if err != nil {
+		return nil, err
+	}
+	var r Result
+	if err := json.Unmarshal(b, &r); err != nil {
+		return nil, err
+	}
+	if r.Work == "" {
+		return nil, fmt.Errorf("%s: no workdir recorded", resPath)
+	}
+	if _, err := os.Stat(r.Work); err != nil {
+		return nil, fmt.Errorf("workdir gone: %w", err)
+	}
+	hidden := filepath.Join(t.Dir, "hidden")
+	_ = filepath.WalkDir(hidden, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			rel, _ := filepath.Rel(hidden, p)
+			_ = os.Remove(filepath.Join(r.Work, rel))
+		}
+		return nil
+	})
+	// Older runs copied hidden tests under their old names too.
+	_, _, _ = tools.Shell(ctx, r.Work, RunEnv(r.Work), "find . -name 'zz_hidden_test.go' -not -path './.git/*' -delete", time.Minute)
+	saveDiff(ctx, r.Work, filepath.Dir(resPath))
+	r.Success, r.Score, r.TestsPassed, r.TestsTotal, r.HiddenOut = false, 0, 0, 0, ""
+	scoreHidden(ctx, t, r.Work, &r)
+	r.Rescored = true
+	nb, _ := json.MarshalIndent(&r, "", "  ")
+	return &r, os.WriteFile(resPath, nb, 0o644)
 }

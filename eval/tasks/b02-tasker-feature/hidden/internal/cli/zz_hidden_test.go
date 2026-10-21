@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"strings"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestHiddenAddWithTagsAndDue(t *testing.T) {
-	h := newHarness(t)
+	h := zzhNewHarness(t)
 	if _, e, code := h.run("add", "-p", "2", "--tag", "Home", "--tag=money", "--due", "2026-04-15", "file", "taxes"); code != 0 {
 		t.Fatalf("add: %d %s", code, e)
 	}
@@ -25,7 +26,7 @@ func TestHiddenAddWithTagsAndDue(t *testing.T) {
 }
 
 func TestHiddenBadInputs(t *testing.T) {
-	h := newHarness(t)
+	h := zzhNewHarness(t)
 	for _, args := range [][]string{
 		{"add", "--due", "2026-13-01", "x"},
 		{"add", "--due", "tomorrow", "x"},
@@ -41,18 +42,18 @@ func TestHiddenBadInputs(t *testing.T) {
 	if _, _, code := h.run("edit", "1", "--tag", "no!"); code != 2 {
 		t.Errorf("edit bad tag: exit %d", code)
 	}
-	if !errorsIsBadTag() {
+	if !zzhErrorsIsBadTag() {
 		t.Error("model.ErrBadTag not returned by Validate")
 	}
 }
 
-func errorsIsBadTag() bool {
+func zzhErrorsIsBadTag() bool {
 	tk := model.Task{Title: "x", Priority: 3, Tags: []string{"a b"}}
 	return tk.Validate() == model.ErrBadTag
 }
 
 func TestHiddenEditTagsAndDue(t *testing.T) {
-	h := newHarness(t)
+	h := zzhNewHarness(t)
 	h.run("add", "--tag", "a", "--due", "2026-03-01", "task")
 	if _, e, code := h.run("edit", "1", "--tag", "B", "--untag", "a", "--untag", "zzz"); code != 0 {
 		t.Fatalf("edit: %s", e)
@@ -74,7 +75,7 @@ func TestHiddenEditTagsAndDue(t *testing.T) {
 }
 
 func TestHiddenListFilters(t *testing.T) {
-	h := newHarness(t)                                                           // today is 2026-03-10
+	h := zzhNewHarness(t)                                                        // today is 2026-03-10
 	h.run("add", "--tag", "work", "--due", "2026-03-09", "a")                    // 1 overdue
 	h.run("add", "--tag", "work", "--tag", "urgent", "--due", "2026-03-10", "b") // 2 due today, not overdue
 	h.run("add", "--tag", "home", "c")                                           // 3
@@ -94,17 +95,17 @@ func TestHiddenListFilters(t *testing.T) {
 		t.Fatalf("overdue %q", out)
 	}
 	out, _, _ = h.run("list", "--sort", "due")
-	ids := idsOf(out)
+	ids := zzhIdsOf(out)
 	if ids != "5,1,2,3" {
 		t.Fatalf("sort due: %s (%q)", ids, out)
 	}
 	out, _, _ = h.run("list", "--all", "--sort=due")
-	if idsOf(out) != "4,5,1,2,3" {
+	if zzhIdsOf(out) != "4,5,1,2,3" {
 		t.Fatalf("sort due all: %q", out)
 	}
 }
 
-func idsOf(out string) string {
+func zzhIdsOf(out string) string {
 	var ids []string
 	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
 		if l == "" {
@@ -117,7 +118,7 @@ func idsOf(out string) string {
 }
 
 func TestHiddenTagsCommand(t *testing.T) {
-	h := newHarness(t)
+	h := zzhNewHarness(t)
 	h.run("add", "--tag", "work", "a")
 	h.run("add", "--tag", "work", "--tag", "home", "b")
 	h.run("add", "--tag", "zeta", "c")
@@ -133,7 +134,7 @@ func TestHiddenTagsCommand(t *testing.T) {
 }
 
 func TestHiddenSchemaV1Migration(t *testing.T) {
-	h := newHarness(t)
+	h := zzhNewHarness(t)
 	v1 := `{"version":1,"next_id":3,"tasks":[{"id":1,"title":"old","priority":2,"done":false,"created":"2025-01-01T00:00:00Z"}]}`
 	if err := os.WriteFile(h.file, []byte(v1), 0o644); err != nil {
 		t.Fatal(err)
@@ -168,4 +169,20 @@ func TestHiddenSchemaV1Migration(t *testing.T) {
 	if strings.Count(string(data), `"tags"`) != 1 || strings.Count(string(data), `"due"`) != 1 {
 		t.Fatalf("omitempty: %s", data)
 	}
+}
+
+type zzhH struct {
+	t    *testing.T
+	file string
+	now  time.Time
+}
+
+func zzhNewHarness(t *testing.T) *zzhH {
+	return &zzhH{t: t, file: t.TempDir() + "/tasks.json", now: time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)}
+}
+
+func (h *zzhH) run(args ...string) (string, string, int) {
+	var out, errb bytes.Buffer
+	code := Run(args, Env{Stdout: &out, Stderr: &errb, File: h.file, Now: func() time.Time { return h.now }})
+	return out.String(), errb.String(), code
 }

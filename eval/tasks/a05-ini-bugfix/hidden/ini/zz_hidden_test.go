@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func mustGet(t *testing.T, f File, sec, key, want string) {
+func zzhMustGet(t *testing.T, f File, sec, key, want string) {
 	t.Helper()
 	got, ok := f.Get(sec, key)
 	if !ok || got != want {
@@ -19,8 +19,8 @@ func TestHiddenHashComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustGet(t, f, "a", "k", "v")
-	mustGet(t, f, "a", "c", "x#notcomment")
+	zzhMustGet(t, f, "a", "k", "v")
+	zzhMustGet(t, f, "a", "c", "x#notcomment")
 }
 
 func TestHiddenSectionCase(t *testing.T) {
@@ -28,7 +28,7 @@ func TestHiddenSectionCase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustGet(t, f, "mixed", "key", "1")
+	zzhMustGet(t, f, "mixed", "key", "1")
 	if _, ok := f["mixed"]; !ok {
 		t.Fatalf("section map keys: %v", f)
 	}
@@ -36,22 +36,22 @@ func TestHiddenSectionCase(t *testing.T) {
 
 func TestHiddenFirstEquals(t *testing.T) {
 	f, _ := Parse(strings.NewReader("expr = a=b=c\n"))
-	mustGet(t, f, "", "expr", "a=b=c")
+	zzhMustGet(t, f, "", "expr", "a=b=c")
 }
 
 func TestHiddenOverwrite(t *testing.T) {
 	f, _ := Parse(strings.NewReader("[s]\nk = 1\nk = 2\n"))
-	mustGet(t, f, "s", "k", "2")
+	zzhMustGet(t, f, "s", "k", "2")
 }
 
 func TestHiddenQuotedKeepsSpaceAndSemicolon(t *testing.T) {
 	f, _ := Parse(strings.NewReader(`v = "  a ; b  "` + "\n"))
-	mustGet(t, f, "", "v", "  a ; b  ")
+	zzhMustGet(t, f, "", "v", "  a ; b  ")
 }
 
 func TestHiddenSemicolonInsideValue(t *testing.T) {
 	f, _ := Parse(strings.NewReader("dsn = user;pass\n"))
-	mustGet(t, f, "", "dsn", "user;pass")
+	zzhMustGet(t, f, "", "dsn", "user;pass")
 }
 
 func TestHiddenSyntaxLine(t *testing.T) {

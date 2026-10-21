@@ -76,6 +76,7 @@ type Agent struct {
 	nudges   int
 	errSeen  map[string]int
 	start    time.Time
+	reviewed bool
 	prevProm int // prompt tokens of the previous request (for cache-loss accounting)
 }
 
@@ -373,6 +374,14 @@ func (a *Agent) verifyWrite(ctx context.Context, changed []string) string {
 func (a *Agent) finish(ctx context.Context, turn int, args tools.Args) (tools.Result, bool) {
 	summary, _ := args.Str("summary")
 	a.out.Summary = summary
+	if a.cfg.ReviewBeforeFinish && !a.IsSub && !a.reviewed {
+		a.reviewed = true
+		a.Tr.Event(trace.Event{Agent: a.Name, Turn: turn, Name: "finish_review"})
+		return tools.Result{OK: false, ErrorClass: "review_required", Output: "REVIEW REQUIRED before finishing (one time). Re-read the task statement above. " +
+			"Write a checklist of EVERY explicit requirement in it (signatures, edge cases, error conditions, output formats, files to update). " +
+			"For each item, say where it is implemented (file:line) and which test covers it. If any item is missing or untested, fix it and run the tests. " +
+			"Then call finish again."}, false
+	}
 	a.out.FinishAttempts++
 	if a.IsSub || a.Task.Check == "" || !a.cfg.CheckOnFinish {
 		a.out.Status = "finished"

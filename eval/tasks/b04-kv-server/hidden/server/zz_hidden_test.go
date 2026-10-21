@@ -12,7 +12,7 @@ import (
 	"example.com/kv/store"
 )
 
-func start(t *testing.T) (string, context.CancelFunc, chan error) {
+func zzhStart(t *testing.T) (string, context.CancelFunc, chan error) {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -24,7 +24,7 @@ func start(t *testing.T) (string, context.CancelFunc, chan error) {
 	return l.Addr().String(), cancel, done
 }
 
-func dial(t *testing.T, addr string) (net.Conn, *bufio.Reader) {
+func zzhDial(t *testing.T, addr string) (net.Conn, *bufio.Reader) {
 	c, err := net.Dial("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
@@ -34,9 +34,9 @@ func dial(t *testing.T, addr string) (net.Conn, *bufio.Reader) {
 }
 
 func TestHiddenPipelineAndQuit(t *testing.T) {
-	addr, cancel, done := start(t)
+	addr, cancel, done := zzhStart(t)
 	defer cancel()
-	c, r := dial(t, addr)
+	c, r := zzhDial(t, addr)
 	defer c.Close()
 	c.Write([]byte("SET a 1\r\nINCR a\nGET a\nQUIT\nPING\n"))
 	var got []string
@@ -62,14 +62,14 @@ func TestHiddenPipelineAndQuit(t *testing.T) {
 }
 
 func TestHiddenConcurrentClientsSharedStore(t *testing.T) {
-	addr, cancel, _ := start(t)
+	addr, cancel, _ := zzhStart(t)
 	defer cancel()
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c, r := dial(t, addr)
+			c, r := zzhDial(t, addr)
 			defer c.Close()
 			for j := 0; j < 50; j++ {
 				c.Write([]byte("INCR n\n"))
@@ -81,7 +81,7 @@ func TestHiddenConcurrentClientsSharedStore(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	c, r := dial(t, addr)
+	c, r := zzhDial(t, addr)
 	defer c.Close()
 	c.Write([]byte("GET n\n"))
 	if l, _ := r.ReadString('\n'); l != "$500\n" {
@@ -90,9 +90,9 @@ func TestHiddenConcurrentClientsSharedStore(t *testing.T) {
 }
 
 func TestHiddenLineTooLong(t *testing.T) {
-	addr, cancel, _ := start(t)
+	addr, cancel, _ := zzhStart(t)
 	defer cancel()
-	c, r := dial(t, addr)
+	c, r := zzhDial(t, addr)
 	defer c.Close()
 	go c.Write([]byte("SET k " + strings.Repeat("x", 70*1024) + "\n"))
 	l, _ := r.ReadString('\n')
@@ -105,8 +105,8 @@ func TestHiddenLineTooLong(t *testing.T) {
 }
 
 func TestHiddenCancelClosesIdleConnections(t *testing.T) {
-	addr, cancel, done := start(t)
-	c, r := dial(t, addr)
+	addr, cancel, done := zzhStart(t)
+	c, r := zzhDial(t, addr)
 	defer c.Close()
 	c.Write([]byte("PING\n"))
 	r.ReadString('\n')

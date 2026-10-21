@@ -30,28 +30,29 @@ const MaxAlwaysOnChars = 24000
 
 // Config holds the hook/loop knobs a harness editor may tune.
 type Config struct {
-	ReasoningEffort   string   `json:"reasoning_effort"`    // executor turns
-	PlannerEffort     string   `json:"planner_effort"`      // first turn
-	MaxTokens         int      `json:"max_tokens"`          // per turn
-	MaxTurns          int      `json:"max_turns"`           // per run
-	MaxWallMinutes    int      `json:"max_wall_minutes"`    // per run
-	CompactAtTokens   int      `json:"compact_at_tokens"`   // prompt size that triggers compaction
-	ToolCapTokens     int      `json:"tool_cap_tokens"`     // inline tool output cap
-	MaxFinishAttempts int      `json:"max_finish_attempts"` // failed acceptance checks before giving up
-	MaxNudges         int      `json:"max_nudges"`          // consecutive no-tool-call turns tolerated
-	SubAgentMaxTurns  int      `json:"subagent_max_turns"`  // per delegate
-	SubAgentTools     []string `json:"subagent_tools"`      // tool subset for delegates
-	LoopRepeat        int      `json:"loop_repeat"`         // identical calls within 8 that trigger a hint
-	LoopNoProgress    int      `json:"loop_no_progress"`    // calls without progress that trigger a hint
-	VerifyWrites      bool     `json:"verify_writes"`       // run a syntax check after writes (gofmt -l for .go)
-	ErrorHints        []Hint   `json:"error_hints"`         // targeted hints appended after recurring error signatures
-	Temperature       *float64 `json:"temperature,omitempty"`
-	TopP              *float64 `json:"top_p,omitempty"`
-	PresencePenalty   *float64 `json:"presence_penalty,omitempty"`
-	CheckOnFinish     bool     `json:"check_on_finish"` // run the task acceptance command on finish
-	CompactSummaryMax int      `json:"compact_summary_max_tokens"`
-	ReadLineSep       string   `json:"read_line_sep"` // read_file separator between line number and content ("" = tab)
-	FuzzyEdit         bool     `json:"fuzzy_edit"`    // whitespace-tolerant edit_file fallback
+	ReasoningEffort    string   `json:"reasoning_effort"`    // executor turns
+	PlannerEffort      string   `json:"planner_effort"`      // first turn
+	MaxTokens          int      `json:"max_tokens"`          // per turn
+	MaxTurns           int      `json:"max_turns"`           // per run
+	MaxWallMinutes     int      `json:"max_wall_minutes"`    // per run
+	CompactAtTokens    int      `json:"compact_at_tokens"`   // prompt size that triggers compaction
+	ToolCapTokens      int      `json:"tool_cap_tokens"`     // inline tool output cap
+	MaxFinishAttempts  int      `json:"max_finish_attempts"` // failed acceptance checks before giving up
+	MaxNudges          int      `json:"max_nudges"`          // consecutive no-tool-call turns tolerated
+	SubAgentMaxTurns   int      `json:"subagent_max_turns"`  // per delegate
+	SubAgentTools      []string `json:"subagent_tools"`      // tool subset for delegates
+	LoopRepeat         int      `json:"loop_repeat"`         // identical calls within 8 that trigger a hint
+	LoopNoProgress     int      `json:"loop_no_progress"`    // calls without progress that trigger a hint
+	VerifyWrites       bool     `json:"verify_writes"`       // run a syntax check after writes (gofmt -l for .go)
+	ErrorHints         []Hint   `json:"error_hints"`         // targeted hints appended after recurring error signatures
+	Temperature        *float64 `json:"temperature,omitempty"`
+	TopP               *float64 `json:"top_p,omitempty"`
+	PresencePenalty    *float64 `json:"presence_penalty,omitempty"`
+	CheckOnFinish      bool     `json:"check_on_finish"` // run the task acceptance command on finish
+	CompactSummaryMax  int      `json:"compact_summary_max_tokens"`
+	ReadLineSep        string   `json:"read_line_sep"`        // read_file separator between line number and content ("" = tab)
+	FuzzyEdit          bool     `json:"fuzzy_edit"`           // whitespace-tolerant edit_file fallback
+	ReviewBeforeFinish bool     `json:"review_before_finish"` // first finish call triggers a requirements self-review
 }
 
 // Hint is a Harness² "plugin": when a tool result matches Pattern, Text is

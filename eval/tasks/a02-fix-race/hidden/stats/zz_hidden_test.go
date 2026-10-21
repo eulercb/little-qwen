@@ -53,8 +53,18 @@ func TestHiddenResetConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
 		wg.Add(2)
-		go func() { defer wg.Done(); for j := 0; j < 200; j++ { c.Incr("a", 1) } }()
-		go func() { defer wg.Done(); for j := 0; j < 20; j++ { c.Reset() } }()
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				c.Incr("a", 1)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 20; j++ {
+				c.Reset()
+			}
+		}()
 	}
 	wg.Wait()
 	c.Reset()

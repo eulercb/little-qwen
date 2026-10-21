@@ -31,9 +31,9 @@ func TestHiddenLargest(t *testing.T) {
 func TestHiddenStrings(t *testing.T) {
 	tri, _ := NewTriangle(3, 4, 5)
 	cases := map[string]interface{ String() string }{
-		"Circle(r=1.5)":    Circle{R: 1.5},
-		"Rectangle(3x4)":   Rectangle{W: 3, H: 4},
-		"Triangle(3,4,5)":  tri,
+		"Circle(r=1.5)":     Circle{R: 1.5},
+		"Rectangle(3x4)":    Rectangle{W: 3, H: 4},
+		"Triangle(3,4,5)":   tri,
 		"Rectangle(0.25x2)": Rectangle{W: 0.25, H: 2},
 	}
 	for want, s := range cases {

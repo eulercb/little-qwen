@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -49,6 +50,8 @@ func main() {
 		err = cmdValidate(os.Args[2:])
 	case "smoke":
 		err = cmdSmoke(ctx, os.Args[2:])
+	case "rescore":
+		err = cmdRescore(ctx, os.Args[2:])
 	default:
 		usage()
 	}
@@ -277,4 +280,50 @@ func cmdValidate(args []string) error {
 	}
 	fmt.Println("OK")
 	return nil
+}
+
+// cmdRescore: qh rescore [--tasks eval/tasks] [--work-root /tmp/qh-runs] <results-dir>
+func cmdRescore(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("rescore", flag.ExitOnError)
+	tasksDir := fs.String("tasks", "eval/tasks", "tasks dir")
+	workRoot := fs.String("work-root", "/tmp/qh-runs", "fallback work root for results without a recorded workdir")
+	fs.Parse(args)
+	if fs.NArg() < 1 {
+		return fmt.Errorf("usage: qh rescore <results-dir>")
+	}
+	dir := fs.Arg(0)
+	tasks, err := eval.LoadTasks(*tasksDir, nil)
+	if err != nil {
+		return err
+	}
+	byID := map[string]eval.TaskSpec{}
+	for _, t := range tasks {
+		byID[t.ID] = t
+	}
+	results, err := eval.LoadResults(dir)
+	if err != nil {
+		return err
+	}
+	for _, r := range results {
+		t, ok := byID[r.TaskID]
+		if !ok {
+			continue
+		}
+		rp := filepath.Join(dir, r.TaskID, fmt.Sprintf("r%d", r.Rep), "result.json")
+		if r.Work == "" {
+			// Backfill the workdir path for runs made before it was recorded.
+			r.Work = filepath.Join(*workRoot, filepath.Base(dir), fmt.Sprintf("%s-r%d", r.TaskID, r.Rep))
+			b, _ := json.MarshalIndent(&r, "", "  ")
+			_ = os.WriteFile(rp, b, 0o644)
+		}
+		nr, err := eval.Rescore(ctx, t, rp)
+		if err != nil {
+			fmt.Printf("%s r%d: %v\n", r.TaskID, r.Rep, err)
+			continue
+		}
+		fmt.Printf("%s r%d: success %v -> %v score %.2f -> %.2f\n", r.TaskID, r.Rep, r.Success, nr.Success, r.Score, nr.Score)
+	}
+	res, _ := eval.LoadResults(dir)
+	s := eval.Summary(res)
+	return os.WriteFile(filepath.Join(dir, "summary.md"), []byte(s), 0o644)
 }

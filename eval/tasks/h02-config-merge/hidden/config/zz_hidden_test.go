@@ -8,18 +8,18 @@ import (
 )
 
 func TestHiddenNewFields(t *testing.T) {
-	c, err := Load(env(map[string]string{"APP_TIMEOUT": "1m30s", "APP_TAGS": " a, ,b ,c,"}))
+	c, err := Load(zzhEnv(map[string]string{"APP_TIMEOUT": "1m30s", "APP_TAGS": " a, ,b ,c,"}))
 	if err != nil || c.Timeout != 90*time.Second || !reflect.DeepEqual(c.Tags, []string{"a", "b", "c"}) {
 		t.Fatalf("%+v %v", c, err)
 	}
-	d, _ := Load(env(nil))
+	d, _ := Load(zzhEnv(nil))
 	if d.Timeout != 30*time.Second || len(d.Tags) != 0 {
 		t.Fatalf("defaults %+v", d)
 	}
 }
 
 func TestHiddenAllErrors(t *testing.T) {
-	c, err := Load(env(map[string]string{"APP_PORT": "0", "APP_DEBUG": "maybe", "APP_WORKERS": "-1", "APP_TIMEOUT": "soon", "APP_HOST": "h"}))
+	c, err := Load(zzhEnv(map[string]string{"APP_PORT": "0", "APP_DEBUG": "maybe", "APP_WORKERS": "-1", "APP_TIMEOUT": "soon", "APP_HOST": "h"}))
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -31,7 +31,7 @@ func TestHiddenAllErrors(t *testing.T) {
 	if !reflect.DeepEqual(c, Config{}) {
 		t.Fatalf("config not zero: %+v", c)
 	}
-	_, err = Load(env(map[string]string{"APP_PORT": "70000"}))
+	_, err = Load(zzhEnv(map[string]string{"APP_PORT": "70000"}))
 	if err == nil || !strings.Contains(err.Error(), "APP_PORT") || strings.Contains(err.Error(), "APP_DEBUG") {
 		t.Fatalf("%v", err)
 	}
@@ -65,3 +65,5 @@ func TestHiddenMerge(t *testing.T) {
 		t.Fatal("base tags aliased")
 	}
 }
+
+func zzhEnv(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
