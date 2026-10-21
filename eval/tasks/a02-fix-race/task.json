@@ -1,0 +1,1 @@
+{"id":"a02-fix-race","tier":"tierA","domain":"go","check":"go test -race -count=1 ./...","hidden_check":"go test -race -count=1 ./...","score":"gotest"}

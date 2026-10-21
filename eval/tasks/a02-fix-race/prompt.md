@@ -1,0 +1,1 @@
+The `stats` package's `Collector` is used from many goroutines in production, and `go test -race ./...` reports data races. Make `Collector` safe for concurrent use without changing its exported API or behaviour. All existing tests must keep passing under the race detector.

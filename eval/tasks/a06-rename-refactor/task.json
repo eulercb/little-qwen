@@ -1,0 +1,1 @@
+{"id":"a06-rename-refactor","tier":"tierA","domain":"go","check":"go build ./... && go test ./...","hidden_check":"go test -count=1 ./...","score":"gotest"}

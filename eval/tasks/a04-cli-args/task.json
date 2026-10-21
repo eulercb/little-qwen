@@ -1,0 +1,1 @@
+{"id":"a04-cli-args","tier":"tierA","domain":"go","check":"go test ./...","hidden_check":"go test -count=1 ./...","score":"gotest"}

@@ -1,0 +1,1 @@
+{"id":"a08-token-bucket","tier":"tierA","domain":"go","check":"go test -race ./...","hidden_check":"go test -race -count=1 ./...","score":"gotest"}

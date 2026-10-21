@@ -1,0 +1,19 @@
+Write a command-line program in `cmd/report` (package `main`) that summarises sales from CSV.
+
+Implement `func run(args []string, in io.Reader, out io.Writer) error` and have `main` call `run(os.Args[1:], os.Stdin, os.Stdout)`, printing the error to stderr and exiting with status 1 on error.
+
+Input CSV (read from `in`) has a header row; columns may appear in any order and there may be extra columns. Required columns: `region`, `product`, `qty` (integer ≥ 0), `price` (decimal, e.g. `12.50`). Missing required column → error mentioning the column name. A bad `qty`/`price` value → error mentioning the 1-based line number in the file (the header is line 1).
+
+Flags (in `args`): `--by region` (default) or `--by product` chooses the grouping column; anything else is an error. `--top N` (N ≥ 1) prints only the first N groups.
+
+Output (to `out`): one line per group, sorted by revenue descending, ties by group name ascending:
+`<group>\t<total qty>\t<revenue with exactly 2 decimals>`
+followed by a final line `TOTAL\t<qty>\t<revenue>` computed over all rows (not only the printed groups). Revenue is qty*price; compute in integer cents to avoid floating-point drift (prices have at most 2 decimals).
+
+Example: rows `north,apple,3,1.10` and `south,pear,1,2.00` with `--by region` print
+```
+north	3	3.30
+south	1	2.00
+TOTAL	4	5.30
+```
+Add tests in `cmd/report/main_test.go`.

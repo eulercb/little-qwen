@@ -1,0 +1,1 @@
+{"id":"a03-http-api","tier":"tierA","domain":"go","check":"go vet ./... && go test ./...","hidden_check":"go test -count=1 ./...","score":"gotest"}

@@ -75,6 +75,8 @@ type Agent struct {
 	subN     int
 	nudges   int
 	errSeen  map[string]int
+	start    time.Time
+	prevProm int // prompt tokens of the previous request (for cache-loss accounting)
 }
 
 // New creates the top-level agent.
@@ -150,7 +152,7 @@ func (a *Agent) Run(ctx context.Context) Outcome {
 	a.push(llm.Message{Role: "system", Content: llm.Str(a.H.System)})
 	a.push(llm.Message{Role: "user", Content: llm.Str(a.TaskCard())})
 
-	defer func() { a.out.WallSeconds = time.Since(start).Seconds() }()
+	a.start = start
 	for turn := 1; ; turn++ {
 		if turn > a.MaxTurn {
 			a.out.Status = "max_turns"
@@ -256,9 +258,11 @@ func (a *Agent) Run(ctx context.Context) Outcome {
 
 func (a *Agent) account(turn int, effort string, r *llm.Response) {
 	u := r.Usage
+	// The server caches the previous prompt but not generated tokens, so the
+	// expected cache hit is the previous prompt (minus page alignment).
 	reprefill := 0
-	if a.lastProm > 0 && u.CachedTokens < a.lastProm-512 {
-		reprefill = a.lastProm - u.CachedTokens
+	if a.prevProm > 0 && u.CachedTokens < a.prevProm-512 {
+		reprefill = a.prevProm - u.CachedTokens
 	}
 	a.out.PromptTokens += u.PromptTokens
 	a.out.PrefillTokens += u.PrefillTokens
@@ -273,6 +277,7 @@ func (a *Agent) account(turn int, effort string, r *llm.Response) {
 		turn, u.PromptTokens, u.CachedTokens, u.PrefillTokens, u.CompletionTokens, u.ReasoningTokens, float64(r.LatencyMS)/1000, r.FinishReason, len(r.Message.ToolCalls),
 		map[bool]string{true: fmt.Sprintf(" REPREFILL=%d", reprefill), false: ""}[reprefill > 0])
 	a.lastProm = u.PromptTokens + u.CompletionTokens
+	a.prevProm = u.PromptTokens
 }
 
 // handleCall executes one tool call and returns the tool message content.
@@ -497,6 +502,7 @@ func (a *Agent) compact(ctx context.Context, turn int, reason string) error {
 	a.push(llm.Message{Role: "system", Content: llm.Str(a.H.System)})
 	a.push(llm.Message{Role: "user", Content: llm.Str(a.TaskCard() + "\n\n" + cp)})
 	a.lastProm = 0
+	a.prevProm = 0
 	a.loops = repair.NewLoopDetector()
 	return nil
 }
@@ -505,6 +511,7 @@ func (a *Agent) finalize() Outcome {
 	if a.out.Status == "" {
 		a.out.Status = "finished"
 	}
+	a.out.WallSeconds = time.Since(a.start).Seconds()
 	a.Tr.Event(trace.Event{Agent: a.Name, Turn: a.out.Turns, Name: "end", Detail: a.out.Status, Data: map[string]any{"check_passed": a.out.CheckPassed}})
 	return a.out
 }

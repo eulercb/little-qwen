@@ -1,0 +1,1 @@
+The INI parser in package `ini` has bugs: `go test ./...` fails. Fix the parser so it follows the format documented in the package comment of `ini/ini.go`. Do not change the tests in `ini/ini_test.go`; they describe correct behaviour. There may be bugs the existing tests do not cover, so check the documented format carefully.
