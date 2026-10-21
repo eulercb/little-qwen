@@ -94,3 +94,10 @@ Template:
   thinking token costs ~4× a prefill token on this server. Success 5/6 in both arms (a04 1.0 → 0.75, h04 0.92 → 1.0).
 - Keep `preserve_thinking` (default). Note: Tier-A base wall times for a01–a12 were measured at 2× load, so a
   single-stream base rerun (it0-base-p1) was queued for time comparisons.
+
+## A1: reasoning_effort=low   (status: REJECTED — counter-intuitive result)
+- Probe eval/results/exp5-low (a03, a05, a07, a09, a10, a12, h02, h04 ×1).
+- Thinking tokens **doubled** (44.4K → 94.0K; higher on 7/8 tasks, e.g. a10 15.4K → 41.6K, a03 0.5K → 6.5K);
+  completion 84K → 144K; total wall 133 → 149 min (base partly at 2× load, so time is only indicative).
+  Success 6/8 → 7/8 (a07 1.0 → 0.93, h02/h04 0.92 → 1.0) — within single-run noise.
+- On this server/template, `low` is not a cheap mode; `medium` stays the default. (Untested: `enable_thinking:false`.)
