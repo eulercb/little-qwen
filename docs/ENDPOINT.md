@@ -68,3 +68,8 @@ re-prefill), and make side requests (compaction checkpoint, warm-up) use the seg
 A 1-token request whose prompt is system + tools + a trivial user turn leaves a checkpoint right after the
 shared prefix: the next conversation with a different user message reused 1,888 of 1,952 tokens
 (2.9 s vs 43.5 s cold, under load). `qh` does this at the start of every agent (main, sub-agent).
+
+## Thinking on/off does not break the cache
+`chat_template_kwargs.enable_thinking=false` only changes the generation-prompt suffix: alternating thinking
+on/off on the same messages kept `cached=1888` on every request. So a per-turn thinking policy is free in prefill,
+unlike `reasoning_effort` (rendered early in the prompt).

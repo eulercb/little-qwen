@@ -65,21 +65,22 @@ type Agent struct {
 	IsSub   bool
 	MaxTurn int
 
-	cfg        harness.Config
-	msgs       []llm.Message
-	segment    int
-	lastProm   int
-	loops      *repair.LoopDetector
-	out        Outcome
-	finishOK   bool
-	subN       int
-	nudges     int
-	errSeen    map[string]int
-	start      time.Time
-	reviewed   bool
-	allowed    map[string]bool // nil = all tools allowed
-	overBudget bool            // previous turn hit the thinking budget
-	prevProm   int             // prompt tokens of the previous request (for cache-loss accounting)
+	cfg         harness.Config
+	msgs        []llm.Message
+	segment     int
+	lastProm    int
+	loops       *repair.LoopDetector
+	out         Outcome
+	finishOK    bool
+	subN        int
+	nudges      int
+	errSeen     map[string]int
+	start       time.Time
+	reviewed    bool
+	allowed     map[string]bool // nil = all tools allowed
+	overBudget  bool            // previous turn hit the thinking budget
+	lastTurnBad bool            // previous turn had a tool error, failed test/check or no tool call
+	prevProm    int             // prompt tokens of the previous request (for cache-loss accounting)
 }
 
 // New creates the top-level agent.
@@ -193,11 +194,20 @@ func (a *Agent) Run(ctx context.Context) Outcome {
 		if a.cfg.ThinkBudgetTokens > 0 && !a.overBudget {
 			thinkChars = int(float64(a.cfg.ThinkBudgetTokens) * 3.5)
 		}
-		resp, err := a.Client.Chat(ctx, llm.Request{
+		req := llm.Request{
 			Messages: a.msgs, Tools: a.Tools, MaxTokens: a.cfg.MaxTokens, ReasoningEffort: effort,
 			Temperature: a.cfg.Temperature, TopP: a.cfg.TopP, PresencePenalty: a.cfg.PresencePenalty,
 			MaxThinkChars: thinkChars,
-		})
+		}
+		if !a.thinkThisTurn(turn) {
+			// Thinking on/off only changes the generation-prompt suffix, so it
+			// does not disturb the cached prefix (docs/ENDPOINT.md). Use Qwen's
+			// recommended non-thinking sampling.
+			req.DisableThinking = true
+			t, p, pp := 0.7, 0.8, 1.5
+			req.Temperature, req.TopP, req.PresencePenalty = &t, &p, &pp
+		}
+		resp, err := a.Client.Chat(ctx, req)
 		if errors.Is(err, llm.ErrThinkBudget) {
 			// Runaway thinking: drop the partial turn (never sent back, so the
 			// prefix is unchanged) and ask for a decision. The next turn runs
@@ -247,6 +257,7 @@ func (a *Agent) Run(ctx context.Context) Outcome {
 		a.push(msg)
 
 		if len(msg.ToolCalls) == 0 {
+			a.lastTurnBad = true
 			a.nudges++
 			a.out.Nudges++
 			if a.nudges > a.cfg.MaxNudges {
@@ -271,6 +282,7 @@ func (a *Agent) Run(ctx context.Context) Outcome {
 		a.nudges = 0
 
 		done := false
+		errsBefore := a.out.ToolErrors
 		for i, tc := range msg.ToolCalls {
 			res, isDone := a.handleCall(ctx, turn, i, tc)
 			a.push(llm.Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: llm.Str(res)})
@@ -278,6 +290,7 @@ func (a *Agent) Run(ctx context.Context) Outcome {
 				done = true
 			}
 		}
+		a.lastTurnBad = a.out.ToolErrors > errsBefore
 		if done {
 			return a.finalize()
 		}
@@ -292,6 +305,19 @@ func (a *Agent) effort(turn int) string {
 		return a.cfg.PlannerEffort
 	}
 	return a.cfg.ReasoningEffort
+}
+
+// thinkThisTurn applies ThinkingMode. "adaptive" thinks on the first two
+// turns and whenever the previous turn ended badly (tool error, failing
+// test/check, no tool call); routine turns after successful tools don't.
+func (a *Agent) thinkThisTurn(turn int) bool {
+	switch a.cfg.ThinkingMode {
+	case "off":
+		return false
+	case "adaptive":
+		return turn <= 2 || a.lastTurnBad
+	}
+	return true
 }
 
 // warmPrefix sends a 1-token request whose prompt is just the stable prefix

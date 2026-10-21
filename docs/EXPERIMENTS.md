@@ -101,3 +101,6 @@ Template:
   completion 84K → 144K; total wall 133 → 149 min (base partly at 2× load, so time is only indicative).
   Success 6/8 → 7/8 (a07 1.0 → 0.93, h02/h04 0.92 → 1.0) — within single-run noise.
 - On this server/template, `low` is not a cheap mode; `medium` stays the default. (Untested: `enable_thinking:false`.)
+- **A2/A3 queued:** `thinking_mode` = `off` (Qwen non-thinking sampling: T=0.7, top_p=0.8, presence=1.5) and
+  `adaptive` (thinking on turns 1–2 and after a turn with a tool error / failing test or check / no tool call).
+  Verified first that toggling thinking keeps the prefix cached.
