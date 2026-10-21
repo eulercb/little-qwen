@@ -53,3 +53,7 @@ Template:
   executor kept refining (buffer-boundary handling, bigger tests, then a 106-line reference-oracle test)
   instead of finishing. Cost: 15+ min. Unclear yet whether this extra verification raises hidden-test
   success (it may — the task has subtle rules) — judge by outcome before acting.
+- **Ablation A1 (Phase 5): `reasoning_effort=low`** for all turns (harness/cand/e5-low). Motivation: thinking is
+  32% of completion tokens in it0 and decode dominates wall time; Tier A success is saturated, so the question is
+  whether low keeps success while cutting time. Published AA agentic index drops medium→low (44.4→38.9), so expect
+  some loss on harder tasks.
