@@ -198,10 +198,8 @@ func cmdEval(ctx context.Context, args []string) error {
 			defer wg.Done()
 			for j := range ch {
 				od := filepath.Join(*out, j.t.ID, fmt.Sprintf("r%d", j.rep))
-				if *skipDone {
-					if _, err := os.Stat(filepath.Join(od, "result.json")); err == nil {
-						continue
-					}
+				if *skipDone && doneOK(filepath.Join(od, "result.json")) {
+					continue
 				}
 				_ = os.RemoveAll(od)
 				lg := logger(fmt.Sprintf("%s/r%d ", j.t.ID, j.rep))
@@ -329,4 +327,18 @@ func cmdRescore(ctx context.Context, args []string) error {
 	res, _ := eval.LoadResults(dir)
 	s := eval.Summary(res)
 	return os.WriteFile(filepath.Join(dir, "summary.md"), []byte(s), 0o644)
+}
+
+// doneOK reports whether a run finished without an infrastructure error, so
+// resumed evals re-run runs that died because the endpoint was unreachable.
+func doneOK(resultPath string) bool {
+	b, err := os.ReadFile(resultPath)
+	if err != nil {
+		return false
+	}
+	var r eval.Result
+	if json.Unmarshal(b, &r) != nil {
+		return false
+	}
+	return r.Outcome.Status != "error"
 }
