@@ -1,0 +1,126 @@
+ ini/ini.go            | 27 +++++++++++++---------
+ ini/zz_hidden_test.go | 63 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 79 insertions(+), 11 deletions(-)
+
+diff --git a/ini/ini.go b/ini/ini.go
+index dc53235..6653efd 100644
+--- a/ini/ini.go
++++ b/ini/ini.go
+@@ -51,32 +51,37 @@ func Parse(r io.Reader) (File, error) {
+ 	n := 0
+ 	for sc.Scan() {
+ 		n++
+-		line := sc.Text()
+-		if line == "" || line[0] == ';' {
++		line := strings.TrimSpace(sc.Text())
++		if line == "" || line[0] == ';' || line[0] == '#' {
+ 			continue
+ 		}
+ 		if line[0] == '[' && line[len(line)-1] == ']' {
+-			section = strings.TrimSpace(line[1 : len(line)-1])
++			section = strings.ToLower(strings.TrimSpace(line[1 : len(line)-1]))
+ 			continue
+ 		}
+-		i := strings.LastIndex(line, "=")
++		i := strings.Index(line, "=")
+ 		if i < 0 {
+ 			return nil, &SyntaxError{Line: n, Text: line}
+ 		}
+ 		key := strings.ToLower(strings.TrimSpace(line[:i]))
+ 		val := strings.TrimSpace(line[i+1:])
+-		if j := strings.Index(val, ";"); j >= 0 {
+-			val = strings.TrimSpace(val[:j])
+-		}
+ 		if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+-			val = strings.TrimSpace(val[1 : len(val)-1])
++			val = val[1 : len(val)-1]
++		} else {
++			if j := strings.Index(val, " ;"); j >= 0 {
++				val = val[:j]
++			} else if j := strings.Index(val, " #"); j >= 0 {
++				val = val[:j]
++			}
++			val = strings.TrimSpace(val)
++			if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
++				val = val[1 : len(val)-1]
++			}
+ 		}
+ 		if f[section] == nil {
+ 			f[section] = map[string]string{}
+ 		}
+-		if _, exists := f[section][key]; !exists {
+-			f[section][key] = val
+-		}
++		f[section][key] = val
+ 	}
+ 	return f, sc.Err()
+ }
+diff --git a/ini/zz_hidden_test.go b/ini/zz_hidden_test.go
+new file mode 100644
+index 0000000..00d6aa4
+--- /dev/null
++++ b/ini/zz_hidden_test.go
+@@ -0,0 +1,63 @@
++package ini
++
++import (
++	"errors"
++	"strings"
++	"testing"
++)
++
++func mustGet(t *testing.T, f File, sec, key, want string) {
++	t.Helper()
++	got, ok := f.Get(sec, key)
++	if !ok || got != want {
++		t.Errorf("%s.%s = %q,%v want %q", sec, key, got, ok, want)
++	}
++}
++
++func TestHiddenHashComments(t *testing.T) {
++	f, err := Parse(strings.NewReader("# top\n  # indented\n[a]\nk = v # trailing\nc = x#notcomment\n"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	mustGet(t, f, "a", "k", "v")
++	mustGet(t, f, "a", "c", "x#notcomment")
++}
++
++func TestHiddenSectionCase(t *testing.T) {
++	f, err := Parse(strings.NewReader("[  MiXeD  ]\nKey = 1\n"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	mustGet(t, f, "mixed", "key", "1")
++	if _, ok := f["mixed"]; !ok {
++		t.Fatalf("section map keys: %v", f)
++	}
++}
++
++func TestHiddenFirstEquals(t *testing.T) {
++	f, _ := Parse(strings.NewReader("expr = a=b=c\n"))
++	mustGet(t, f, "", "expr", "a=b=c")
++}
++
++func TestHiddenOverwrite(t *testing.T) {
++	f, _ := Parse(strings.NewReader("[s]\nk = 1\nk = 2\n"))
++	mustGet(t, f, "s", "k", "2")
++}
++
++func TestHiddenQuotedKeepsSpaceAndSemicolon(t *testing.T) {
++	f, _ := Parse(strings.NewReader(`v = "  a ; b  "` + "\n"))
++	mustGet(t, f, "", "v", "  a ; b  ")
++}
++
++func TestHiddenSemicolonInsideValue(t *testing.T) {
++	f, _ := Parse(strings.NewReader("dsn = user;pass\n"))
++	mustGet(t, f, "", "dsn", "user;pass")
++}
++
++func TestHiddenSyntaxLine(t *testing.T) {
++	_, err := Parse(strings.NewReader("\n\n[ok]\n  nope\n"))
++	var se *SyntaxError
++	if !errors.As(err, &se) || se.Line != 4 {
++		t.Fatalf("err = %v", err)
++	}
++}

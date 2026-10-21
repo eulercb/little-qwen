@@ -1,0 +1,1 @@
+{"id":"b04-kv-server","tier":"tierB","domain":"go","check":"go vet ./... && go test -race ./...","hidden_check":"go test -race -count=1 ./...","score":"gotest"}

@@ -28,6 +28,6 @@ for id in "${ids[@]}"; do
   status=OK
   if [ "$base" != fail ] || [ "$vis" != pass ] || [ "$sol" != pass ]; then status=BAD; rc=1; fi
   echo "$status $id: base-hidden=$base solution-visible=$vis solution-hidden=$sol"
-  if [ "$status" = BAD ]; then tail -20 "$tmp/vis.log" "$tmp/hid.log" | sed 's/^/    /'; fi
+  if [ "$status" = BAD ]; then cat "$tmp/vis.log" "$tmp/hid.log" | tail -n 30 | sed 's/^/    /'; fi
 done
 exit $rc

@@ -1,0 +1,408 @@
+ lru/lru.go            | 127 +++++++++++++++++++++++++++++++++++++-
+ lru/lru_test.go       | 166 +++++++++++++++++++++++++++++++++++++++++++++++++-
+ lru/zz_hidden_test.go |  80 ++++++++++++++++++++++++
+ 3 files changed, 371 insertions(+), 2 deletions(-)
+
+diff --git a/lru/lru.go b/lru/lru.go
+index 308cd34..b180bb4 100644
+--- a/lru/lru.go
++++ b/lru/lru.go
+@@ -1,6 +1,131 @@
+ // Package lru implements a least-recently-used cache.
+ package lru
+ 
+-// Cache is an LRU cache. TODO: implement.
++// Cache is a generic LRU cache with a fixed capacity. It is not safe for
++// concurrent use.
+ type Cache[K comparable, V any] struct {
++	capacity int
++	items    map[K]*node[K, V]
++	list     *dlist[K, V]
++	// OnEvict, if non-nil, is called when a key is evicted because of
++	// capacity (not on Remove or update).
++	OnEvict func(key K, value V)
++}
++
++type node[K comparable, V any] struct {
++	key   K
++	value V
++	prev  *node[K, V]
++	next  *node[K, V]
++}
++
++// dlist is a doubly linked list with sentinel head/tail so all pointer
++// manipulations are O(1) without nil checks.
++type dlist[K comparable, V any] struct {
++	head *node[K, V] // most recently used side
++	tail *node[K, V] // least recently used side
++}
++
++func newDlist[K comparable, V any]() *dlist[K, V] {
++	h := &node[K, V]{}
++	t := &node[K, V]{}
++	h.next = t
++	t.prev = h
++	return &dlist[K, V]{head: h, tail: t}
++}
++
++func (l *dlist[K, V]) remove(n *node[K, V]) {
++	n.prev.next = n.next
++	n.next.prev = n.prev
++	n.prev = nil
++	n.next = nil
++}
++
++// pushFront inserts n at the most recently used side.
++func (l *dlist[K, V]) pushFront(n *node[K, V]) {
++	n.prev = l.head
++	n.next = l.head.next
++	l.head.next.prev = n
++	l.head.next = n
++}
++
++// popTail removes and returns the least recently used node.
++func (l *dlist[K, V]) popTail() *node[K, V] {
++	n := l.tail.prev
++	l.remove(n)
++	return n
++}
++
++// New creates an LRU cache with the given capacity.
++// It panics if capacity < 1.
++func New[K comparable, V any](capacity int) *Cache[K, V] {
++	if capacity < 1 {
++		panic("lru: capacity must be >= 1")
++	}
++	return &Cache[K, V]{
++		capacity: capacity,
++		items:    make(map[K]*node[K, V], capacity),
++		list:     newDlist[K, V](),
++	}
++}
++
++// Get returns the value for key, reporting whether it was present.
++// A successful or missed lookup that finds the key marks it as most
++// recently used.
++func (c *Cache[K, V]) Get(key K) (V, bool) {
++	n, ok := c.items[key]
++	if !ok {
++		var zero V
++		return zero, false
++	}
++	c.list.remove(n)
++	c.list.pushFront(n)
++	return n.value, true
++}
++
++// Put inserts or updates key. In either case the key becomes most
++// recently used. If the cache is full and the key is new, the least
++// recently used key is evicted first (triggering OnEvict if set).
++func (c *Cache[K, V]) Put(key K, value V) {
++	if n, ok := c.items[key]; ok {
++		n.value = value
++		c.list.remove(n)
++		c.list.pushFront(n)
++		return
++	}
++	if len(c.items) >= c.capacity {
++		oldest := c.list.popTail()
++		delete(c.items, oldest.key)
++		if c.OnEvict != nil {
++			c.OnEvict(oldest.key, oldest.value)
++		}
++	}
++	n := &node[K, V]{key: key, value: value}
++	c.items[key] = n
++	c.list.pushFront(n)
++}
++
++// Len returns the number of items currently in the cache.
++func (c *Cache[K, V]) Len() int {
++	return len(c.items)
++}
++
++// Keys returns the cache keys ordered from most to least recently used.
++func (c *Cache[K, V]) Keys() []K {
++	keys := make([]K, 0, len(c.items))
++	for n := c.list.head.next; n != c.list.tail; n = n.next {
++		keys = append(keys, n.key)
++	}
++	return keys
++}
++
++// Remove deletes key from the cache and reports whether it was present.
++func (c *Cache[K, V]) Remove(key K) bool {
++	n, ok := c.items[key]
++	if !ok {
++		return false
++	}
++	c.list.remove(n)
++	delete(c.items, key)
++	return true
+ }
+diff --git a/lru/lru_test.go b/lru/lru_test.go
+index ececd17..2bd9973 100644
+--- a/lru/lru_test.go
++++ b/lru/lru_test.go
+@@ -1,6 +1,9 @@
+ package lru
+ 
+-import "testing"
++import (
++	"reflect"
++	"testing"
++)
+ 
+ func TestBasic(t *testing.T) {
+ 	c := New[string, int](2)
+@@ -9,3 +12,164 @@ func TestBasic(t *testing.T) {
+ 		t.Fatalf("Get(a) = %v,%v", v, ok)
+ 	}
+ }
++
++func TestNewPanicsOnBadCapacity(t *testing.T) {
++	for _, cap := range []int{0, -1, -100} {
++		func() {
++			defer func() {
++				if recover() == nil {
++					t.Fatalf("New(%d) did not panic", cap)
++				}
++			}()
++			New[string, int](cap)
++		}()
++	}
++}
++
++func TestGetMiss(t *testing.T) {
++	c := New[int, string](3)
++	if v, ok := c.Get(1); ok || v != "" {
++		t.Fatalf("Get(1) = %q,%v; want \"\",false", v, ok)
++	}
++}
++
++func TestEvictsLeastRecentlyUsed(t *testing.T) {
++	c := New[int, string](2)
++	c.Put(1, "one")
++	c.Put(2, "two")
++	// Touch 1 so 2 becomes least recently used.
++	if _, ok := c.Get(1); !ok {
++		t.Fatal("Get(1) = false")
++	}
++	c.Put(3, "three")
++	if _, ok := c.Get(2); ok {
++		t.Fatal("key 2 should have been evicted")
++	}
++	if v, ok := c.Get(1); !ok || v != "one" {
++		t.Fatalf("Get(1) = %q,%v; want one,true", v, ok)
++	}
++	if v, ok := c.Get(3); !ok || v != "three" {
++		t.Fatalf("Get(3) = %q,%v; want three,true", v, ok)
++	}
++	if c.Len() != 2 {
++		t.Fatalf("Len() = %d; want 2", c.Len())
++	}
++}
++
++func TestUpdateDoesNotEvict(t *testing.T) {
++	c := New[int, string](1)
++	c.Put(1, "one")
++	c.Put(1, "one-v2")
++	if v, ok := c.Get(1); !ok || v != "one-v2" {
++		t.Fatalf("Get(1) = %q,%v; want one-v2,true", v, ok)
++	}
++	if c.Len() != 1 {
++		t.Fatalf("Len() = %d; want 1", c.Len())
++	}
++}
++
++func TestUpdateMarksMostRecentlyUsed(t *testing.T) {
++	var evicted []int
++	c := New[int, string](2)
++	c.OnEvict = func(k int, _ string) { evicted = append(evicted, k) }
++	c.Put(1, "one")
++	c.Put(2, "two")
++	c.Put(1, "one-v2") // reuses key 1, making 2 least recently used.
++	c.Put(3, "three")
++	if len(evicted) != 1 || evicted[0] != 2 {
++		t.Fatalf("evicted = %v; want [2]", evicted)
++	}
++	if v, ok := c.Get(1); !ok || v != "one-v2" {
++		t.Fatalf("Get(1) = %q,%v; want one-v2,true", v, ok)
++	}
++}
++
++func TestKeysOrder(t *testing.T) {
++	c := New[string, int](3)
++	c.Put("a", 1)
++	c.Put("b", 2)
++	c.Put("c", 3)
++	// Recency: b (put), a (get), c (put) -> after get(a): a,c,b; after
++	// put(b): b,a,c.
++	c.Get("a")
++	c.Put("b", 20) // re-touch b
++	got := c.Keys()
++	want := []string{"b", "a", "c"}
++	if !reflect.DeepEqual(got, want) {
++		t.Fatalf("Keys() = %v; want %v", got, want)
++	}
++}
++
++func TestKeysEmpty(t *testing.T) {
++	c := New[int, int](2)
++	if got := c.Keys(); len(got) != 0 {
++		t.Fatalf("Keys() = %v; want empty", got)
++	}
++}
++
++func TestRemove(t *testing.T) {
++	var evicted []int
++	c := New[int, int](2)
++	c.OnEvict = func(k int, _ int) { evicted = append(evicted, k) }
++	c.Put(1, 10)
++	c.Put(2, 20)
++	if !c.Remove(1) {
++		t.Fatal("Remove(1) = false; want true")
++	}
++	if c.Remove(1) {
++		t.Fatal("Remove(1) again = true; want false")
++	}
++	if c.Remove(42) {
++		t.Fatal("Remove(42) = true; want false")
++	}
++	if c.Len() != 1 {
++		t.Fatalf("Len() = %d; want 1", c.Len())
++	}
++	c.Put(3, 30) // must not evict 2 because removal freed space.
++	if _, ok := c.Get(2); !ok {
++		t.Fatal("key 2 missing after non-capacity eviction path")
++	}
++	if len(evicted) != 0 {
++		t.Fatalf("OnEvict called %v on Remove; want none", evicted)
++	}
++}
++
++func TestOnEvictNotCalledOnUpdateOrRemove(t *testing.T) {
++	var calls int
++	c := New[string, int](1)
++	c.OnEvict = func(string, int) { calls++ }
++	c.Put("a", 1)
++	c.Put("a", 2) // update
++	if calls != 0 {
++		t.Fatalf("OnEvict called %d times on update", calls)
++	}
++	c.Put("b", 3) // triggers one capacity eviction
++	if calls != 1 {
++		t.Fatalf("OnEvict calls = %d; want 1", calls)
++	}
++	calls = 0
++	c.Put("a", 5) // capacity eviction of b, not an OnEvict-for-Remove case.
++	if calls != 1 {
++		t.Fatalf("OnEvict calls after capacity evict = %d; want 1", calls)
++	}
++	calls = 0
++	if !c.Remove("a") || calls != 0 {
++		t.Fatalf("OnEvict calls after Remove = %d; want 0", calls)
++	}
++}
++
++func TestReinsertAfterEviction(t *testing.T) {
++	c := New[int, int](1)
++	c.Put(1, 10)
++	c.Put(2, 20) // evicts 1
++	c.Put(1, 11)
++	if v, ok := c.Get(1); !ok || v != 11 {
++		t.Fatalf("Get(1) = %d,%v; want 11,true", v, ok)
++	}
++	if _, ok := c.Get(2); ok {
++		t.Fatal("key 2 should have been evicted")
++	}
++	if c.Len() != 1 {
++		t.Fatalf("Len() = %d; want 1", c.Len())
++	}
++}
+diff --git a/lru/zz_hidden_test.go b/lru/zz_hidden_test.go
+new file mode 100644
+index 0000000..258e4ca
+--- /dev/null
++++ b/lru/zz_hidden_test.go
+@@ -0,0 +1,80 @@
++package lru
++
++import (
++	"reflect"
++	"testing"
++)
++
++func TestHiddenEvictionOrder(t *testing.T) {
++	c := New[int, string](3)
++	c.Put(1, "a")
++	c.Put(2, "b")
++	c.Put(3, "c")
++	c.Get(1)
++	c.Put(4, "d")
++	if _, ok := c.Get(2); ok {
++		t.Fatal("2 should be evicted")
++	}
++	if got := c.Keys(); !reflect.DeepEqual(got, []int{4, 1, 3}) {
++		t.Fatalf("Keys = %v", got)
++	}
++}
++
++func TestHiddenUpdateMovesToFront(t *testing.T) {
++	c := New[string, int](2)
++	c.Put("a", 1)
++	c.Put("b", 2)
++	c.Put("a", 10)
++	c.Put("c", 3)
++	if v, ok := c.Get("a"); !ok || v != 10 {
++		t.Fatalf("a = %v %v", v, ok)
++	}
++	if _, ok := c.Get("b"); ok {
++		t.Fatal("b should be evicted")
++	}
++	if c.Len() != 2 {
++		t.Fatalf("Len = %d", c.Len())
++	}
++}
++
++func TestHiddenOnEvict(t *testing.T) {
++	c := New[string, int](1)
++	var ev []string
++	c.OnEvict = func(k string, v int) { ev = append(ev, k) }
++	c.Put("a", 1)
++	c.Put("a", 2)
++	c.Put("b", 3)
++	c.Remove("b")
++	c.Put("c", 4)
++	if !reflect.DeepEqual(ev, []string{"a"}) {
++		t.Fatalf("evicted = %v", ev)
++	}
++}
++
++func TestHiddenRemove(t *testing.T) {
++	c := New[int, int](2)
++	c.Put(1, 1)
++	if !c.Remove(1) || c.Remove(1) {
++		t.Fatal("Remove semantics")
++	}
++	if c.Len() != 0 || len(c.Keys()) != 0 {
++		t.Fatal("not empty")
++	}
++}
++
++func TestHiddenPanicsOnZeroCapacity(t *testing.T) {
++	defer func() {
++		if recover() == nil {
++			t.Fatal("expected panic")
++		}
++	}()
++	New[int, int](0)
++}
++
++func TestHiddenMissingGetZero(t *testing.T) {
++	c := New[string, *int](1)
++	v, ok := c.Get("x")
++	if ok || v != nil {
++		t.Fatal("expected zero value")
++	}
++}

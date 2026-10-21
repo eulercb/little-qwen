@@ -141,6 +141,8 @@ func cmdEval(ctx context.Context, args []string) error {
 	par := fs.Int("parallel", 1, "concurrent runs")
 	work := fs.String("work", "", "work root (default $QH_RUNS or /tmp/qh-runs)")
 	skipDone := fs.Bool("resume", true, "skip runs that already have result.json")
+	agent := fs.String("agent", "", "external agent command (e.g. eval/runner/opencode_agent.sh); default: qh itself")
+	extTimeout := fs.Int("agent-timeout-min", 60, "timeout for external agents")
 	fs.Parse(args)
 	if *out == "" {
 		return fmt.Errorf("--out required")
@@ -198,8 +200,14 @@ func cmdEval(ctx context.Context, args []string) error {
 				}
 				_ = os.RemoveAll(od)
 				lg := logger(fmt.Sprintf("%s/r%d ", j.t.ID, j.rep))
-				lg("start (harness %s)", h.Hash)
-				r, err := eval.RunOne(ctx, c, h, j.t, j.rep, od, wr, lg)
+				lg("start (harness %s, agent %q)", h.Hash, *agent)
+				var r *eval.Result
+				var err error
+				if *agent != "" {
+					r, err = eval.RunExternal(ctx, *agent, j.t, j.rep, od, wr, time.Duration(*extTimeout)*time.Minute, lg)
+				} else {
+					r, err = eval.RunOne(ctx, c, h, j.t, j.rep, od, wr, lg)
+				}
 				if err != nil {
 					lg("ERROR %v", err)
 					continue
