@@ -1,0 +1,228 @@
+ cli/cli.go            | 131 +++++++++++++++++++++++++++++++++++++++++++++++++-
+ cli/zz_hidden_test.go |  72 +++++++++++++++++++++++++++
+ 2 files changed, 202 insertions(+), 1 deletion(-)
+
+diff --git a/cli/cli.go b/cli/cli.go
+index b437c96..bbb024c 100644
+--- a/cli/cli.go
++++ b/cli/cli.go
+@@ -1,7 +1,12 @@
+ // Package cli parses the command line of the frob tool.
+ package cli
+ 
+-import "errors"
++import (
++	"errors"
++	"fmt"
++	"strconv"
++	"strings"
++)
+ 
+ // ErrUsage is wrapped by every parse error.
+ var ErrUsage = errors.New("usage error")
+@@ -14,3 +19,127 @@ type Config struct {
+ 	Tags    []string
+ 	Args    []string
+ }
++
++// Parse parses the command line arguments.
++func Parse(args []string) (Config, error) {
++	cfg := Config{Count: 1, Output: "-"}
++
++	setCount := func(flag, v string) error {
++		n, err := strconv.Atoi(v)
++		if err != nil {
++			return fmt.Errorf("flag %s: invalid value %q: not an integer: %w", flag, v, ErrUsage)
++		}
++		if n < 0 {
++			return fmt.Errorf("flag %s: invalid value %q: must be >= 0: %w", flag, v, ErrUsage)
++		}
++		cfg.Count = n
++		return nil
++	}
++
++	for i := 0; i < len(args); i++ {
++		arg := args[i]
++
++		// A lone "-" is a positional argument; "--" ends option parsing.
++		if arg == "-" {
++			cfg.Args = append(cfg.Args, arg)
++			continue
++		}
++		if arg == "--" {
++			cfg.Args = append(cfg.Args, args[i+1:]...)
++			break
++		}
++		if arg[0] != '-' {
++			cfg.Args = append(cfg.Args, arg)
++			continue
++		}
++		if arg[1] == '-' { // long flag
++			name, value, hasValue := arg[2:], "", false
++			if eq := strings.IndexByte(name, '='); eq >= 0 {
++				name, value, hasValue = name[:eq], name[eq+1:], true
++			}
++			switch name {
++			case "verbose":
++				if hasValue {
++					return cfg, fmt.Errorf("flag --verbose: unexpected value %q: %w", value, ErrUsage)
++				}
++				cfg.Verbose = true
++			case "count":
++				if !hasValue {
++					v, consume, err := takeValue("--count", args[i+1:])
++					if err != nil {
++						return cfg, err
++					}
++					value, i = v, i+consume
++				}
++				if err := setCount(arg, value); err != nil {
++					return cfg, err
++				}
++			case "output":
++				if !hasValue {
++					v, consume, err := takeValue("--output", args[i+1:])
++					if err != nil {
++						return cfg, err
++					}
++					value, i = v, i+consume
++				}
++				cfg.Output = value
++			case "tag":
++				if !hasValue {
++					v, consume, err := takeValue("--tag", args[i+1:])
++					if err != nil {
++						return cfg, err
++					}
++					value, i = v, i+consume
++				}
++				cfg.Tags = append(cfg.Tags, value)
++			default:
++				return cfg, fmt.Errorf("unknown flag --%s: %w", name, ErrUsage)
++			}
++			continue
++		}
++
++		// Short flag cluster, e.g. -vv or -n5.
++		cluster := arg[1:]
++		for j := 0; j < len(cluster); j++ {
++			switch c := cluster[j]; c {
++			case 'v':
++				cfg.Verbose = true
++			case 'n', 'o':
++				longName := "-n"
++				if c == 'o' {
++					longName = "-o"
++				}
++				var value string
++				if j+1 < len(cluster) { // e.g. -n5 or -n=5
++					value = strings.TrimPrefix(cluster[j+1:], "=")
++					j = len(cluster) // consume the rest of the cluster
++				} else {
++					v, consume, err := takeValue(longName, args[i+1:])
++					if err != nil {
++						return cfg, err
++					}
++					value, i = v, i+consume
++				}
++				if c == 'n' {
++					if err := setCount(arg, value); err != nil {
++						return cfg, err
++					}
++				} else {
++					cfg.Output = value
++				}
++			default:
++				return cfg, fmt.Errorf("unknown flag -%c: %w", c, ErrUsage)
++			}
++		}
++	}
++
++	return cfg, nil
++}
++
++// takeValue returns the first element of rest, or an error if rest is empty.
++func takeValue(name string, rest []string) (string, int, error) {
++	if len(rest) == 0 {
++		return "", 0, fmt.Errorf("flag %s: missing value: %w", name, ErrUsage)
++	}
++	return rest[0], 1, nil
++}
+diff --git a/cli/zz_hidden_test.go b/cli/zz_hidden_test.go
+new file mode 100644
+index 0000000..049577c
+--- /dev/null
++++ b/cli/zz_hidden_test.go
+@@ -0,0 +1,72 @@
++package cli
++
++import (
++	"errors"
++	"reflect"
++	"strings"
++	"testing"
++)
++
++func TestHiddenForms(t *testing.T) {
++	cases := []struct {
++		in   []string
++		want Config
++	}{
++		{[]string{"-n", "3", "file"}, Config{Count: 3, Output: "-", Args: []string{"file"}}},
++		{[]string{"-n=4"}, Config{Count: 4, Output: "-"}},
++		{[]string{"--count", "0"}, Config{Count: 0, Output: "-"}},
++		{[]string{"--count=7", "-v"}, Config{Count: 7, Output: "-", Verbose: true}},
++		{[]string{"-o", "out.txt", "a", "b"}, Config{Count: 1, Output: "out.txt", Args: []string{"a", "b"}}},
++		{[]string{"--output=x.json"}, Config{Count: 1, Output: "x.json"}},
++		{[]string{"--tag", "a", "--tag=b", "x"}, Config{Count: 1, Output: "-", Tags: []string{"a", "b"}, Args: []string{"x"}}},
++		{[]string{"-vv", "--verbose"}, Config{Count: 1, Output: "-", Verbose: true}},
++		{[]string{"a", "--", "-n", "--weird"}, Config{Count: 1, Output: "-", Args: []string{"a", "-n", "--weird"}}},
++		{[]string{"-", "-v"}, Config{Count: 1, Output: "-", Verbose: true, Args: []string{"-"}}},
++		{[]string{"-o", "-"}, Config{Count: 1, Output: "-"}},
++	}
++	for _, c := range cases {
++		got, err := Parse(c.in)
++		if err != nil {
++			t.Errorf("%v: %v", c.in, err)
++			continue
++		}
++		if !reflect.DeepEqual(got, c.want) {
++			t.Errorf("%v: got %+v want %+v", c.in, got, c.want)
++		}
++	}
++}
++
++func TestHiddenErrors(t *testing.T) {
++	cases := []struct {
++		in   []string
++		flag string
++	}{
++		{[]string{"-n"}, "-n"},
++		{[]string{"--count", "abc"}, "--count"},
++		{[]string{"-n", "-2"}, "-n"},
++		{[]string{"--bogus"}, "--bogus"},
++		{[]string{"-x"}, "-x"},
++		{[]string{"--output"}, "--output"},
++		{[]string{"-vx"}, "-vx"},
++	}
++	for _, c := range cases {
++		_, err := Parse(c.in)
++		if err == nil {
++			t.Errorf("%v: expected error", c.in)
++			continue
++		}
++		if !errors.Is(err, ErrUsage) {
++			t.Errorf("%v: error does not wrap ErrUsage: %v", c.in, err)
++		}
++		if !strings.Contains(err.Error(), c.flag) {
++			t.Errorf("%v: error %q does not mention %s", c.in, err, c.flag)
++		}
++	}
++}
++
++func TestHiddenNilSlices(t *testing.T) {
++	c, _ := Parse([]string{"-v"})
++	if c.Tags != nil || c.Args != nil {
++		t.Fatalf("expected nil slices: %#v", c)
++	}
++}

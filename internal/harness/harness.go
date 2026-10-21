@@ -50,6 +50,8 @@ type Config struct {
 	PresencePenalty   *float64 `json:"presence_penalty,omitempty"`
 	CheckOnFinish     bool     `json:"check_on_finish"` // run the task acceptance command on finish
 	CompactSummaryMax int      `json:"compact_summary_max_tokens"`
+	ReadLineSep       string   `json:"read_line_sep"` // read_file separator between line number and content ("" = tab)
+	FuzzyEdit         bool     `json:"fuzzy_edit"`    // whitespace-tolerant edit_file fallback
 }
 
 // Hint is a Harness² "plugin": when a tool result matches Pattern, Text is

@@ -18,5 +18,27 @@ evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is th
 5. Inspect a run: `./bin/qh digest eval/results/<iter>/<task>/r1`.
 6. Continue from "Next steps" below.
 
-## Current state
-- Phase 0 (baseline/instrumentation): IN PROGRESS
+## Current state (update me)
+- Phase 0 DONE: endpoint characterised (docs/ENDPOINT.md); smoke 49/50 structured tool calls (eval/results/phase0).
+- Phase 1 DONE (first version): Go loop, 9 tools, output cap+spill, repair, loop detector, traces, finish→check.
+- Phase 2 PARTIAL: compaction implemented (model checkpoint + git state) but not yet exercised by a task.
+- Eval suite: 12 Tier-A (a01–a12), 4 Tier-B (b01–b04), 2 held-out (h01–h02). All validated with
+  `eval/runner/validate_tasks.sh` (hidden fails on start, passes with solution/).
+- Baseline it0 (harness/base) running/ran on Tier A: see eval/results/it0-baseline/summary.md.
+- Experiments: EXP-1 (E1 edit indentation) candidates in harness/cand/e1-sep and harness/cand/e1-fuzzy — to probe.
+- OpenCode comparator: `npm install opencode-ai` into a scratch dir, then
+  `OPENCODE_BIN=<dir>/node_modules/.bin/opencode ./bin/qh eval --agent eval/runner/opencode_agent.sh ...`
+  (models.opencode.ai is blocked by the egress proxy; OPENCODE_DISABLE_MODELS_FETCH=true works around it).
+- Not possible here: Tier C (Terminal-Bench needs Docker; daemon not running), Tier D (PWA spec not provided).
+
+## Next steps
+1. Finish it0 baseline (Tier A), run Tier B + held-out baseline.
+2. Probe EXP-1 candidates on edit-heavy tasks (a04, a05, h01, h02); adopt if contrast supports.
+3. OpenCode baseline on Tier A subset + Tier B.
+4. Phase 3: planner + per-step fresh contexts if Tier-B traces show context/planning failures.
+
+## Log
+- 2026-10-21 14:00 — endpoint probed; harness skeleton; smoke test 49/50.
+- 2026-10-21 14:05 — Tier-A baseline it0 started (parallel 2). First results: 4/4 success.
+- 2026-10-21 14:35 — Tier-B tasks b01–b04, held-out h01–h02 added; EXP-1 candidates implemented (config knobs
+  `read_line_sep`, `fuzzy_edit`; defaults keep old behaviour).

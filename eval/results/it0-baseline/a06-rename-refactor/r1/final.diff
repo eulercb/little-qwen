@@ -1,0 +1,195 @@
+ cmd/area/main.go         |  4 +--
+ shapes/shapes.go         | 65 +++++++++++++++++++++++++++++++++++-------------
+ shapes/shapes_test.go    |  4 +--
+ shapes/zz_hidden_test.go | 54 ++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 106 insertions(+), 21 deletions(-)
+
+diff --git a/cmd/area/main.go b/cmd/area/main.go
+index ff5632a..8edf50c 100644
+--- a/cmd/area/main.go
++++ b/cmd/area/main.go
+@@ -8,6 +8,6 @@ import (
+ )
+ 
+ func main() {
+-	all := []shapes.Shp{shapes.Circle{R: 1}, shapes.Rect{W: 2, H: 3}}
+-	fmt.Printf("total area: %.2f\n", shapes.TotalAr(all))
++	all := []shapes.Shape{shapes.Circle{R: 1}, shapes.Rectangle{W: 2, H: 3}}
++	fmt.Printf("total area: %.2f\n", shapes.TotalArea(all))
+ }
+diff --git a/shapes/shapes.go b/shapes/shapes.go
+index 90d2360..99bdaf3 100644
+--- a/shapes/shapes.go
++++ b/shapes/shapes.go
+@@ -4,25 +4,35 @@ package shapes
+ import (
+ 	"errors"
+ 	"math"
++	"strconv"
+ )
+ 
+-// Shp is a 2D shape.
+-type Shp interface {
+-	Ar() float64
+-	Per() float64
++// Shape is a 2D shape.
++type Shape interface {
++	Area() float64
++	Perimeter() float64
+ }
+ 
+ // Circle is a circle with radius R.
+ type Circle struct{ R float64 }
+ 
+-func (c Circle) Ar() float64  { return math.Pi * c.R * c.R }
+-func (c Circle) Per() float64 { return 2 * math.Pi * c.R }
++func (c Circle) Area() float64      { return math.Pi * c.R * c.R }
++func (c Circle) Perimeter() float64 { return 2 * math.Pi * c.R }
+ 
+-// Rect is an axis-aligned rectangle.
+-type Rect struct{ W, H float64 }
++func (c Circle) String() string {
++	return "Circle(r=" + strconv.FormatFloat(c.R, 'f', -1, 64) + ")"
++}
++
++// Rectangle is an axis-aligned rectangle.
++type Rectangle struct{ W, H float64 }
+ 
+-func (r Rect) Ar() float64  { return r.W * r.H }
+-func (r Rect) Per() float64 { return 2 * (r.W + r.H) }
++func (r Rectangle) Area() float64      { return r.W * r.H }
++func (r Rectangle) Perimeter() float64 { return 2 * (r.W + r.H) }
++
++func (r Rectangle) String() string {
++	return "Rectangle(" + strconv.FormatFloat(r.W, 'f', -1, 64) + "x" +
++		strconv.FormatFloat(r.H, 'f', -1, 64) + ")"
++}
+ 
+ // Triangle has side lengths A, B, C.
+ type Triangle struct{ A, B, C float64 }
+@@ -35,19 +45,40 @@ func NewTriangle(a, b, c float64) (Triangle, error) {
+ 	return Triangle{a, b, c}, nil
+ }
+ 
+-func (t Triangle) Per() float64 { return t.A + t.B + t.C }
++func (t Triangle) Perimeter() float64 { return t.A + t.B + t.C }
+ 
+-// Ar uses Heron's formula.
+-func (t Triangle) Ar() float64 {
+-	s := t.Per() / 2
++// Area uses Heron's formula.
++func (t Triangle) Area() float64 {
++	s := t.Perimeter() / 2
+ 	return math.Sqrt(s * (s - t.A) * (s - t.B) * (s - t.C))
+ }
+ 
+-// TotalAr sums the areas.
+-func TotalAr(shapes []Shp) float64 {
++func (t Triangle) String() string {
++	return "Triangle(" + strconv.FormatFloat(t.A, 'f', -1, 64) + "," +
++		strconv.FormatFloat(t.B, 'f', -1, 64) + "," +
++		strconv.FormatFloat(t.C, 'f', -1, 64) + ")"
++}
++
++// TotalArea sums the areas.
++func TotalArea(shapes []Shape) float64 {
+ 	sum := 0.0
+ 	for _, s := range shapes {
+-		sum += s.Ar()
++		sum += s.Area()
+ 	}
+ 	return sum
+ }
++
++// Largest returns the shape with the greatest area (the first one on ties),
++// or false if shapes is empty.
++func Largest(shapes []Shape) (Shape, bool) {
++	if len(shapes) == 0 {
++		return nil, false
++	}
++	best := shapes[0]
++	for _, s := range shapes[1:] {
++		if s.Area() > best.Area() {
++			best = s
++		}
++	}
++	return best, true
++}
+diff --git a/shapes/shapes_test.go b/shapes/shapes_test.go
+index 5a39897..bb0e54d 100644
+--- a/shapes/shapes_test.go
++++ b/shapes/shapes_test.go
+@@ -10,11 +10,11 @@ func TestAreas(t *testing.T) {
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+-	got := TotalAr([]Shp{Rect{3, 4}, tri})
++	got := TotalArea([]Shape{Rectangle{3, 4}, tri})
+ 	if math.Abs(got-18) > 1e-9 {
+ 		t.Fatalf("total = %v", got)
+ 	}
+-	if math.Abs(Circle{1}.Per()-2*math.Pi) > 1e-9 {
++	if math.Abs(Circle{1}.Perimeter()-2*math.Pi) > 1e-9 {
+ 		t.Fatal("circle perimeter")
+ 	}
+ }
+diff --git a/shapes/zz_hidden_test.go b/shapes/zz_hidden_test.go
+new file mode 100644
+index 0000000..a84b971
+--- /dev/null
++++ b/shapes/zz_hidden_test.go
+@@ -0,0 +1,54 @@
++package shapes
++
++import (
++	"math"
++	"testing"
++)
++
++func TestHiddenInterface(t *testing.T) {
++	var _ Shape = Circle{}
++	var _ Shape = Rectangle{}
++	var _ Shape = Triangle{}
++	r := Rectangle{W: 2, H: 5}
++	if r.Area() != 10 || r.Perimeter() != 14 {
++		t.Fatal("rectangle")
++	}
++}
++
++func TestHiddenLargest(t *testing.T) {
++	if _, ok := Largest(nil); ok {
++		t.Fatal("empty")
++	}
++	a := Rectangle{W: 2, H: 2}
++	b := Rectangle{W: 1, H: 4}
++	c := Circle{R: 0.5}
++	got, ok := Largest([]Shape{c, a, b})
++	if !ok || got != Shape(a) {
++		t.Fatalf("largest = %v", got)
++	}
++}
++
++func TestHiddenStrings(t *testing.T) {
++	tri, _ := NewTriangle(3, 4, 5)
++	cases := map[string]interface{ String() string }{
++		"Circle(r=1.5)":    Circle{R: 1.5},
++		"Rectangle(3x4)":   Rectangle{W: 3, H: 4},
++		"Triangle(3,4,5)":  tri,
++		"Rectangle(0.25x2)": Rectangle{W: 0.25, H: 2},
++	}
++	for want, s := range cases {
++		if got := s.String(); got != want {
++			t.Errorf("got %q want %q", got, want)
++		}
++	}
++}
++
++func TestHiddenBehaviourKept(t *testing.T) {
++	if _, err := NewTriangle(1, 2, 3); err == nil {
++		t.Fatal("degenerate triangle accepted")
++	}
++	tri, _ := NewTriangle(3, 4, 5)
++	if math.Abs(tri.Area()-6) > 1e-9 {
++		t.Fatal("heron")
++	}
++}

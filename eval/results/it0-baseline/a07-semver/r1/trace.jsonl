@@ -1,0 +1,3 @@
+{"type":"turn","t":"2026-10-21T14:34:51.320367615Z","agent":"main","segment":0,"turn":1,"prompt_tokens":2316,"cached_tokens":0,"prefill_tokens":2316,"reprefill_tokens":0,"completion_tokens":63,"reasoning_tokens":9,"latency_ms":44686,"ttft_ms":40709,"finish_reason":"tool_calls","cache_status":"miss","tool_calls":2,"effort":"medium"}
+{"type":"tool","t":"2026-10-21T14:34:51.320616905Z","agent":"main","turn":1,"tool":"read_file","args_hash":"29f31d289315ce62","args_preview":"{\"path\":\"go.mod\"}","ok":true,"out_chars":78,"dur_ms":0}
+{"type":"tool","t":"2026-10-21T14:34:51.320703031Z","agent":"main","turn":1,"tool":"list_dir","args_hash":"cc7904c7c8b1bdb7","args_preview":"{\"path\":\"semver\"}","ok":true,"out_chars":10,"dur_ms":0}

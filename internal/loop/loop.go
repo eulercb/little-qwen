@@ -81,6 +81,8 @@ type Agent struct {
 
 // New creates the top-level agent.
 func New(c *llm.Client, h *harness.Harness, env *tools.Env, tr *trace.Tracer, task Task) *Agent {
+	env.LineSep = h.Config.ReadLineSep
+	env.FuzzyEdit = h.Config.FuzzyEdit
 	return &Agent{Name: "main", Client: c, H: h, Env: env, Tr: tr, Task: task, Tools: tools.Definitions(nil), MaxTurn: h.Config.MaxTurns}
 }
 

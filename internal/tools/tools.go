@@ -39,6 +39,12 @@ type Env struct {
 	RunEnv  []string
 	MaxRun  time.Duration
 	ReadMax int // max lines per read_file call
+	// LineSep separates the line number from the content in read_file output
+	// ("\t" like cat -n by default).
+	LineSep string
+	// FuzzyEdit lets edit_file fall back to a whitespace-tolerant line match
+	// (unique match required) and re-indent new_text to the file's indentation.
+	FuzzyEdit bool
 }
 
 func ok(format string, a ...any) Result {
@@ -250,8 +256,12 @@ func (e *Env) readFile(a Args) Result {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "OK %s lines %d-%d of %d\n", e.rel(abs), start, end, len(lines))
+	sep := e.LineSep
+	if sep == "" {
+		sep = "\t"
+	}
 	for i := start; i <= end; i++ {
-		fmt.Fprintf(&b, "%5d\t%s\n", i, lines[i-1])
+		fmt.Fprintf(&b, "%5d%s%s\n", i, sep, lines[i-1])
 	}
 	if end < len(lines) {
 		fmt.Fprintf(&b, "... (%d more lines; call read_file with start_line=%d)\n", len(lines)-end, end+1)
@@ -315,6 +325,16 @@ func (e *Env) editFile(a Args) Result {
 	}
 	s := string(data)
 	n := strings.Count(s, oldT)
+	if n == 0 && e.FuzzyEdit {
+		if ns, line, note, okk := fuzzyReplace(s, oldT, newT); okk {
+			if err := os.WriteFile(abs, []byte(ns), 0o644); err != nil {
+				return fail("io", "%v", err)
+			}
+			r := ok("OK edited %s at line %d (-%d +%d lines; %s)", e.rel(abs), line, strings.Count(oldT, "\n")+1, strings.Count(newT, "\n")+1, note)
+			r.Changed = []string{e.rel(abs)}
+			return r
+		}
+	}
 	if n == 0 {
 		// Common small-model slip: whitespace differences. Offer a hint.
 		hint := "re-read the file with read_file and copy old_text exactly"
@@ -561,4 +581,108 @@ func (e *Env) listDir(a Args) Result {
 		b.WriteString("... (truncated)\n")
 	}
 	return ok("%s", b.String())
+}
+
+// fuzzyReplace finds old in s comparing lines with leading/trailing
+// whitespace ignored. On a unique match it replaces the matched lines with
+// new, re-based from old's indentation to the file's indentation.
+func fuzzyReplace(s, old, new string) (string, int, string, bool) {
+	fl := strings.Split(s, "\n")
+	ol := strings.Split(strings.Trim(old, "\n"), "\n")
+	if len(ol) == 0 || strings.TrimSpace(strings.Join(ol, "")) == "" {
+		return "", 0, "", false
+	}
+	norm := func(x string) string { return strings.TrimSpace(x) }
+	match := -1
+	for i := 0; i+len(ol) <= len(fl); i++ {
+		okk := true
+		for j := range ol {
+			if norm(fl[i+j]) != norm(ol[j]) {
+				okk = false
+				break
+			}
+		}
+		if okk {
+			if match >= 0 {
+				return "", 0, "", false // ambiguous
+			}
+			match = i
+		}
+	}
+	if match < 0 {
+		return "", 0, "", false
+	}
+	// Re-base indentation: measure new_text's indentation in levels relative
+	// to old_text's first non-blank line, then re-emit those levels in the
+	// file's indentation style.
+	var oldInd, fileInd string
+	for j := range ol {
+		if strings.TrimSpace(ol[j]) != "" {
+			oldInd = leadingWS(ol[j])
+			fileInd = leadingWS(fl[match+j])
+			break
+		}
+	}
+	oldBase := wsCols(oldInd)
+	oldUnit := 0
+	for _, l := range ol {
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		if d := wsCols(leadingWS(l)) - oldBase; d > 0 && (oldUnit == 0 || d < oldUnit) {
+			oldUnit = d
+		}
+	}
+	if oldUnit == 0 {
+		oldUnit = 4
+	}
+	fileUnit := "    "
+	if strings.Contains(fileInd, "\t") || strings.Contains(s, "\n\t") {
+		fileUnit = "\t"
+	}
+	nl := strings.Split(strings.Trim(new, "\n"), "\n")
+	if strings.Trim(new, "\n") == "" {
+		nl = nil
+	}
+	for k, line := range nl {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		d := wsCols(leadingWS(line)) - oldBase
+		body := strings.TrimLeft(line, " \t")
+		if d >= 0 {
+			nl[k] = fileInd + strings.Repeat(fileUnit, (d+oldUnit/2)/oldUnit) + body
+		} else {
+			ind := fileInd
+			for n := (-d + oldUnit/2) / oldUnit; n > 0 && ind != ""; n-- {
+				if strings.HasSuffix(ind, fileUnit) {
+					ind = ind[:len(ind)-len(fileUnit)]
+				} else {
+					ind = ind[:len(ind)-1]
+				}
+			}
+			nl[k] = ind + body
+		}
+	}
+	out := append(append(append([]string{}, fl[:match]...), nl...), fl[match+len(ol):]...)
+	note := "matched ignoring whitespace"
+	if oldInd != fileInd {
+		note = fmt.Sprintf("matched ignoring whitespace; re-indented from %q to %q", oldInd, fileInd)
+	}
+	return strings.Join(out, "\n"), match + 1, note, true
+}
+
+func leadingWS(x string) string { return x[:len(x)-len(strings.TrimLeft(x, " \t"))] }
+
+// wsCols measures indentation width with tabs counted as 4 columns.
+func wsCols(ws string) int {
+	n := 0
+	for _, c := range ws {
+		if c == '\t' {
+			n += 4
+		} else {
+			n++
+		}
+	}
+	return n
 }

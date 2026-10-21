@@ -1,0 +1,1 @@
+{"id":"h01-paginate-bugs","tier":"heldout","domain":"go","check":"go test ./...","hidden_check":"go test -count=1 ./...","score":"gotest"}
