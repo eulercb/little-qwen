@@ -1,0 +1,1 @@
+{"id":"b02-tasker-feature","tier":"tierB","domain":"go","check":"go vet ./... && go test ./...","hidden_check":"go test -count=1 ./...","score":"gotest"}

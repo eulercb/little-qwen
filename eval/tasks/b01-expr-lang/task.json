@@ -1,0 +1,1 @@
+{"id":"b01-expr-lang","tier":"tierB","domain":"go","check":"go vet ./... && go test ./...","hidden_check":"go test -count=1 ./...","score":"gotest"}
