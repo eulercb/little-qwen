@@ -77,7 +77,8 @@ type Agent struct {
 	errSeen  map[string]int
 	start    time.Time
 	reviewed bool
-	prevProm int // prompt tokens of the previous request (for cache-loss accounting)
+	allowed  map[string]bool // nil = all tools allowed
+	prevProm int             // prompt tokens of the previous request (for cache-loss accounting)
 }
 
 // New creates the top-level agent.
@@ -153,6 +154,7 @@ func (a *Agent) Run(ctx context.Context) Outcome {
 	deadline := start.Add(wall)
 
 	a.push(llm.Message{Role: "system", Content: llm.Str(a.H.System)})
+	a.warmPrefix(ctx)
 	a.push(llm.Message{Role: "user", Content: llm.Str(a.TaskCard())})
 
 	a.start = start
@@ -179,10 +181,7 @@ func (a *Agent) Run(ctx context.Context) Outcome {
 			}
 		}
 		a.out.Turns = turn
-		effort := a.cfg.ReasoningEffort
-		if turn == 1 && a.cfg.PlannerEffort != "" {
-			effort = a.cfg.PlannerEffort
-		}
+		effort := a.effort(turn)
 		resp, err := a.Client.Chat(ctx, llm.Request{
 			Messages: a.msgs, Tools: a.Tools, MaxTokens: a.cfg.MaxTokens, ReasoningEffort: effort,
 			Temperature: a.cfg.Temperature, TopP: a.cfg.TopP, PresencePenalty: a.cfg.PresencePenalty,
@@ -259,6 +258,34 @@ func (a *Agent) Run(ctx context.Context) Outcome {
 	}
 }
 
+// effort returns the reasoning effort for a turn. The effort is rendered into
+// the prompt prefix, so any change between turns forces a full re-prefill;
+// PlannerEffort != ReasoningEffort therefore costs one re-prefill on turn 2.
+func (a *Agent) effort(turn int) string {
+	if turn == 1 && a.cfg.PlannerEffort != "" {
+		return a.cfg.PlannerEffort
+	}
+	return a.cfg.ReasoningEffort
+}
+
+// warmPrefix sends a 1-token request whose prompt is just the stable prefix
+// (system + tools + a trivial user turn). The server checkpoints prompt state
+// at the end of each request, so this leaves a checkpoint right after the
+// shared prefix that every task, sub-agent and post-compaction segment can
+// reuse (docs/ENDPOINT.md). When the prefix is already cached it costs ~2 s.
+func (a *Agent) warmPrefix(ctx context.Context) {
+	if a.cfg.NoWarmup {
+		return
+	}
+	msgs := []llm.Message{a.msgs[0], {Role: "user", Content: llm.Str(".")}}
+	r, err := a.Client.Chat(ctx, llm.Request{Messages: msgs, Tools: a.Tools, MaxTokens: 1, ReasoningEffort: a.effort(1)})
+	if err != nil {
+		a.logf("prefix warm-up failed: %v", err)
+		return
+	}
+	a.Tr.Event(trace.Event{Agent: a.Name, Name: "warmup", Data: map[string]any{"prompt_tokens": r.Usage.PromptTokens, "cached_tokens": r.Usage.CachedTokens, "latency_ms": r.LatencyMS}})
+}
+
 func (a *Agent) account(turn int, effort string, r *llm.Response) {
 	u := r.Usage
 	// The server caches the previous prompt but not generated tokens, so the
@@ -299,6 +326,9 @@ func (a *Agent) handleCall(ctx context.Context, turn, idx int, tc llm.ToolCall) 
 	var res tools.Result
 	finished := false
 	switch {
+	case a.allowed != nil && !a.allowed[name]:
+		res = tools.Result{ErrorClass: "not_allowed", Output: fmt.Sprintf("ERROR not_allowed: you are a read-only sub-agent; %s is not available. Use read_file, grep, list_dir or run (read-only commands), then call finish with your report.", name)}
+		a.code(trace.F2WrongTool)
 	case err != nil:
 		res = tools.Result{ErrorClass: "bad_args", Output: fmt.Sprintf("ERROR bad_args: arguments are not valid JSON (%v). Re-issue the call with valid arguments.", err)}
 		a.code(trace.F1ToolFormat)
@@ -461,7 +491,11 @@ func (a *Agent) delegate(ctx context.Context, args tools.Args) tools.Result {
 	sub := &Agent{
 		Name: fmt.Sprintf("%s.sub%d", a.Name, a.subN), Client: a.Client, H: a.H, Env: a.Env, Tr: a.Tr,
 		Task: Task{ID: a.Task.ID, Prompt: task}, Log: a.Log, IsSub: true,
-		Tools: tools.Definitions(a.H.Config.SubAgentTools), MaxTurn: a.H.Config.SubAgentMaxTurns,
+		// Same tool definitions as the parent so the rendered prefix (and its
+		// cache checkpoint) is shared; the read-only subset is enforced in
+		// handleCall.
+		Tools: a.Tools, MaxTurn: a.H.Config.SubAgentMaxTurns,
+		allowed: toSet(a.H.Config.SubAgentTools),
 	}
 	o := sub.Run(ctx)
 	a.out.PromptTokens += o.PromptTokens
@@ -489,10 +523,17 @@ func (a *Agent) compact(ctx context.Context, turn int, reason string) error {
 	var summary string
 	if reason == "threshold" {
 		msgs := append(append([]llm.Message{}, a.msgs...), llm.Message{Role: "user", Content: llm.Str(req)})
-		resp, err := a.Client.Chat(ctx, llm.Request{Messages: msgs, MaxTokens: a.cfg.CompactSummaryMax + 2000, ReasoningEffort: "low"})
+		// Same tools and effort as the segment so the request is a cache hit
+		// on the whole conversation (only the checkpoint request is new).
+		resp, err := a.Client.Chat(ctx, llm.Request{Messages: msgs, Tools: a.Tools, MaxTokens: a.cfg.CompactSummaryMax + 2000, ReasoningEffort: a.effort(turn)})
 		if err == nil {
-			a.account(turn, "low", resp)
+			a.account(turn, a.effort(turn), resp)
 			summary = strings.TrimSpace(resp.Message.Text())
+			if summary == "" {
+				// The model answered with a tool call; its reasoning is the best
+				// available record of the state.
+				summary = strings.TrimSpace(resp.Message.ReasoningContent)
+			}
 		} else {
 			a.logf("checkpoint summary failed: %v", err)
 		}
@@ -544,3 +585,11 @@ func firstLine(s string) string {
 }
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+func toSet(names []string) map[string]bool {
+	m := map[string]bool{}
+	for _, n := range names {
+		m[n] = true
+	}
+	return m
+}

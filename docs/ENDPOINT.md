@@ -56,3 +56,15 @@ take ~12–20 minutes. Cache discipline is therefore the single most important p
 - Conclusion: the server is effectively single-throughput. Run evals with `--parallel 1`: same total
   throughput, cleaner per-task latency. Compare wall time only between runs made at the same concurrency;
   compare success/turns/tokens across any runs.
+
+## reasoning_effort is part of the cached prefix
+The template renders the effort near the start of the prompt (same messages: low=1921, medium=1895,
+xhigh=1934 prompt tokens), so requests at different efforts share no cache:
+`low` then `medium` → `cached=0`; `medium` again → `cached=1888`; `xhigh` → `cached=0`.
+Rules for the harness: keep one effort per context segment (a planner/executor effort split costs a full
+re-prefill), and make side requests (compaction checkpoint, warm-up) use the segment's effort and tools.
+
+## Prefix warm-up
+A 1-token request whose prompt is system + tools + a trivial user turn leaves a checkpoint right after the
+shared prefix: the next conversation with a different user message reused 1,888 of 1,952 tokens
+(2.9 s vs 43.5 s cold, under load). `qh` does this at the start of every agent (main, sub-agent).

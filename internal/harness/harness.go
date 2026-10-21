@@ -52,6 +52,7 @@ type Config struct {
 	CompactSummaryMax  int      `json:"compact_summary_max_tokens"`
 	ReadLineSep        string   `json:"read_line_sep"`        // read_file separator between line number and content ("" = tab)
 	FuzzyEdit          bool     `json:"fuzzy_edit"`           // whitespace-tolerant edit_file fallback
+	NoWarmup           bool     `json:"no_warmup"`            // disable the prefix warm-up request
 	ReviewBeforeFinish bool     `json:"review_before_finish"` // first finish call triggers a requirements self-review
 }
 
