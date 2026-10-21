@@ -29,7 +29,8 @@ evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is th
 ## Current state (update me)
 - Phase 0 DONE: endpoint characterised (docs/ENDPOINT.md); smoke 49/50 structured tool calls (eval/results/phase0).
 - Phase 1 DONE (first version): Go loop, 9 tools, output cap+spill, repair, loop detector, traces, finish→check.
-- Phase 2 PARTIAL: compaction implemented (model checkpoint + git state) but not yet exercised by a task.
+- Phase 2 DONE (mechanism): compaction verified with the real model (eval/results/sanity-compact): checkpoint
+  request is a cache hit, new segment reuses the warmed prefix, model resumes from its Next steps.
 - Eval suite: 12 Tier-A (a01–a12), 4 Tier-B (b01–b04), 2 held-out (h01–h02). All validated with
   `eval/runner/validate_tasks.sh` (hidden fails on start, passes with solution/).
 - Baseline it0 (harness/base) running/ran on Tier A: see eval/results/it0-baseline/summary.md.
