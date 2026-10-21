@@ -85,3 +85,12 @@ Template:
 - Lesson: design-turn thinking on these tasks is mostly necessary work; cutting it moves it, not removes it.
   If revisited, keep the partial reasoning (e.g. continue from it) rather than discarding it.
 - OpenCode comparator (eval/results/opencode-baseline, h01): success, 9.2 min vs qh base 3.2 min (both single-stream).
+
+## EXP-4: strip_reasoning (E4)   (status: REJECTED, n=1)
+- Probe eval/results/exp4-strip (a04, a05, a10, a12, h03, h04 ×1).
+- Prefill fell 55% (114.8K → 51.4K tokens) as predicted, but thinking rose (52.9K → 60.7K); on the two
+  load-comparable tasks it nearly doubled (h03 11.3K → 21.8K, h04 13.0K → 21.2K) and wall time got worse
+  (16.3 → 28.6, 19.9 → 27.6 min). Without its earlier reasoning in context the model re-derives each turn, and a
+  thinking token costs ~4× a prefill token on this server. Success 5/6 in both arms (a04 1.0 → 0.75, h04 0.92 → 1.0).
+- Keep `preserve_thinking` (default). Note: Tier-A base wall times for a01–a12 were measured at 2× load, so a
+  single-stream base rerun (it0-base-p1) was queued for time comparisons.

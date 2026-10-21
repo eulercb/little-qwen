@@ -8,3 +8,4 @@ eval/results/*.log
 eval/results/**/.inprogress/
 eval/queue.log
 eval/.eval.lock
+eval/queue.log
