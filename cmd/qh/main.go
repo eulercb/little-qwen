@@ -50,6 +50,8 @@ func main() {
 		err = cmdValidate(os.Args[2:])
 	case "smoke":
 		err = cmdSmoke(ctx, os.Args[2:])
+	case "propose":
+		err = cmdPropose(ctx, os.Args[2:])
 	case "rescore":
 		err = cmdRescore(ctx, os.Args[2:])
 	default:
