@@ -104,3 +104,6 @@ Template:
 - **A2/A3 queued:** `thinking_mode` = `off` (Qwen non-thinking sampling: T=0.7, top_p=0.8, presence=1.5) and
   `adaptive` (thinking on turns 1–2 and after a turn with a tool error / failing test or check / no tool call).
   Verified first that toggling thinking keeps the prefix cached.
+- **Single-stream base (eval/results/it0-base-p1, a03 a04 a05 a07 a09 a10 a12):** 7/7, wall 6.7 ± 2.7 min,
+  7.7K completion (2.8K thinking), 12 turns. Against it, A1 (low) on the 6 shared tasks: 37.6 → 111.9 min,
+  thinking 15.2K → 75.2K — confirms the rejection.
