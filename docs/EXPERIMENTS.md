@@ -22,3 +22,9 @@ Template:
 ```
 
 ---
+
+## Evidence notes from it0-baseline (collected while running)
+- **E1 (a04-cli-args r1, turns 15–19):** two `edit_file` calls failed with `no_match`. The model's `old_text` had
+  5 leading tabs where the file had 4. `read_file` renders lines as `%5d\t<content>`, so in tab-indented Go the
+  separator tab looks like an indentation tab. The model recovered with `sed -n '74p' | cat -A` and `sed -i`,
+  costing 3 extra turns (~1.5 min).
