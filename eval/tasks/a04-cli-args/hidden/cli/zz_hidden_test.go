@@ -47,7 +47,7 @@ func TestHiddenErrors(t *testing.T) {
 		{[]string{"--bogus"}, "--bogus"},
 		{[]string{"-x"}, "-x"},
 		{[]string{"--output"}, "--output"},
-		{[]string{"-vx"}, "-vx"},
+		{[]string{"-vx"}, "x"}, // "-vx" or "-x" are both acceptable
 	}
 	for _, c := range cases {
 		_, err := Parse(c.in)

@@ -153,7 +153,47 @@ func Summary(results []Result) string {
 
 // Digest renders an editor-facing digest of one run directory: turn list,
 // tool calls, errors and events. It never includes hidden check output.
-func Digest(runDir string, maxLines int) (string, error) {
+func Digest(runDir string, maxLines int) (string, error) { return DigestWith(runDir, maxLines, 0) }
+
+// turnThoughts maps (agent, turn index) to a short excerpt of the assistant's
+// reasoning and text for that turn, read from transcript.jsonl.
+func turnThoughts(runDir string, n int) map[string]string {
+	out := map[string]string{}
+	f, err := os.Open(filepath.Join(runDir, "transcript.jsonl"))
+	if err != nil {
+		return out
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<20), 1<<26)
+	turn := map[string]int{}
+	for sc.Scan() {
+		var rec struct {
+			Agent string `json:"agent"`
+			Msg   struct {
+				Role      string  `json:"role"`
+				Content   *string `json:"content"`
+				Reasoning string  `json:"reasoning_content"`
+			} `json:"msg"`
+		}
+		if json.Unmarshal(sc.Bytes(), &rec) != nil || rec.Msg.Role != "assistant" {
+			continue
+		}
+		turn[rec.Agent]++
+		txt := rec.Msg.Reasoning
+		if rec.Msg.Content != nil && strings.TrimSpace(*rec.Msg.Content) != "" {
+			txt += " | said: " + *rec.Msg.Content
+		}
+		out[fmt.Sprintf("%s/%d", rec.Agent, turn[rec.Agent])] = oneLineStr(txt, n)
+	}
+	return out
+}
+
+// DigestWith is Digest plus, when thoughtChars > 0, an excerpt of each turn's
+// reasoning. Turn numbers in the transcript count assistant messages, which
+// can drift from trace turns after compaction checkpoints; excerpts are
+// best-effort context.
+func DigestWith(runDir string, maxLines, thoughtChars int) (string, error) {
 	f, err := os.Open(filepath.Join(runDir, "trace.jsonl"))
 	if err != nil {
 		return "", err
@@ -172,6 +212,10 @@ func Digest(runDir string, maxLines int) (string, error) {
 			b.WriteString("\n")
 		}
 	}
+	var thoughts map[string]string
+	if thoughtChars > 0 {
+		thoughts = turnThoughts(runDir, thoughtChars)
+	}
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1<<20), 1<<24)
 	n := 0
@@ -183,6 +227,11 @@ func Digest(runDir string, maxLines int) (string, error) {
 		var line string
 		switch m["type"] {
 		case "turn":
+			if thoughtChars > 0 {
+				if th := thoughts[fmt.Sprintf("%v/%v", m["agent"], m["turn"])]; th != "" {
+					b.WriteString(fmt.Sprintf("  ~ %s\n", th))
+				}
+			}
 			line = fmt.Sprintf("T%v %v prompt=%v cached=%v out=%v think=%v %.0fs %v", m["turn"], m["agent"], m["prompt_tokens"], m["cached_tokens"], m["completion_tokens"], m["reasoning_tokens"], toF(m["latency_ms"])/1000, m["finish_reason"])
 			if toF(m["reprefill_tokens"]) > 0 {
 				line += fmt.Sprintf(" REPREFILL=%v", m["reprefill_tokens"])

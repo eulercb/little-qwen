@@ -252,11 +252,12 @@ func cmdReport(args []string) error {
 func cmdDigest(args []string) error {
 	fs := flag.NewFlagSet("digest", flag.ExitOnError)
 	max := fs.Int("max", 400, "max lines")
+	thoughts := fs.Int("thoughts", 0, "include up to N chars of each turn's reasoning")
 	fs.Parse(args)
 	if fs.NArg() < 1 {
 		return fmt.Errorf("usage: qh digest <run-dir>")
 	}
-	d, err := eval.Digest(fs.Arg(0), *max)
+	d, err := eval.DigestWith(fs.Arg(0), *max, *thoughts)
 	if err != nil {
 		return err
 	}
