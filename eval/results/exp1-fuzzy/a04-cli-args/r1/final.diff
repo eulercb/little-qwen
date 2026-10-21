@@ -1,0 +1,166 @@
+ cli/cli.go | 148 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 147 insertions(+), 1 deletion(-)
+
+diff --git a/cli/cli.go b/cli/cli.go
+index b437c96..71fa603 100644
+--- a/cli/cli.go
++++ b/cli/cli.go
+@@ -1,7 +1,12 @@
+ // Package cli parses the command line of the frob tool.
+ package cli
+ 
+-import "errors"
++import (
++	"errors"
++	"fmt"
++	"strconv"
++	"strings"
++)
+ 
+ // ErrUsage is wrapped by every parse error.
+ var ErrUsage = errors.New("usage error")
+@@ -14,3 +19,144 @@ type Config struct {
+ 	Tags    []string
+ 	Args    []string
+ }
++
++// Parse parses the argument slice into a Config.
++func Parse(args []string) (Config, error) {
++	cfg := Config{Count: 1, Output: "-"}
++
++	sawDD := false
++	for i := 0; i < len(args); {
++		arg := args[i]
++		var (
++			consumed bool
++			err      error
++		)
++		switch {
++		case sawDD:
++			// "--" ends option parsing; everything after is positional.
++			cfg.Args = append(cfg.Args, arg)
++		case arg == "--":
++			sawDD = true
++		case len(arg) >= 2 && arg[0] == '-' && arg[1] == '-':
++			consumed, err = parseLong(&cfg, arg, args, i)
++		case len(arg) >= 2 && arg[0] == '-':
++			consumed, err = parseShort(&cfg, arg, args, i)
++		default:
++			// Bare "-" or a non-dash argument is positional.
++			cfg.Args = append(cfg.Args, arg)
++		}
++		if err != nil {
++			return cfg, err
++		}
++		i++
++		if consumed {
++			i++ // the following argument was consumed as a flag value
++		}
++	}
++	return cfg, nil
++}
++
++// value resolves the value for a flag given the remainder of its token
++// (after the flag character or "--name"): an attached value, a value
++// after "=", or the next argument. The bool result reports whether the
++// next argument was consumed and must be skipped.
++func value(name, rest string, args []string, idx int) (string, bool, error) {
++	if eq := strings.IndexByte(rest, '='); eq >= 0 {
++		if eq+1 >= len(rest) {
++			return "", false, fmt.Errorf("%w: missing value for %s", ErrUsage, name)
++		}
++		return rest[eq+1:], false, nil
++	}
++	if rest != "" {
++		return rest, false, nil
++	}
++	if idx+1 >= len(args) {
++		return "", false, fmt.Errorf("%w: missing value for %s", ErrUsage, name)
++	}
++	return args[idx+1], true, nil
++}
++
++func parseLong(cfg *Config, arg string, args []string, idx int) (bool, error) {
++	body := arg[2:]
++	name := body
++	val := ""
++	if eq := strings.IndexByte(body, '='); eq >= 0 {
++		name = body[:eq]
++		val = body[eq:] // includes "="; value() strips it
++	}
++	switch name {
++	case "v", "verbose":
++		if strings.Contains(body, "=") {
++			return false, fmt.Errorf("%w: --verbose takes no argument", ErrUsage)
++		}
++		cfg.Verbose = true
++		return false, nil
++	case "n", "count":
++		v, consumed, err := value(arg, val, args, idx)
++		if err != nil {
++			return false, err
++		}
++		n, err := strconv.Atoi(v)
++		if err != nil {
++			return false, fmt.Errorf("%w: invalid count %q for %s", ErrUsage, v, arg)
++		}
++		if n < 0 {
++			return false, fmt.Errorf("%w: negative count %q for %s", ErrUsage, v, arg)
++		}
++		cfg.Count = n
++		return consumed, nil
++	case "o", "output":
++		v, consumed, err := value(arg, val, args, idx)
++		if err != nil {
++			return false, err
++		}
++		cfg.Output = v
++		return consumed, nil
++	case "tag":
++		v, consumed, err := value(arg, val, args, idx)
++		if err != nil {
++			return false, err
++		}
++		cfg.Tags = append(cfg.Tags, v)
++		return consumed, nil
++	default:
++		return false, fmt.Errorf("%w: unknown flag %s", ErrUsage, arg)
++	}
++}
++
++func parseShort(cfg *Config, arg string, args []string, idx int) (bool, error) {
++	chars := arg[1:]
++	for len(chars) > 0 {
++		c := string(chars[0])
++		rest := chars[1:]
++		switch c {
++		case "v":
++			cfg.Verbose = true
++		case "n":
++			v, consumed, err := value(arg, rest, args, idx)
++			if err != nil {
++				return false, err
++			}
++			n, err := strconv.Atoi(v)
++			if err != nil {
++				return false, fmt.Errorf("%w: invalid count %q for %s", ErrUsage, v, arg)
++			}
++			if n < 0 {
++				return false, fmt.Errorf("%w: negative count %q for %s", ErrUsage, v, arg)
++			}
++			cfg.Count = n
++			return consumed, nil // a value-taking flag ends the cluster
++		case "o":
++			v, consumed, err := value(arg, rest, args, idx)
++			if err != nil {
++				return false, err
++			}
++			cfg.Output = v
++			return consumed, nil
++		default:
++			return false, fmt.Errorf("%w: unknown flag %s", ErrUsage, arg)
++		}
++		chars = rest
++	}
++	return false, nil
++}

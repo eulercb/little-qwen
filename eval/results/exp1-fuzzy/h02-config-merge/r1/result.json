@@ -1,0 +1,37 @@
+{
+  "task_id": "h02-config-merge",
+  "tier": "heldout",
+  "rep": 1,
+  "harness_hash": "68eddda04ae1",
+  "success": true,
+  "score": 1,
+  "tests_passed": 14,
+  "tests_total": 14,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Extended package config: added `Timeout time.Duration` (env APP_TIMEOUT via time.ParseDuration, default 30s in Defaults) and `Tags []string` (env APP_TAGS, comma-split, trimmed, empty items dropped, nil default); added `Merge(base, override Config) Config` where each non-zero override field replaces base and a non-nil Tags slice replaces base even when empty, without mutating the arguments' slices; rewrote `Load` to collect all invalid env values (APP_PORT, APP_DEBUG, APP_WORKERS, APP_TIMEOUT) and return them joined via `errors.Join` along with the zero Config. Verified with `go test -count=1 -v ./...` — all 11 tests (existing behavior preserved plus new cases) pass and `go vet` is clean.",
+    "Turns": 10,
+    "Compactions": 0,
+    "PromptTokens": 62034,
+    "PrefillTokens": 6610,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 4536,
+    "ReasoningTokens": 1287,
+    "ToolCalls": 14,
+    "ToolErrors": 2,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 1,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F3": 1
+    },
+    "WallSeconds": 222.52378429,
+    "Err": ""
+  },
+  "started": "2026-10-21T16:55:06Z",
+  "hidden_output": "=== RUN   TestLoadDefaults\n--- PASS: TestLoadDefaults (0.00s)\n=== RUN   TestLoadOverrides\n--- PASS: TestLoadOverrides (0.00s)\n=== RUN   TestLoadTimeout\n--- PASS: TestLoadTimeout (0.00s)\n=== RUN   TestLoadTags\n--- PASS: TestLoadTags (0.00s)\n=== RUN   TestLoadTagsAllEmpty\n--- PASS: TestLoadTagsAllEmpty (0.00s)\n=== RUN   TestLoadCollectsAllErrors\n--- PASS: TestLoadCollectsAllErrors (0.00s)\n=== RUN   TestMergeOverrideWins\n--- PASS: TestMergeOverrideWins (0.00s)\n=== RUN   TestMergeKeepsBaseForZeroOverride\n--- PASS: TestMergeKeepsBaseForZeroOverride (0.00s)\n=== RUN   TestMergeEmptyTagsReplace\n--- PASS: TestMergeEmptyTagsReplace (0.00s)\n=== RUN   TestMergeNilTagsKeepsBase\n--- PASS: TestMergeNilTagsKeepsBase (0.00s)\n=== RUN   TestMergeDoesNotMutateArguments\n--- PASS: TestMergeDoesNotMutateArguments (0.00s)\n=== RUN   TestHiddenNewFields\n--- PASS: TestHiddenNewFields (0.00s)\n=== RUN   TestHiddenAllErrors\n--- PASS: TestHiddenAllErrors (0.00s)\n=== RUN   TestHiddenMerge\n--- PASS: TestHiddenMerge (0.00s)\nPASS\nok  \texample.com/config/config\t0.003s",
+  "work": "/tmp/qh-runs/exp1-fuzzy/h02-config-merge-r1"
+}

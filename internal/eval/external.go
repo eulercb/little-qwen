@@ -29,7 +29,10 @@ func RunExternal(ctx context.Context, agentCmd string, t TaskSpec, rep int, outD
 	if t.Check != "" {
 		prompt += fmt.Sprintf("\nAcceptance check: `%s` must exit 0. Run it yourself before you finish.\n", t.Check)
 	}
-	pf := filepath.Join(outDir, "prompt.txt")
+	pf, err := filepath.Abs(filepath.Join(outDir, "prompt.txt"))
+	if err != nil {
+		return nil, err
+	}
 	if err := os.WriteFile(pf, []byte(prompt), 0o644); err != nil {
 		return nil, err
 	}

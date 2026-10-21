@@ -1,6 +1,6 @@
-16:25:26 h01-paginate-bugs/r1 start (harness 6e880e0d3539, agent "eval/runner/opencode_agent.sh")
-16:25:26 h01-paginate-bugs/r1 external agent start
-16:25:27 h01-paginate-bugs/r1 DONE success=false score=0.25 status=exit_127 turns=0 wall=0.0min
+16:58:49 h01-paginate-bugs/r1 start (harness 6e880e0d3539, agent "/home/user/little-qwen/eval/runner/opencode_agent.sh")
+16:58:49 h01-paginate-bugs/r1 external agent start
+16:58:51 h01-paginate-bugs/r1 DONE success=false score=0.25 status=finished turns=0 wall=0.0min
 Harness: external — 1 runs over 1 tasks
 
 | metric | mean ± sd |
@@ -19,4 +19,4 @@ Failure codes:
 
 | task | tier | success | score | status | turns | wall min | compactions |
 |---|---|---|---|---|---|---|---|
-| h01-paginate-bugs | heldout | 0.00 | 0.25 | exit_127 | 0 | 0.0 | 0 |
+| h01-paginate-bugs | heldout | 0.00 | 0.25 | finished | 0 | 0.0 | 0 |

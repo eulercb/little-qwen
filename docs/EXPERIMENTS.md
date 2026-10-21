@@ -67,3 +67,10 @@ Template:
 - **Cluster C1 (F7, spec clause untested → silently wrong):** E6, E7. Revives the `review_before_finish` lever
   (checklist of every explicit requirement + where it is implemented + which test covers it). Probe on h02, h04
   (×2 each, now evidence tasks) and validate on spec-heavy b01, b06 (base numbers from the Tier-B baseline).
+
+## EXP-1: whitespace-tolerant edit_file (E1)   (status: adopted as safe hook, no contrast signal)
+- Probe eval/results/exp1-fuzzy (a04, a05, h01, h02 ×1): the fallback never fired — no `no_match` errors occurred.
+  `no_match` is rare (3 in 16 base runs). Success/turn differences vs base are within single-run noise.
+- Decision: adopt `fuzzy_edit: true` into the composed harness as a mechanical safety net (it only changes behaviour
+  when an edit would otherwise fail; unit-tested re-indentation). `read_line_sep` (changes every read) not adopted;
+  its probe was dropped.
