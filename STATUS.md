@@ -16,7 +16,14 @@ evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is th
 4. Run evals: `./bin/qh eval --tasks eval/tasks --harness harness/base --out eval/results/<iter> [--only tierA] [--reps 1]`
    (resumable: runs with an existing result.json are skipped). Then `./bin/qh report eval/results/<iter>`.
 5. Inspect a run: `./bin/qh digest eval/results/<iter>/<task>/r1`.
-6. Continue from "Next steps" below.
+6. Long runs go through the queue: append `qh eval ...` lines to `eval/queue.txt`, then
+   `nohup eval/runner/queue.sh >> eval/queue.log 2>&1 &` (finished lines move to `eval/queue.done`).
+   Check `pgrep -f queue.sh` first so two queues never run at once (the server has one effective lane).
+7. Compare a candidate with base: `eval/runner/compare.py eval/results/it0-baseline eval/results/<exp>`;
+   time/tool breakdown: `eval/runner/analyze.py eval/results/<dir>`.
+8. Re-score after fixing a hidden test: `./bin/qh rescore eval/results/<dir>` (needs the workdirs in /tmp/qh-runs).
+9. Qwen as editor (Phase 6): `./bin/qh propose --out harness/cand/<name> eval/results/<dir>/<task>/r1 ...`.
+10. Continue from "Next steps" below.
 
 ## Current state (update me)
 - Phase 0 DONE: endpoint characterised (docs/ENDPOINT.md); smoke 49/50 structured tool calls (eval/results/phase0).
