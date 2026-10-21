@@ -74,3 +74,14 @@ Template:
 - Decision: adopt `fuzzy_edit: true` into the composed harness as a mechanical safety net (it only changes behaviour
   when an edit would otherwise fail; unit-tested re-indentation). `read_line_sep` (changes every read) not adopted;
   its probe was dropped.
+
+## EXP-3: thinking budget 3,000 tokens (E3)   (status: REJECTED)
+- Probe eval/results/exp3-think (a10, a12, h03, h04 ×1). The budget fired once per task, always at turn 2 (the
+  design turn), after ~150 s. The next (unbudgeted) turn re-derived the design from scratch:
+  aborted+next thinking vs base's largest thinking turn — a10 3.0K+6.6K vs 7.7K, a12 3.0K+0.8K vs 2.5K,
+  h03 3.0K+5.5K vs 9.9K, h04 3.0K+3.5K vs 4.5K. Worse in 3/4: the discarded partial reasoning is pure waste.
+- Success 3/4 → 4/4 (h04 0.92 → 1.00) is within single-run variance; wall comparisons are confounded for a10/a12
+  (base ran at 2× load).
+- Lesson: design-turn thinking on these tasks is mostly necessary work; cutting it moves it, not removes it.
+  If revisited, keep the partial reasoning (e.g. continue from it) rather than discarding it.
+- OpenCode comparator (eval/results/opencode-baseline, h01): success, 9.2 min vs qh base 3.2 min (both single-stream).

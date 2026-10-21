@@ -1,0 +1,37 @@
+{
+  "task_id": "h04-mini-template",
+  "tier": "heldout",
+  "rep": 1,
+  "harness_hash": "0672c78949af",
+  "success": true,
+  "score": 1,
+  "tests_passed": 15,
+  "tests_total": 15,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Created package tmpl (tmpl/tmpl.go) implementing Render with verbatim text, {{{{ literal-{{ escaping, dotted-name lookup into nested maps, value formatting (string/int/int64/float64/bool/nil), left-to-right filters upper/lower/trim/default/truncate(html), and double-quoted arguments with \\\\ escapes; all spec'd error cases (unknown filter, missing/extra args, bad truncate arg, unterminated/empty/bad-name tags, non-map indexing with full name) return an error with empty output. Added tmpl/tmpl_test.go with 12 tests covering all behaviors. Verified with `go vet ./... \u0026\u0026 go test ./...` — exits 0.",
+    "Turns": 16,
+    "Compactions": 0,
+    "PromptTokens": 189765,
+    "PrefillTokens": 16421,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 13605,
+    "ReasoningTokens": 6370,
+    "ToolCalls": 22,
+    "ToolErrors": 3,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F4": 1
+    },
+    "WallSeconds": 868.671521752,
+    "Err": ""
+  },
+  "started": "2026-10-21T18:11:48Z",
+  "hidden_output": "=== RUN   TestRenderText\n--- PASS: TestRenderText (0.00s)\n=== RUN   TestRenderLiteralBraces\n--- PASS: TestRenderLiteralBraces (0.00s)\n=== RUN   TestRenderString\n--- PASS: TestRenderString (0.00s)\n=== RUN   TestRenderTypes\n--- PASS: TestRenderTypes (0.00s)\n=== RUN   TestRenderNested\n--- PASS: TestRenderNested (0.00s)\n=== RUN   TestRenderIndexNonMapError\n--- PASS: TestRenderIndexNonMapError (0.00s)\n=== RUN   TestWhitespaceAroundParts\n--- PASS: TestWhitespaceAroundParts (0.00s)\n=== RUN   TestFilters\n--- PASS: TestFilters (0.00s)\n=== RUN   TestTruncateNotCut\n--- PASS: TestTruncateNotCut (0.00s)\n=== RUN   TestHTML\n--- PASS: TestHTML (0.00s)\n=== RUN   TestEscapedArg\n--- PASS: TestEscapedArg (0.00s)\n=== RUN   TestErrors\n--- PASS: TestErrors (0.00s)\n=== RUN   TestMultipleTagsAndText\n--- PASS: TestMultipleTagsAndText (0.00s)\n=== RUN   TestHiddenRender\n--- PASS: TestHiddenRender (0.00s)\n=== RUN   TestHiddenErrors\n--- PASS: TestHiddenErrors (0.00s)\nPASS\nok  \texample.com/tmpl/tmpl\t0.003s",
+  "work": "/tmp/qh-runs/exp3-think/h04-mini-template-r1"
+}

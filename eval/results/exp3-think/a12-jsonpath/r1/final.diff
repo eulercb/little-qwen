@@ -1,0 +1,280 @@
+ jpath/jpath.go | 271 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 271 insertions(+)
+
+diff --git a/jpath/jpath.go b/jpath/jpath.go
+new file mode 100644
+index 0000000..e08f245
+--- /dev/null
++++ b/jpath/jpath.go
+@@ -0,0 +1,271 @@
++// Package jpath implements a tiny path query language over decoded JSON values.
++package jpath
++
++import (
++	"errors"
++	"fmt"
++	"sort"
++	"strconv"
++)
++
++type stepKind int
++
++const (
++	kindMember stepKind = iota
++	kindIndex
++	kindStar
++	kindRecurse
++)
++
++type step struct {
++	kind stepKind
++	key  string
++	idx  int
++}
++
++// Query evaluates a path over a decoded JSON document and returns the
++// matching values in the order specified by the path. A path with no
++// matches returns an empty non-nil slice. Malformed paths return an error
++// and a nil result.
++func Query(doc any, path string) ([]any, error) {
++	steps, err := parsePath(path)
++	if err != nil {
++		return nil, err
++	}
++	nodes := []any{doc}
++	for _, s := range steps {
++		nodes = apply(nodes, s)
++	}
++	if nodes == nil {
++		nodes = []any{}
++	}
++	return nodes, nil
++}
++
++func isIdentStart(c byte) bool {
++	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
++}
++
++func isIdentPart(c byte) bool {
++	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
++}
++
++func parsePath(path string) ([]step, error) {
++	if len(path) == 0 || path[0] != '$' {
++		return nil, errors.New("jpath: path must start with $")
++	}
++	if path == "$" {
++		return nil, nil
++	}
++	var steps []step
++	i := 1
++	for i < len(path) {
++		c := path[i]
++		switch {
++		case c == '.':
++			if i+1 < len(path) && path[i+1] == '.' {
++				j := i + 2
++				if j >= len(path) || !isIdentStart(path[j]) {
++					return nil, errors.New("jpath: expected name after ..")
++				}
++				j++
++				for j < len(path) && isIdentPart(path[j]) {
++					j++
++				}
++				steps = append(steps, step{kind: kindRecurse, key: path[i+2 : j]})
++				i = j
++			} else if i+1 < len(path) && path[i+1] == '*' {
++				steps = append(steps, step{kind: kindStar})
++				i += 2
++			} else if i+1 < len(path) && isIdentStart(path[i+1]) {
++				j := i + 2
++				for j < len(path) && isIdentPart(path[j]) {
++					j++
++				}
++				steps = append(steps, step{kind: kindMember, key: path[i+1 : j]})
++				i = j
++			} else {
++				return nil, errors.New("jpath: expected name or * after .")
++			}
++		case c == '[':
++			s, n, err := parseBracket(path, i)
++			if err != nil {
++				return nil, err
++			}
++			steps = append(steps, s)
++			i += n
++		default:
++			return nil, fmt.Errorf("jpath: unexpected character %q", c)
++		}
++	}
++	return steps, nil
++}
++
++// parseBracket parses a [..] step starting at path[i] == '['.
++// It returns the step, the number of characters consumed and an error.
++func parseBracket(path string, i int) (step, int, error) {
++	rest := path[i:]
++	// Find an unescaped closing bracket (brackets inside quoted keys do not count).
++	j := 1
++	for j < len(rest) {
++		switch rest[j] {
++		case '"':
++			j++
++			for j < len(rest) {
++				if rest[j] == '\\' {
++					j += 2
++					continue
++				}
++				if rest[j] == '"' {
++					j++
++					break
++				}
++				j++
++			}
++			// If we ran past the end the string was unterminated.
++			if j >= len(rest) {
++				return step{}, 0, errors.New("jpath: unterminated string in [..]")
++			}
++		case ']':
++			goto done
++		default:
++			j++
++		}
++	}
++	return step{}, 0, errors.New("jpath: expected ]")
++done:
++	content := rest[1:j]
++	switch {
++	case content == "*":
++		return step{kind: kindStar}, j + 1, nil
++	case content == "" || len(content) == 1 && content[0] == '"':
++		return step{}, 0, errors.New("jpath: empty [..]")
++	}
++	if content[0] == '"' {
++		key, ok := parseQuoted(content)
++		if !ok {
++			return step{}, 0, errors.New("jpath: malformed string in [..]")
++		}
++		return step{kind: kindMember, key: key}, j + 1, nil
++	}
++	s := content
++	if s[0] == '-' {
++		s = s[1:]
++	}
++	if s == "" {
++		return step{}, 0, errors.New("jpath: invalid index in [..]")
++	}
++	for _, r := range s {
++		if r < '0' || r > '9' {
++			return step{}, 0, errors.New("jpath: invalid index in [..]")
++		}
++	}
++	n, err := strconv.Atoi(content)
++	if err != nil {
++		return step{}, 0, errors.New("jpath: invalid index in [..]")
++	}
++	return step{kind: kindIndex, idx: n}, j + 1, nil
++}
++
++// parseQuoted parses a fully quoted string including the surrounding quotes,
++// handling \" and \\ escapes.
++func parseQuoted(s string) (string, bool) {
++	if len(s) < 2 || s[0] != '"' || s[len(s)-1] != '"' {
++		return "", false
++	}
++	var b []byte
++	for i := 1; i < len(s)-1; i++ {
++		c := s[i]
++		if c != '\\' {
++			b = append(b, c)
++			continue
++		}
++		i++
++		if i >= len(s)-1 {
++			return "", false
++		}
++		switch s[i] {
++		case '"', '\\':
++			b = append(b, s[i])
++		default:
++			return "", false
++		}
++	}
++	return string(b), true
++}
++
++func apply(nodes []any, s step) []any {
++	var out []any
++	for _, node := range nodes {
++		switch s.kind {
++		case kindMember:
++			if m, ok := node.(map[string]any); ok {
++				if v, ok := m[s.key]; ok {
++					out = append(out, v)
++				}
++			}
++		case kindIndex:
++			if arr, ok := node.([]any); ok {
++				idx := s.idx
++				if idx < 0 {
++					idx += len(arr)
++				}
++				if idx >= 0 && idx < len(arr) {
++					out = append(out, arr[idx])
++				}
++			}
++		case kindStar:
++			switch v := node.(type) {
++			case []any:
++				out = append(out, v...)
++			case map[string]any:
++				out = append(out, valuesByKey(v)...)
++			}
++		case kindRecurse:
++			out = append(out, collectRecurse(node, s.key)...)
++		}
++	}
++	return out
++}
++
++func valuesByKey(m map[string]any) []any {
++	keys := make([]string, 0, len(m))
++	for k := range m {
++		keys = append(keys, k)
++	}
++	sort.Strings(keys)
++	out := make([]any, 0, len(keys))
++	for _, k := range keys {
++		out = append(out, m[k])
++	}
++	return out
++}
++
++// collectRecurse returns the `name` member of node and of every descendant,
++// in pre-order (a node's own match first, then its children in order).
++func collectRecurse(node any, name string) []any {
++	var out []any
++	switch v := node.(type) {
++	case map[string]any:
++		if val, ok := v[name]; ok {
++			out = append(out, val)
++		}
++		for _, key := range keyOrder(v) {
++			out = append(out, collectRecurse(v[key], name)...)
++		}
++	case []any:
++		for _, el := range v {
++			out = append(out, collectRecurse(el, name)...)
++		}
++	}
++	return out
++}
++
++func keyOrder(m map[string]any) []string {
++	keys := make([]string, 0, len(m))
++	for k := range m {
++		keys = append(keys, k)
++	}
++	sort.Strings(keys)
++	return keys
++}

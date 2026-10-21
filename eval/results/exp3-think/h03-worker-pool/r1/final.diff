@@ -1,0 +1,264 @@
+ pool/pool.go      |  50 +++++++++++++---
+ pool/pool_test.go | 167 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 210 insertions(+), 7 deletions(-)
+
+diff --git a/pool/pool.go b/pool/pool.go
+index ba7e123..79ad276 100644
+--- a/pool/pool.go
++++ b/pool/pool.go
+@@ -39,6 +39,10 @@ func Map[T, R any](ctx context.Context, in []T, workers int, fn func(context.Con
+ 	}
+ 	jobs := make(chan int)
+ 	results := make(chan result)
++	stop := make(chan struct{})
++	var stopOnce sync.Once
++	stopAll := func() { stopOnce.Do(func() { close(stop) }) }
++
+ 	var wg sync.WaitGroup
+ 	for w := 0; w < workers; w++ {
+ 		wg.Add(1)
+@@ -50,22 +54,54 @@ func Map[T, R any](ctx context.Context, in []T, workers int, fn func(context.Con
+ 			}
+ 		}()
+ 	}
++	// Dispatcher: hands out inputs until done or until stopped.
+ 	go func() {
++		defer close(jobs)
+ 		for i := range in {
+-			jobs <- i
++			select {
++			case jobs <- i:
++			case <-stop:
++				return
++			}
+ 		}
+-		close(jobs)
+ 	}()
++	// Closer: close the results channel once every worker has exited.
+ 	go func() {
+ 		wg.Wait()
+ 		close(results)
+ 	}()
+-	var out []R
+-	for res := range results {
+-		if res.err != nil {
+-			return nil, &IndexError{Index: res.i, Err: res.err}
++
++	out := make([]R, len(in))
++	firstErrIdx := -1
++	var firstErr error
++	cancelled := false
++forNext:
++	for {
++		select {
++		case res, ok := <-results:
++			// When results is closed, every worker has exited, so it is
++			// safe to return.
++			if !ok {
++				break forNext
++			}
++			if res.err != nil {
++				if firstErrIdx < 0 || res.i < firstErrIdx {
++					firstErrIdx, firstErr = res.i, res.err
++				}
++				stopAll()
++				continue
++			}
++			out[res.i] = res.r
++		case <-ctx.Done():
++			cancelled = true
++			stopAll()
+ 		}
+-		out = append(out, res.r)
++	}
++	switch {
++	case firstErrIdx >= 0:
++		return nil, &IndexError{Index: firstErrIdx, Err: firstErr}
++	case cancelled:
++		return nil, ctx.Err()
+ 	}
+ 	return out, nil
+ }
+diff --git a/pool/pool_test.go b/pool/pool_test.go
+index 4217e40..af39112 100644
+--- a/pool/pool_test.go
++++ b/pool/pool_test.go
+@@ -2,7 +2,11 @@ package pool
+ 
+ import (
+ 	"context"
++	"errors"
++	"runtime"
++	"sync/atomic"
+ 	"testing"
++	"time"
+ )
+ 
+ func TestSquares(t *testing.T) {
+@@ -11,3 +15,166 @@ func TestSquares(t *testing.T) {
+ 		t.Fatal(out, err)
+ 	}
+ }
++
++// TestOrdering verifies out[i] is the result for in[i] even when results
++// arrive out of order under concurrency.
++func TestOrdering(t *testing.T) {
++	in := make([]int, 500)
++	for i := range in {
++		in[i] = i
++	}
++	done := make(chan struct{})
++	var out []int
++	var err error
++	go func() {
++		out, err = Map(context.Background(), in, 16, func(_ context.Context, x int) (int, error) {
++			// Make results arrive in an order unrelated to input order.
++			time.Sleep(time.Duration(500-x) * time.Microsecond)
++			return x * 2, nil
++		})
++		close(done)
++	}()
++	select {
++	case <-done:
++	case <-time.After(10 * time.Second):
++		t.Fatal("Map hung")
++	}
++	if err != nil || len(out) != len(in) {
++		t.Fatalf("out=%v err=%v", out, err)
++	}
++	for i, r := range out {
++		if r != in[i]*2 {
++			t.Fatalf("out[%d]=%d, want %d", i, r, in[i]*2)
++		}
++	}
++}
++
++// TestCancellation verifies Map returns promptly with ctx.Err() after
++// cancellation and does not leak goroutines.
++func TestCancellation(t *testing.T) {
++	before := runtime.NumGoroutine()
++	ctx, cancel := context.WithCancel(context.Background())
++	in := make([]int, 20)
++	for i := range in {
++		in[i] = i
++	}
++	var called atomic.Int64
++	go func() {
++		time.Sleep(20 * time.Millisecond)
++		cancel()
++	}()
++	done := make(chan struct{})
++	var err error
++	start := time.Now()
++	go func() {
++		_, err = Map(ctx, in, 4, func(c context.Context, x int) (int, error) {
++			called.Add(1)
++			<-c.Done() // long-running work that respects ctx
++			return 0, nil
++		})
++		close(done)
++	}()
++	select {
++	case <-done:
++	case <-time.After(5 * time.Second):
++		t.Fatal("Map did not return after ctx cancellation")
++	}
++	if time.Since(start) > 3*time.Second {
++		t.Fatalf("Map took %v after cancellation", time.Since(start))
++	}
++	if !errors.Is(err, context.Canceled) {
++		t.Fatalf("err = %v, want context.Canceled", err)
++	}
++	// No goroutine leaks: when Map returns, all workers must be gone.
++	deadline := time.Now().Add(5 * time.Second)
++	for {
++		if runtime.NumGoroutine() <= before {
++			break
++		}
++		if time.Now().After(deadline) {
++			t.Fatalf("goroutine leak: %d now, was %d", runtime.NumGoroutine(), before)
++		}
++		time.Sleep(10 * time.Millisecond)
++	}
++	// New work must stop once the context is cancelled: the number of fn
++	// calls must be stable (no calls after Map returns / stop takes effect).
++	c1 := called.Load()
++	time.Sleep(100 * time.Millisecond)
++	if c2 := called.Load(); c2 != c1 {
++		t.Fatalf("new work started after cancellation: calls %d -> %d", c1, c2)
++	}
++}
++
++// TestLowestErrorIndex verifies Map reports the failing input with the lowest
++// index, not the error that happened to arrive first.
++func TestLowestErrorIndex(t *testing.T) {
++	errLate := errors.New("late failure")
++	errEarly := errors.New("early failure")
++	for k := 0; k < 10; k++ {
++		_, err := Map(context.Background(), []int{0, 1, 2, 3, 4, 5, 6, 7}, 2, func(_ context.Context, x int) (int, error) {
++			switch x {
++			case 6:
++				time.Sleep(10 * time.Millisecond) // fails fast
++				return 0, errLate
++			case 1:
++				time.Sleep(80 * time.Millisecond) // fails slow
++				return 0, errEarly
++			}
++			return x, nil
++		})
++		var ie *IndexError
++		if !errors.As(err, &ie) {
++			t.Fatalf("err = %v, want *IndexError", err)
++		}
++		if ie.Index != 1 {
++			t.Fatalf("Index = %d, want 1 (err=%v)", ie.Index, ie.Err)
++		}
++		if !errors.Is(err, errEarly) {
++			t.Fatalf("wrapped err = %v, want %v", ie.Err, errEarly)
++		}
++	}
++}
++
++// TestErrorStopsNewWork verifies that once a call fails, Map stops starting
++// new work and the running calls all finish.
++func TestErrorStopsNewWork(t *testing.T) {
++	in := make([]int, 1000)
++	for i := range in {
++		in[i] = i
++	}
++	var started, finished atomic.Int64
++	boom := errors.New("boom")
++	out, err := Map(context.Background(), in, 8, func(_ context.Context, x int) (int, error) {
++		started.Add(1)
++		if x == 0 {
++			return 0, boom // fails immediately
++		}
++		time.Sleep(100 * time.Millisecond)
++		finished.Add(1)
++		return x, nil
++	})
++	if out != nil {
++		t.Fatalf("out = %v, want nil", out)
++	}
++	var ie *IndexError
++	if !errors.As(err, &ie) || ie.Index != 0 || !errors.Is(err, boom) {
++		t.Fatalf("err = %v, want IndexError{0, boom}", err)
++	}
++	// No new work after the error: the started count must be stable.
++	s1, f1 := started.Load(), finished.Load()
++	time.Sleep(200 * time.Millisecond)
++	if s2, f2 := started.Load(), finished.Load(); s2 != s1 || f2 != f1 {
++		t.Fatalf("work still in flight: started %d->%d, finished %d->%d", s1, s2, f1, f2)
++	}
++	if s1 > 64 {
++		t.Fatalf("too much new work started after failure: %d", s1)
++	}
++}
++
++// TestEmpty verifies Map on an empty input.
++func TestEmpty(t *testing.T) {
++	out, err := Map(context.Background(), []int{}, 3, func(_ context.Context, x int) (int, error) { return x, nil })
++	if err != nil || len(out) != 0 {
++		t.Fatalf("out=%v err=%v", out, err)
++	}
++}

@@ -1,0 +1,194 @@
+ words/words.go | 185 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 185 insertions(+)
+
+diff --git a/words/words.go b/words/words.go
+new file mode 100644
+index 0000000..823a44e
+--- /dev/null
++++ b/words/words.go
+@@ -0,0 +1,185 @@
++package words
++
++import (
++	"bufio"
++	"io"
++	"sort"
++	"strings"
++	"unicode"
++	"unicode/utf8"
++)
++
++// WordCount is a word together with its number of occurrences.
++type WordCount struct {
++	Word  string
++	Count int
++}
++
++// TopK streams r and returns the k most frequent words, by count descending,
++// ties broken by the word ascending (byte order). A word is a maximal run of
++// Unicode letters or digits, optionally containing internal apostrophes
++// between letters; words are case-folded with strings.ToLower, and words in
++// stop (compared case-insensitively) are ignored. If there are fewer than k
++// distinct words, all are returned; k <= 0 yields an empty non-nil slice.
++func TopK(r io.Reader, k int, stop []string) ([]WordCount, error) {
++	if k <= 0 {
++		return []WordCount{}, nil
++	}
++	stopSet := make(map[string]struct{}, len(stop))
++	for _, s := range stop {
++		stopSet[strings.ToLower(s)] = struct{}{}
++	}
++
++	counts := make(map[string]int, 1024)
++	sc := &scanner{}
++
++	br := bufio.NewReaderSize(r, 1<<20)
++	buf := make([]byte, 1<<20)
++	var pending []byte
++	for {
++		n, err := br.Read(buf)
++		if n > 0 {
++			chunk := append(pending, buf[:n]...)
++			pending = nil
++			sc.consume(chunk, counts, stopSet)
++			pending = incompleteTail(chunk)
++		}
++		if err == io.EOF {
++			break
++		}
++		if err != nil {
++			return nil, err
++		}
++	}
++	if len(pending) > 0 {
++		sc.consume(pending, counts, stopSet)
++	}
++	sc.finish(counts, stopSet)
++
++	res := make([]WordCount, 0, len(counts))
++	for w, c := range counts {
++		res = append(res, WordCount{Word: w, Count: c})
++	}
++	sort.Slice(res, func(i, j int) bool {
++		if res[i].Count != res[j].Count {
++			return res[i].Count > res[j].Count
++		}
++		return res[i].Word < res[j].Word
++	})
++	if len(res) > k {
++		res = res[:k]
++	}
++	return res, nil
++}
++
++// scanner tracks the word currently being accumulated across buffer chunks.
++type scanner struct {
++	w            []rune
++	inWord       bool
++	lastIsLetter bool
++	aposPending  bool // last rune in w is an apostrophe not yet confirmed
++}
++
++func (s *scanner) consume(b []byte, counts map[string]int, stop map[string]struct{}) {
++	for len(b) > 0 {
++		r, size := utf8.DecodeRune(b)
++		b = b[size:]
++		s.add(r, counts, stop)
++	}
++}
++
++func (s *scanner) add(r rune, counts map[string]int, stop map[string]struct{}) {
++	isL := unicode.IsLetter(r)
++	isD := unicode.IsDigit(r)
++	if isL || isD {
++		if s.aposPending {
++			if isL {
++				// Apostrophe between letters: keep it, continue the word.
++				s.aposPending = false
++			} else {
++				// Apostrophe before a digit is not "between letters",
++				// so it separates words.
++				s.w = s.w[:len(s.w)-1]
++				s.aposPending = false
++				s.finish(counts, stop)
++			}
++		}
++		if !s.inWord {
++			s.inWord = true
++			s.w = s.w[:0]
++		}
++		s.w = append(s.w, r)
++		s.lastIsLetter = isL
++		return
++	}
++	if r == '\'' && s.inWord && s.lastIsLetter && !s.aposPending {
++		s.w = append(s.w, r)
++		s.lastIsLetter = false
++		s.aposPending = true
++		return
++	}
++	s.finish(counts, stop)
++}
++
++func (s *scanner) finish(counts map[string]int, stop map[string]struct{}) {
++	if !s.inWord {
++		return
++	}
++	s.inWord = false
++	s.lastIsLetter = false
++	s.aposPending = false
++	n := len(s.w)
++	if n > 0 && s.w[n-1] == '\'' {
++		// A trailing apostrophe is not part of the word.
++		n--
++	}
++	if n == 0 {
++		s.w = s.w[:0]
++		return
++	}
++	word := strings.ToLower(string(s.w[:n]))
++	s.w = s.w[:0]
++	if _, isStop := stop[word]; isStop {
++		return
++	}
++	counts[word]++
++}
++
++// incompleteTail returns the trailing bytes of b that may form an incomplete
++// UTF-8 sequence (i.e. a rune split across a buffer boundary), or nil.
++func incompleteTail(b []byte) []byte {
++	n := len(b)
++	if n == 0 {
++		return nil
++	}
++	lo := n - 3
++	if lo < 0 {
++		lo = 0
++	}
++	start := -1
++	for i := n - 1; i >= lo; i-- {
++		if utf8.RuneStart(b[i]) {
++			start = i
++			break
++		}
++	}
++	if start < 0 {
++		// All trailing bytes are continuation bytes: partial 4-byte rune.
++		return b[lo:]
++	}
++	var expected int
++	switch lead := b[start]; {
++	case lead < 0x80:
++		expected = 1
++	case lead&0xE0 == 0xC0:
++		expected = 2
++	case lead&0xF0 == 0xE0:
++		expected = 3
++	default:
++		expected = 4
++	}
++	if n-start < expected {
++		return b[start:]
++	}
++	return nil
++}

@@ -1,6 +1,4 @@
 # One command per line, run sequentially by eval/runner/queue.sh (see STATUS.md).
-OPENCODE_BIN=/tmp/claude-0/-home-user-little-qwen/1620aa3f-c972-5a92-bfae-4073448959b4/scratchpad/oc/node_modules/.bin/opencode ./bin/qh eval --agent eval/runner/opencode_agent.sh --agent-timeout-min 45 --out eval/results/opencode-baseline --only h01-paginate-bugs --reps 1 --parallel 1 > eval/results/opencode-baseline.log 2>&1
-./bin/qh eval --harness harness/cand/e3-think --out eval/results/exp3-think --only a10-topk-words,a12-jsonpath,h03-worker-pool,h04-mini-template --reps 1 --parallel 1 > eval/results/exp3-think.log 2>&1
 ./bin/qh eval --harness harness/cand/e4-strip --out eval/results/exp4-strip --only a04-cli-args,a05-ini-bugfix,a10-topk-words,a12-jsonpath,h03-worker-pool,h04-mini-template --reps 1 --parallel 1 > eval/results/exp4-strip.log 2>&1
 ./bin/qh eval --harness harness/cand/e5-low --out eval/results/exp5-low --only a03-http-api,a05-ini-bugfix,a07-semver,a09-csv-report,a10-topk-words,a12-jsonpath,h02-config-merge,h04-mini-template --reps 1 --parallel 1 > eval/results/exp5-low.log 2>&1
 ./bin/qh eval --out eval/results/it0-baseline --only tierB --reps 1 --parallel 1 > eval/results/it0-baseline-B.log 2>&1

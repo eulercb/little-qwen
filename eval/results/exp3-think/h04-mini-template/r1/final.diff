@@ -1,0 +1,502 @@
+ tmpl/tmpl.go      | 268 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ tmpl/tmpl_test.go | 218 ++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 486 insertions(+)
+
+diff --git a/tmpl/tmpl.go b/tmpl/tmpl.go
+new file mode 100644
+index 0000000..ea5fe34
+--- /dev/null
++++ b/tmpl/tmpl.go
+@@ -0,0 +1,268 @@
++// Package tmpl is a tiny text template engine supporting {{ name | filter }}
++// tags.
++package tmpl
++
++import (
++	"fmt"
++	"strconv"
++	"strings"
++)
++
++// Render substitutes {{ ... }} tags in src using the values in data.
++// Text outside tags is copied verbatim; {{{{ emits a literal {{.
++func Render(src string, data map[string]any) (string, error) {
++	var b strings.Builder
++	for i := 0; i < len(src); {
++		if strings.HasPrefix(src[i:], "{{{{") {
++			b.WriteString("{{")
++			i += 4
++			continue
++		}
++		idx := strings.Index(src[i:], "{{")
++		if idx < 0 {
++			b.WriteString(src[i:])
++			break
++		}
++		b.WriteString(src[i : i+idx])
++		if strings.HasPrefix(src[i+idx:], "{{{{") {
++			b.WriteString("{{")
++			i = i + idx + 4
++			continue
++		}
++		body := src[i+idx+2:]
++		end := strings.Index(body, "}}")
++		if end < 0 {
++			return "", fmt.Errorf("unterminated tag %q", body)
++		}
++		val, err := evalTag(body[:end], data)
++		if err != nil {
++			return "", err
++		}
++		b.WriteString(val)
++		i = i + idx + 2 + end + 2
++	}
++	return b.String(), nil
++}
++
++// tagParser walks the inside of a {{ ... }} tag.
++type tagParser struct {
++	s string
++	i int
++}
++
++func (t *tagParser) skip() {
++	for t.i < len(t.s) && isSpace(t.s[t.i]) {
++		t.i++
++	}
++}
++
++func (t *tagParser) parseName() (string, bool) {
++	if t.i >= len(t.s) || !isStart(t.s[t.i]) {
++		return "", false
++	}
++	start := t.i
++	for t.i < len(t.s) && isIdent(t.s[t.i]) {
++		t.i++
++	}
++	name := t.s[start:t.i]
++	for t.i < len(t.s) && t.s[t.i] == '.' {
++		t.i++
++		segStart := t.i
++		if t.i >= len(t.s) || !isStart(t.s[t.i]) {
++			return "", false
++		}
++		for t.i < len(t.s) && isIdent(t.s[t.i]) {
++			t.i++
++		}
++		name += "." + t.s[segStart:t.i]
++	}
++	return name, true
++}
++
++// parseArg reads a double-quoted argument, handling \" and \\ escapes.
++func (t *tagParser) parseArg() (string, bool) {
++	if t.i >= len(t.s) || t.s[t.i] != '"' {
++		return "", false
++	}
++	t.i++
++	var b strings.Builder
++	for t.i < len(t.s) {
++		c := t.s[t.i]
++		switch {
++		case c == '"':
++			t.i++
++			return b.String(), true
++		case c == '\\':
++			if t.i+1 >= len(t.s) {
++				return "", false
++			}
++			n := t.s[t.i+1]
++			if n != '"' && n != '\\' {
++				return "", false
++			}
++			b.WriteByte(n)
++			t.i += 2
++		default:
++			b.WriteByte(c)
++			t.i++
++		}
++	}
++	return "", false
++}
++
++func isStart(c byte) bool {
++	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
++}
++
++func isIdent(c byte) bool {
++	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
++}
++
++func isSpace(c byte) bool {
++	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
++}
++
++// evalTag evaluates the body of one tag against data.
++func evalTag(body string, data map[string]any) (string, error) {
++	t := &tagParser{s: body}
++	t.skip()
++	full, ok := t.parseName()
++	if !ok {
++		if strings.TrimSpace(body) == "" {
++			return "", fmt.Errorf("empty tag %q", body)
++		}
++		return "", fmt.Errorf("bad name in tag %q", body)
++	}
++	segments := strings.Split(full, ".")
++	val, err := lookup(full, segments, data)
++	if err != nil {
++		return "", err
++	}
++	s := format(val)
++	t.skip()
++	if t.i < len(t.s) && t.s[t.i] != '|' {
++		return "", fmt.Errorf("bad name in tag %q", body)
++	}
++	for t.skip(); t.i < len(t.s); {
++		if t.s[t.i] != '|' {
++			return "", fmt.Errorf("unexpected %q in tag %q", t.s[t.i:], body)
++		}
++		t.i++
++		t.skip()
++		fname, ok := t.parseName()
++		if !ok {
++			return "", fmt.Errorf("bad filter name in tag %q", body)
++		}
++		t.skip()
++		hasArg := false
++		var arg string
++		if t.i < len(t.s) && t.s[t.i] == ':' {
++			t.i++
++			t.skip()
++			a, ok := t.parseArg()
++			if !ok {
++				return "", fmt.Errorf("bad argument for filter %s in tag %q", fname, body)
++			}
++			arg = a
++			hasArg = true
++		}
++		var err error
++		s, err = applyFilter(fname, hasArg, arg, s)
++		if err != nil {
++			return "", err
++		}
++		t.skip()
++	}
++	return s, nil
++}
++
++// lookup resolves dotted name segments against nested maps.
++// A missing name or nil value yields (nil, nil); indexing a non-map errors
++// with the full name in the message.
++func lookup(full string, segments []string, data map[string]any) (any, error) {
++	v, ok := data[segments[0]]
++	if !ok || v == nil {
++		return nil, nil
++	}
++	for _, f := range segments[1:] {
++		m, ok := v.(map[string]any)
++		if !ok {
++			return nil, fmt.Errorf("cannot index %s: %s is not a map", f, full)
++		}
++		v, ok = m[f]
++		if !ok || v == nil {
++			return nil, nil
++		}
++	}
++	return v, nil
++}
++
++// format renders a resolved value as a string.
++func format(v any) string {
++	switch v := v.(type) {
++	case nil:
++		return ""
++	case string:
++		return v
++	case bool:
++		return strconv.FormatBool(v)
++	default:
++		return fmt.Sprint(v)
++	}
++}
++
++// applyFilter applies a named filter to the current string value.
++func applyFilter(name string, hasArg bool, arg, s string) (string, error) {
++	switch name {
++	case "upper":
++		if hasArg {
++			return "", fmt.Errorf("extra argument for filter upper")
++		}
++		return strings.ToUpper(s), nil
++	case "lower":
++		if hasArg {
++			return "", fmt.Errorf("extra argument for filter lower")
++		}
++		return strings.ToLower(s), nil
++	case "trim":
++		if hasArg {
++			return "", fmt.Errorf("extra argument for filter trim")
++		}
++		return strings.TrimSpace(s), nil
++	case "default":
++		if !hasArg {
++			return "", fmt.Errorf("missing argument for filter default")
++		}
++		if s == "" {
++			return arg, nil
++		}
++		return s, nil
++	case "truncate":
++		if !hasArg {
++			return "", fmt.Errorf("missing argument for filter truncate")
++		}
++		n, err := strconv.Atoi(arg)
++		if err != nil || n < 0 {
++			return "", fmt.Errorf("filter truncate: argument %q must be a non-negative integer", arg)
++		}
++		runes := []rune(s)
++		if len(runes) <= n {
++			return s, nil
++		}
++		return string(runes[:n]) + "\u2026", nil
++	case "html":
++		if hasArg {
++			return "", fmt.Errorf("extra argument for filter html")
++		}
++		repl := strings.NewReplacer(
++			"&", "&amp;",
++			"<", "&lt;",
++			">", "&gt;",
++			"\"", "&#34;",
++			"'", "&#39;",
++		)
++		return repl.Replace(s), nil
++	default:
++		return "", fmt.Errorf("unknown filter %s", name)
++	}
++}
+diff --git a/tmpl/tmpl_test.go b/tmpl/tmpl_test.go
+new file mode 100644
+index 0000000..a760b24
+--- /dev/null
++++ b/tmpl/tmpl_test.go
+@@ -0,0 +1,218 @@
++package tmpl
++
++import (
++	"strings"
++	"testing"
++)
++
++func TestRenderText(t *testing.T) {
++	out, err := Render("hello, world", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if out != "hello, world" {
++		t.Fatalf("got %q", out)
++	}
++}
++
++func TestRenderLiteralBraces(t *testing.T) {
++	out, err := Render("a {{{{ b", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if out != "a {{ b" {
++		t.Fatalf("got %q", out)
++	}
++	if out, err = Render("{{{{", nil); err != nil || out != "{{" {
++		t.Fatalf("got %q, %v", out, err)
++	}
++}
++
++func TestRenderString(t *testing.T) {
++	out, err := Render("Hi {{ name }}!", map[string]any{"name": "Ada"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if out != "Hi Ada!" {
++		t.Fatalf("got %q", out)
++	}
++}
++
++func TestRenderTypes(t *testing.T) {
++	data := map[string]any{
++		"i":       42,
++		"i64":     int64(7),
++		"f":       1.5,
++		"yes":     true,
++		"no":      false,
++		"nothing": nil,
++	}
++	cases := []struct{ tag, want string }{
++		{"{{ i }}", "42"},
++		{"{{ i64 }}", "7"},
++		{"{{ f }}", "1.5"},
++		{"{{ yes }}", "true"},
++		{"{{ no }}", "false"},
++		{"{{ nothing }}", ""},
++		{"{{ absent }}", ""},
++	}
++	for _, c := range cases {
++		got, err := Render(c.tag, data)
++		if err != nil {
++			t.Fatalf("%s: %v", c.tag, err)
++		}
++		if got != c.want {
++			t.Errorf("%s: got %q want %q", c.tag, got, c.want)
++		}
++	}
++}
++
++func TestRenderNested(t *testing.T) {
++	data := map[string]any{
++		"user": map[string]any{
++			"name":  "Bob",
++			"score": 3,
++		},
++	}
++	out, err := Render("{{ user.name }}: {{ user.score }}", data)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if out != "Bob: 3" {
++		t.Fatalf("got %q", out)
++	}
++	// Missing nested field -> empty, no error.
++	out, err = Render("[{{ user.missing }}]", data)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if out != "[]" {
++		t.Fatalf("got %q", out)
++	}
++}
++
++func TestRenderIndexNonMapError(t *testing.T) {
++	data := map[string]any{"user": "not a map"}
++	_, err := Render("{{ user.name.first }}", data)
++	if err == nil {
++		t.Fatal("expected error")
++	}
++	if !strings.Contains(err.Error(), "user.name.first") {
++		t.Fatalf("error %q does not mention full name", err)
++	}
++}
++
++func TestWhitespaceAroundParts(t *testing.T) {
++	data := map[string]any{"name": "  Ada  "}
++	out, err := Render("{{   name   |   trim   }}|{{ name|upper|trim }}", data)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if out != "Ada|ADA" {
++		t.Fatalf("got %q", out)
++	}
++}
++
++func TestFilters(t *testing.T) {
++	data := map[string]any{"s": "  Hello,  World  ", "empty": "", "long": "héllo wörld"}
++	cases := []struct{ tag, want string }{
++		{"{{ s | upper }}", "  HELLO,  WORLD  "},
++		{"{{ s | lower }}", "  hello,  world  "},
++		{"{{ s | trim }}", "Hello,  World"},
++		{"{{ empty | default:\"nil\" }}", "nil"},
++		{"{{ s | default:\"nil\" | trim }}", "Hello,  World"},
++		{"{{ long | truncate:\"5\" }}", "héllo…"},
++		{"{{ s | truncate:\"3\" | upper }}", "  H…"},
++	}
++	for _, c := range cases {
++		got, err := Render(c.tag, data)
++		if err != nil {
++			t.Fatalf("%s: %v", c.tag, err)
++		}
++		if got != c.want {
++			t.Errorf("%s: got %q want %q", c.tag, got, c.want)
++		}
++	}
++}
++
++func TestTruncateNotCut(t *testing.T) {
++	got, err := Render("{{ s | truncate:\"99\" }}", map[string]any{"s": "abc"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if got != "abc" {
++		t.Fatalf("got %q", got)
++	}
++	got, err = Render("{{ s | truncate:\"3\" }}", map[string]any{"s": "abc"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if got != "abc" {
++		t.Fatalf("got %q", got)
++	}
++}
++
++func TestHTML(t *testing.T) {
++	got, err := Render("{{ s | html }}", map[string]any{"s": `& < > " '`})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if got != "&amp; &lt; &gt; &#34; &#39;" {
++		t.Fatalf("got %q", got)
++	}
++}
++
++func TestEscapedArg(t *testing.T) {
++	got, err := Render("{{ empty | default:\"say \\\"hi\\\"\\\\\" }}", map[string]any{"empty": ""})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if got != `say "hi"\` {
++		t.Fatalf("got %q", got)
++	}
++}
++
++func TestErrors(t *testing.T) {
++	data := map[string]any{"name": "Ada"}
++	cases := []struct {
++		src      string
++		data     map[string]any
++		fragment string // must appear in the error
++	}{
++		{"{{ name | bogus }}", data, "bogus"},
++		{"{{ name | upper:\"x\" }}", data, "upper"},
++		{"{{ name | default }}", data, "default"},
++		{"{{ name | truncate:\"-1\" }}", data, "truncate"},
++		{"{{ name | truncate:\"x\" }}", data, "truncate"},
++		{"{{ name | truncate }}", data, "truncate"},
++		{"{{ name |", data, "unterminated"},
++		{"{{ }}", data, "empty"},
++		{"{{ }}", data, ""},
++		{"{{ 1bad }}", data, "name"},
++		{"{{ us-er }}", data, "name"},
++		{"{{ name | upper extra }}", data, ""},
++	}
++	for _, c := range cases {
++		out, err := Render(c.src, c.data)
++		if err == nil {
++			t.Fatalf("%q: expected error, got %q", c.src, out)
++		}
++		if out != "" {
++			t.Errorf("%q: output %q not empty on error", c.src, out)
++		}
++		if c.fragment != "" && !strings.Contains(err.Error(), c.fragment) {
++			t.Errorf("%q: error %q lacks %q", c.src, err, c.fragment)
++		}
++	}
++}
++
++func TestMultipleTagsAndText(t *testing.T) {
++	data := map[string]any{"name": "ada", "count": 3}
++	out, err := Render("user={{ name | upper }} count={{ count }} done", data)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if out != "user=ADA count=3 done" {
++		t.Fatalf("got %q", out)
++	}
++}

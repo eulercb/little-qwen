@@ -1,0 +1,168 @@
+ page/page.go      |  16 +++++---
+ page/page_test.go | 117 +++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 127 insertions(+), 6 deletions(-)
+
+diff --git a/page/page.go b/page/page.go
+index 4876b58..5d107be 100644
+--- a/page/page.go
++++ b/page/page.go
+@@ -28,17 +28,23 @@ func Get[T any](items []T, size, n int) (Page[T], error) {
+ 	if n < 1 {
+ 		return Page[T]{}, ErrBadPage
+ 	}
+-	total := len(items)/size + 1
+-	if len(items) == 0 {
+-		total = 0
++	total := (len(items) + size - 1) / size
++	if n > total {
++		return Page[T]{
++			Number:     n,
++			TotalPages: total,
++			HasPrev:    n > 1,
++		}, nil
+ 	}
+ 	start := (n - 1) * size
+ 	end := start + size
+ 	if end > len(items) {
+-		end = len(items) - 1
++		end = len(items)
+ 	}
++	itemsCopy := make([]T, end-start)
++	copy(itemsCopy, items[start:end])
+ 	p := Page[T]{
+-		Items:      items[start:end],
++		Items:      itemsCopy,
+ 		Number:     n,
+ 		TotalPages: total,
+ 		HasNext:    n < total,
+diff --git a/page/page_test.go b/page/page_test.go
+index 0a50795..b043f3b 100644
+--- a/page/page_test.go
++++ b/page/page_test.go
+@@ -1,6 +1,10 @@
+ package page
+ 
+-import "testing"
++import (
++	"errors"
++	"reflect"
++	"testing"
++)
+ 
+ func TestFirstPage(t *testing.T) {
+ 	p, err := Get([]int{1, 2, 3, 4, 5}, 2, 1)
+@@ -8,3 +12,114 @@ func TestFirstPage(t *testing.T) {
+ 		t.Fatalf("%+v %v", p, err)
+ 	}
+ }
++
++func TestLastPageComplete(t *testing.T) {
++	p, err := Get([]int{1, 2, 3, 4, 5}, 2, 3)
++	if err != nil {
++		t.Fatalf("unexpected error: %v", err)
++	}
++	if !reflect.DeepEqual(p.Items, []int{5}) {
++		t.Fatalf("page 3 = %v, want [5]", p.Items)
++	}
++	if p.HasNext || !p.HasPrev {
++		t.Fatalf("page 3 HasNext=%v HasPrev=%v, want false true", p.HasNext, p.HasPrev)
++	}
++}
++
++func TestLastItemOnNonMultipleLastPage(t *testing.T) {
++	p, err := Get([]int{1, 2, 3, 4}, 3, 2)
++	if err != nil {
++		t.Fatalf("unexpected error: %v", err)
++	}
++	if !reflect.DeepEqual(p.Items, []int{4}) {
++		t.Fatalf("page 2 = %v, want [4]", p.Items)
++	}
++}
++
++func TestTotalPagesExactMultiple(t *testing.T) {
++	p, err := Get([]int{1, 2, 3, 4}, 2, 1)
++	if err != nil {
++		t.Fatalf("unexpected error: %v", err)
++	}
++	if p.TotalPages != 2 {
++		t.Fatalf("TotalPages = %d, want 2", p.TotalPages)
++	}
++}
++
++func TestExactMultipleLastPage(t *testing.T) {
++	p, err := Get([]int{1, 2, 3, 4}, 2, 2)
++	if err != nil {
++		t.Fatalf("unexpected error: %v", err)
++	}
++	if p.TotalPages != 2 || p.HasNext {
++		t.Fatalf("%+v: TotalPages = %d, HasNext = %v, want 2, false", p, p.TotalPages, p.HasNext)
++	}
++	if !reflect.DeepEqual(p.Items, []int{3, 4}) {
++		t.Fatalf("page 2 = %v, want [3 4]", p.Items)
++	}
++}
++
++func TestPastEndIsEmpty(t *testing.T) {
++	p, err := Get([]int{1, 2, 3, 4, 5}, 2, 4)
++	if err != nil {
++		t.Fatalf("past-end page must not error: %v", err)
++	}
++	if len(p.Items) != 0 {
++		t.Fatalf("past-end page = %v, want empty", p.Items)
++	}
++	if p.Number != 4 || p.TotalPages != 3 || !p.HasPrev || p.HasNext {
++		t.Fatalf("page = %+v, want Number=4 TotalPages=3 HasPrev=true HasNext=false", p)
++	}
++}
++
++func TestPastEndEmptyInput(t *testing.T) {
++	p, err := Get([]int{}, 2, 1)
++	if err != nil {
++		t.Fatalf("unexpected error: %v", err)
++	}
++	if len(p.Items) != 0 || p.TotalPages != 0 || p.HasNext || p.HasPrev {
++		t.Fatalf("page = %+v, want empty page with TotalPages=0", p)
++	}
++}
++
++func TestFarPastEnd(t *testing.T) {
++	p, err := Get([]int{1, 2, 3}, 1, 1<<30)
++	if err != nil {
++		t.Fatalf("far past-end page must not error: %v", err)
++	}
++	if len(p.Items) != 0 || p.TotalPages != 3 || !p.HasPrev || p.HasNext {
++		t.Fatalf("page = %+v, want empty page with TotalPages=3", p)
++	}
++}
++
++func TestNoAlias(t *testing.T) {
++	items := []int{1, 2, 3, 4}
++	p, err := Get(items, 2, 1)
++	if err != nil {
++		t.Fatalf("unexpected error: %v", err)
++	}
++	p.Items[0] = 99
++	if items[0] != 1 {
++		t.Fatalf("returned Items aliases the input")
++	}
++}
++
++func TestErrors(t *testing.T) {
++	if _, err := Get([]int{1}, 0, 1); !errors.Is(err, ErrBadSize) {
++		t.Fatalf("err = %v, want ErrBadSize", err)
++	}
++	if _, err := Get([]int{1}, 1, 0); !errors.Is(err, ErrBadPage) {
++		t.Fatalf("err = %v, want ErrBadPage", err)
++	}
++}
++
++func TestAll(t *testing.T) {
++	got, err := All([]int{1, 2, 3, 4, 5}, 2)
++	if err != nil {
++		t.Fatalf("unexpected error: %v", err)
++	}
++	want := [][]int{{1, 2}, {3, 4}, {5}}
++	if !reflect.DeepEqual(got, want) {
++		t.Fatalf("All = %v, want %v", got, want)
++	}
++}

@@ -1,0 +1,37 @@
+{
+  "task_id": "a10-topk-words",
+  "tier": "tierA",
+  "rep": 1,
+  "harness_hash": "0672c78949af",
+  "success": true,
+  "score": 1,
+  "tests_passed": 6,
+  "tests_total": 6,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Implemented words.TopK in words/words.go: streams the input through a 1 MB bufio buffer in fixed chunks, tokenizing runes (with incomplete-tail handling for runes split across chunks) as maximal runs of Unicode letters/digits with internal apostrophes only between letters, case-folds with strings.ToLower, filters case-insensitive stop words, counts in a map, then sorts by count descending / word ascending and truncates to k (k \u003c= 0 → non-nil empty slice), returning any read error. Verified with a temporary test suite covering apostrophe edge cases, unicode, stops, tie order, large single-line input with boundary-straddling runes, very long tokens, and injected read errors; all passed, then removed the temp tests. go build, go vet, and go test ./... all exit 0.",
+    "Turns": 17,
+    "Compactions": 0,
+    "PromptTokens": 283480,
+    "PrefillTokens": 26680,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 19640,
+    "ReasoningTokens": 11829,
+    "ToolCalls": 18,
+    "ToolErrors": 1,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F4": 1
+    },
+    "WallSeconds": 1313.283272852,
+    "Err": ""
+  },
+  "started": "2026-10-21T17:09:04Z",
+  "hidden_output": "=== RUN   TestHiddenBasicTies\n--- PASS: TestHiddenBasicTies (0.00s)\n=== RUN   TestHiddenApostrophes\n--- PASS: TestHiddenApostrophes (0.00s)\n=== RUN   TestHiddenUnicodeAndStop\n--- PASS: TestHiddenUnicodeAndStop (0.00s)\n=== RUN   TestHiddenKZero\n--- PASS: TestHiddenKZero (0.00s)\n=== RUN   TestHiddenLongLine\n--- PASS: TestHiddenLongLine (0.05s)\n=== RUN   TestHiddenReadError\n--- PASS: TestHiddenReadError (0.00s)\nPASS\nok  \texample.com/words/words\t0.062s",
+  "work": "/tmp/qh-runs/exp3-think/a10-topk-words-r1"
+}
