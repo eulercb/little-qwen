@@ -1,0 +1,1 @@
+{"id":"h03-worker-pool","tier":"heldout","domain":"go","check":"go test -race -count=1 ./...","hidden_check":"go test -race -count=1 -timeout 120s ./...","score":"gotest"}

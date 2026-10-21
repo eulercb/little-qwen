@@ -1,0 +1,1 @@
+{"id":"h04-mini-template","tier":"heldout","domain":"go","check":"go vet ./... && go test ./...","hidden_check":"go test -count=1 ./...","score":"gotest"}
