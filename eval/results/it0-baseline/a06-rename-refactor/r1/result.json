@@ -30,7 +30,7 @@
     "Err": ""
   },
   "started": "2026-10-21T14:28:15Z",
-  "hidden_output": "?   \texample.com/shapes/cmd/area\t[no test files]\n=== RUN   TestAreas\n--- PASS: TestAreas (0.00s)\n=== RUN   TestHiddenInterface\n--- PASS: TestHiddenInterface (0.00s)\n=== RUN   TestHiddenLargest\n--- PASS: TestHiddenLargest (0.00s)\n=== RUN   TestHiddenStrings\n--- PASS: TestHiddenStrings (0.00s)\n=== RUN   TestHiddenBehaviourKept\n--- PASS: TestHiddenBehaviourKept (0.00s)\nPASS\nok  \texample.com/shapes/shapes\t0.002s",
+  "hidden_output": "?   \texample.com/shapes/cmd/area\t[no test files]\n=== RUN   TestAreas\n--- PASS: TestAreas (0.00s)\n=== RUN   TestHiddenInterface\n--- PASS: TestHiddenInterface (0.00s)\n=== RUN   TestHiddenLargest\n--- PASS: TestHiddenLargest (0.00s)\n=== RUN   TestHiddenStrings\n--- PASS: TestHiddenStrings (0.00s)\n=== RUN   TestHiddenBehaviourKept\n--- PASS: TestHiddenBehaviourKept (0.00s)\nPASS\nok  \texample.com/shapes/shapes\t0.003s",
   "work": "/tmp/qh-runs/it0-baseline/a06-rename-refactor-r1",
   "rescored": true
 }

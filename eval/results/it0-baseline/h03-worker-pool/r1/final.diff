@@ -1,0 +1,276 @@
+ pool/pool.go      |  69 ++++++++++++++++++++----
+ pool/pool_test.go | 158 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 218 insertions(+), 9 deletions(-)
+
+diff --git a/pool/pool.go b/pool/pool.go
+index ba7e123..3149d1b 100644
+--- a/pool/pool.go
++++ b/pool/pool.go
+@@ -39,33 +39,84 @@ func Map[T, R any](ctx context.Context, in []T, workers int, fn func(context.Con
+ 	}
+ 	jobs := make(chan int)
+ 	results := make(chan result)
++	stop := make(chan struct{}) // closed as soon as Map must stop handing out new inputs
++	stopOnce := sync.OnceFunc(func() { close(stop) })
+ 	var wg sync.WaitGroup
+ 	for w := 0; w < workers; w++ {
+ 		wg.Add(1)
+ 		go func() {
+ 			defer wg.Done()
+-			for i := range jobs {
+-				r, err := fn(ctx, in[i])
+-				results <- result{r, err, i}
++			for {
++				select {
++				case <-stop:
++					return
++				case i, ok := <-jobs:
++					if !ok {
++						return // dispatcher exhausted the input
++					}
++					r, err := fn(ctx, in[i])
++					results <- result{r: r, err: err, i: i}
++				}
+ 			}
+ 		}()
+ 	}
++	// Dispatcher: hand out inputs until exhausted, or until work must stop.
+ 	go func() {
+ 		for i := range in {
+-			jobs <- i
++			select {
++			case <-stop:
++				return
++			case <-ctx.Done():
++				stopOnce()
++				return
++			case jobs <- i:
++			}
+ 		}
+ 		close(jobs)
+ 	}()
++	// Closer: results is closed only after every worker has exited, so the
++	// collector below is guaranteed to have observed all results.
+ 	go func() {
+ 		wg.Wait()
+ 		close(results)
+ 	}()
+-	var out []R
+-	for res := range results {
+-		if res.err != nil {
+-			return nil, &IndexError{Index: res.i, Err: res.err}
++	out := make([]R, len(in))
++	var (
++		ctxDone   bool        // ctx was cancelled while Map was running
++		ctxFirst  bool        // cancellation was observed before any call failure
++		failFirst bool        // a call failure was observed before cancellation
++		failed    *IndexError // failing input with the lowest index
++	)
++finish:
++	for {
++		select {
++		case <-ctx.Done():
++			ctxDone = true
++			if !failFirst {
++				ctxFirst = true
++			}
++			stopOnce()
++		case res, ok := <-results:
++			if !ok {
++				break finish
++			}
++			out[res.i] = res.r // results are stored by input index, keeping input order
++			if res.err != nil {
++				if !ctxFirst {
++					failFirst = true
++				}
++				stopOnce()
++				if failed == nil || res.i < failed.Index {
++					failed = &IndexError{Index: res.i, Err: res.err}
++				}
++			}
+ 		}
+-		out = append(out, res.r)
++	}
++	if failFirst {
++		return nil, failed
++	}
++	if ctxDone {
++		return nil, ctx.Err()
+ 	}
+ 	return out, nil
+ }
+diff --git a/pool/pool_test.go b/pool/pool_test.go
+index 4217e40..b1d3868 100644
+--- a/pool/pool_test.go
++++ b/pool/pool_test.go
+@@ -2,7 +2,12 @@ package pool
+ 
+ import (
+ 	"context"
++	"errors"
++	"fmt"
++	"runtime"
++	"sync/atomic"
+ 	"testing"
++	"time"
+ )
+ 
+ func TestSquares(t *testing.T) {
+@@ -11,3 +16,156 @@ func TestSquares(t *testing.T) {
+ 		t.Fatal(out, err)
+ 	}
+ }
++
++// Results must be returned in input order even when they complete out of
++// order and concurrency makes completion order vary.
++func TestOrderWithManyWorkers(t *testing.T) {
++	in := make([]int, 100)
++	for i := range in {
++		in[i] = i
++	}
++	out, err := Map(context.Background(), in, 8, func(_ context.Context, x int) (int, error) {
++		// Lower indices finish slower, so results arrive out of order.
++		time.Sleep(time.Duration(200-x) * time.Microsecond)
++		return x * x, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(out) != len(in) {
++		t.Fatalf("len(out) = %d, want %d", len(out), len(in))
++	}
++	for i, got := range out {
++		want := in[i] * in[i]
++		if got != want {
++			t.Fatalf("out[%d] = %d, want %d", i, got, want)
++		}
++	}
++}
++
++// A failing input whose result arrives LATER must win over one whose result
++// arrives earlier; Map must report the lowest failing index.
++func TestErrorIsLowestIndex(t *testing.T) {
++	in := make([]int, 200)
++	for i := range in {
++		in[i] = i
++	}
++	var active atomic.Int32
++	var maxExecuted atomic.Int32
++	base := runtime.NumGoroutine()
++	out, err := Map(context.Background(), in, 4, func(_ context.Context, x int) (int, error) {
++		active.Add(1)
++		defer active.Add(-1)
++		if int32(x) > maxExecuted.Load() {
++			maxExecuted.Store(int32(x))
++		}
++		switch x {
++		case 3, 7, 11: // higher failing indices fail sooner, so they arrive first
++			d := time.Duration(20-2*(x-3)) * time.Millisecond
++			if d > 0 {
++				time.Sleep(d)
++			}
++			return 0, fmt.Errorf("input %d failed", x)
++		default:
++			time.Sleep(time.Millisecond)
++			return x, nil
++		}
++	})
++	if out != nil {
++		t.Fatalf("out = %v, want nil on error", out)
++	}
++	var ie *IndexError
++	if !errors.As(err, &ie) {
++		t.Fatalf("err = %v, want *IndexError", err)
++	}
++	if ie.Index != 3 {
++		t.Fatalf("Index = %d, want 3", ie.Index)
++	}
++	if got := ie.Err.Error(); got != "input 3 failed" {
++		t.Fatalf("wrapped err = %q, want %q", got, "input 3 failed")
++	}
++	// Map must stop handing out new inputs on the first failure.
++	waitFor(t, 5*time.Second, func() bool { return active.Load() == 0 })
++	if int(maxExecuted.Load()) >= 100 {
++		t.Fatalf("max executed input = %d, want well below 200 (work not stopped)", maxExecuted.Load())
++	}
++	waitFor(t, 5*time.Second, func() bool { return runtime.NumGoroutine() <= base })
++}
++
++func TestCancelled(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	in := make([]int, 200)
++	for i := range in {
++		in[i] = i
++	}
++	var active atomic.Int32
++	base := runtime.NumGoroutine()
++	type outcome struct {
++		out []int
++		err error
++	}
++	done := make(chan outcome, 1)
++	go func() {
++		out, err := Map(ctx, in, 4, func(c context.Context, x int) (int, error) {
++			active.Add(1)
++			defer active.Add(-1)
++			// Cooperate with cancellation: block until ctx is done.
++			<-c.Done()
++			return 0, nil
++		})
++		done <- outcome{out, err}
++	}()
++	go func() {
++		time.Sleep(20 * time.Millisecond)
++		cancel()
++	}()
++	select {
++	case res := <-done:
++		if !errors.Is(res.err, context.Canceled) {
++			t.Fatalf("err = %v, want context.Canceled", res.err)
++		}
++		if res.out != nil {
++			t.Fatalf("out = %v, want nil", res.out)
++		}
++	case <-time.After(10 * time.Second):
++		t.Fatal("Map did not return after context cancellation")
++	}
++	// Map must wait for running calls to return, then let all goroutines exit.
++	waitFor(t, 5*time.Second, func() bool { return active.Load() == 0 })
++	waitFor(t, 5*time.Second, func() bool { return runtime.NumGoroutine() <= base })
++}
++
++// If the context is already cancelled before Map is called, Map must return
++// promptly without running the whole batch.
++func TestAlreadyCancelled(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	var ran atomic.Int32
++	out, err := Map(ctx, make([]int, 50), 2, func(_ context.Context, x int) (int, error) {
++		ran.Add(1)
++		select {
++		case <-ctx.Done():
++			return 0, nil
++		}
++	})
++	if !errors.Is(err, context.Canceled) {
++		t.Fatalf("err = %v, want context.Canceled", err)
++	}
++	if out != nil {
++		t.Fatalf("out = %v, want nil", out)
++	}
++	if ran.Load() > 2 {
++		t.Fatalf("fn ran %d times on a pre-cancelled ctx, want at most workers", ran.Load())
++	}
++}
++
++func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
++	t.Helper()
++	deadline := time.Now().Add(timeout)
++	for !cond() {
++		if time.Now().After(deadline) {
++			t.Fatal("timed out waiting for condition")
++		}
++		time.Sleep(time.Millisecond)
++	}
++}

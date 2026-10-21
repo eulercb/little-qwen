@@ -57,3 +57,13 @@ Template:
   32% of completion tokens in it0 and decode dominates wall time; Tier A success is saturated, so the question is
   whether low keeps success while cutting time. Published AA agentic index drops medium→low (44.4→38.9), so expect
   some loss on harder tasks.
+- **E6 (h02-config-merge r1, held-out baseline, score 0.92):** spec: "for `Tags`: a non-nil override slice replaces
+  base, even if empty". Delivered `out.Tags = append([]string(nil), override.Tags...)`, which yields nil for an empty
+  override. Visible check passed; the model's own tests never exercised the empty-override clause. (Eval fix at the
+  same time: the hidden test also demanded no aliasing of base slices, which the prompt does not require — removed.)
+- **E7 (h04-mini-template r1, held-out baseline, score 0.92):** spec: quoted filter arguments support `\"` and `\\`.
+  Deliverable splits the tag on `|` before parsing quotes, so `default:"a | b"` fails ("unterminated argument").
+  Again an explicit clause with no test of its own.
+- **Cluster C1 (F7, spec clause untested → silently wrong):** E6, E7. Revives the `review_before_finish` lever
+  (checklist of every explicit requirement + where it is implemented + which test covers it). Probe on h02, h04
+  (×2 each, now evidence tasks) and validate on spec-heavy b01, b06 (base numbers from the Tier-B baseline).

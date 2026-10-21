@@ -30,7 +30,7 @@
     "Err": ""
   },
   "started": "2026-10-21T14:12:40Z",
-  "hidden_output": "=== RUN   TestDefaults\n--- PASS: TestDefaults (0.00s)\n=== RUN   TestHiddenForms\n--- PASS: TestHiddenForms (0.00s)\n=== RUN   TestHiddenErrors\n--- PASS: TestHiddenErrors (0.00s)\n=== RUN   TestHiddenNilSlices\n--- PASS: TestHiddenNilSlices (0.00s)\nPASS\nok  \texample.com/cli/cli\t0.004s",
+  "hidden_output": "=== RUN   TestDefaults\n--- PASS: TestDefaults (0.00s)\n=== RUN   TestHiddenForms\n--- PASS: TestHiddenForms (0.00s)\n=== RUN   TestHiddenErrors\n--- PASS: TestHiddenErrors (0.00s)\n=== RUN   TestHiddenNilSlices\n--- PASS: TestHiddenNilSlices (0.00s)\nPASS\nok  \texample.com/cli/cli\t0.003s",
   "work": "/tmp/qh-runs/it0-baseline/a04-cli-args-r1",
   "rescored": true
 }

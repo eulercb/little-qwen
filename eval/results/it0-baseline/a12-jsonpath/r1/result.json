@@ -30,7 +30,7 @@
     "Err": ""
   },
   "started": "2026-10-21T15:03:38Z",
-  "hidden_output": "=== RUN   TestMember\n--- PASS: TestMember (0.00s)\n=== RUN   TestHiddenTable\n--- PASS: TestHiddenTable (0.00s)\n=== RUN   TestHiddenSyntaxErrors\n--- PASS: TestHiddenSyntaxErrors (0.00s)\nPASS\nok  \texample.com/jpath/jpath\t0.002s",
+  "hidden_output": "=== RUN   TestMember\n--- PASS: TestMember (0.00s)\n=== RUN   TestHiddenTable\n--- PASS: TestHiddenTable (0.00s)\n=== RUN   TestHiddenSyntaxErrors\n--- PASS: TestHiddenSyntaxErrors (0.00s)\nPASS\nok  \texample.com/jpath/jpath\t0.003s",
   "work": "/tmp/qh-runs/it0-baseline/a12-jsonpath-r1",
   "rescored": true
 }

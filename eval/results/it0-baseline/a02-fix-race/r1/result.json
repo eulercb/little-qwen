@@ -30,7 +30,7 @@
     "Err": ""
   },
   "started": "2026-10-21T14:05:33Z",
-  "hidden_output": "=== RUN   TestIncr\n--- PASS: TestIncr (0.00s)\n=== RUN   TestPercentile\n--- PASS: TestPercentile (0.00s)\n=== RUN   TestConcurrentIncr\n--- PASS: TestConcurrentIncr (0.01s)\n=== RUN   TestHiddenConcurrentMixed\n--- PASS: TestHiddenConcurrentMixed (0.11s)\n=== RUN   TestHiddenHookCanReadCollector\n--- PASS: TestHiddenHookCanReadCollector (0.00s)\n=== RUN   TestHiddenResetConcurrent\n--- PASS: TestHiddenResetConcurrent (0.00s)\n=== RUN   TestHiddenPercentileDoesNotMutate\n--- PASS: TestHiddenPercentileDoesNotMutate (0.00s)\nPASS\nok  \texample.com/stats/stats\t1.131s",
+  "hidden_output": "=== RUN   TestIncr\n--- PASS: TestIncr (0.00s)\n=== RUN   TestPercentile\n--- PASS: TestPercentile (0.00s)\n=== RUN   TestConcurrentIncr\n--- PASS: TestConcurrentIncr (0.01s)\n=== RUN   TestHiddenConcurrentMixed\n--- PASS: TestHiddenConcurrentMixed (0.11s)\n=== RUN   TestHiddenHookCanReadCollector\n--- PASS: TestHiddenHookCanReadCollector (0.00s)\n=== RUN   TestHiddenResetConcurrent\n--- PASS: TestHiddenResetConcurrent (0.00s)\n=== RUN   TestHiddenPercentileDoesNotMutate\n--- PASS: TestHiddenPercentileDoesNotMutate (0.00s)\nPASS\nok  \texample.com/stats/stats\t1.138s",
   "work": "/tmp/qh-runs/it0-baseline/a02-fix-race-r1",
   "rescored": true
 }

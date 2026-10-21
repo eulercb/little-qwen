@@ -152,6 +152,15 @@ func cmdEval(ctx context.Context, args []string) error {
 	if *out == "" {
 		return fmt.Errorf("--out required")
 	}
+	if *agent != "" {
+		// The agent command runs inside the task workdir; anchor a relative
+		// script path to the current directory.
+		if f := strings.Fields(*agent); len(f) > 0 && !filepath.IsAbs(f[0]) && strings.Contains(f[0], "/") {
+			if abs, err := filepath.Abs(f[0]); err == nil {
+				*agent = abs + strings.TrimPrefix(*agent, f[0])
+			}
+		}
+	}
 	h, err := loadHarness(*hdir)
 	if err != nil {
 		return err
