@@ -27,27 +27,30 @@ evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is th
 10. Continue from "Next steps" below.
 
 ## Current state (update me)
-- Phase 0 DONE: endpoint characterised (docs/ENDPOINT.md); smoke 49/50 structured tool calls (eval/results/phase0).
-- Phase 1 DONE (first version): Go loop, 9 tools, output cap+spill, repair, loop detector, traces, finish→check.
-- Phase 2 DONE (mechanism): compaction verified with the real model (eval/results/sanity-compact): checkpoint
-  request is a cache hit, new segment reuses the warmed prefix, model resumes from its Next steps.
-- Eval suite: 12 Tier-A (a01–a12), 4 Tier-B (b01–b04), 2 held-out (h01–h02). All validated with
-  `eval/runner/validate_tasks.sh` (hidden fails on start, passes with solution/).
-- Baseline it0 (harness/base) running/ran on Tier A: see eval/results/it0-baseline/summary.md.
-- Experiments: EXP-1 (E1 edit indentation) candidates in harness/cand/e1-sep and harness/cand/e1-fuzzy — to probe.
-- OpenCode comparator: `npm install opencode-ai` into a scratch dir, then
-  `OPENCODE_BIN=<dir>/node_modules/.bin/opencode ./bin/qh eval --agent eval/runner/opencode_agent.sh ...`
-  (models.opencode.ai is blocked by the egress proxy; OPENCODE_DISABLE_MODELS_FETCH=true works around it).
-- Not possible here: Tier C (Terminal-Bench needs Docker; daemon not running), Tier D (PWA spec not provided).
+- Harness `qh` complete through Phase 2 (+ Phase 6 tooling `qh propose`). Base harness: harness/base.
+- Endpoint facts that drive the design: docs/ENDPOINT.md (generated tokens never cached; effort is part of the
+  cached prefix but thinking on/off is not; no concurrency gain; prefix warm-up works).
+- Eval suite: Tier A a01–a12, Tier B b01–b06, held-out h01–h04 (all validated by eval/runner/validate_tasks.sh).
+- Baselines (harness/base): Tier A 12/12 (it0-baseline, 2× load); held-out h01–h04 mean 0.96 (h02/h04 0.92);
+  single-stream Tier-A rerun in it0-base-p1 (queued/running); Tier B queued.
+- Experiments (docs/EXPERIMENTS.md): EXP-1 fuzzy_edit adopted as safety net; EXP-3 think budget REJECTED;
+  EXP-4 strip_reasoning REJECTED; A1 effort=low REJECTED (doubles thinking); E2 retracted.
+  Pending: A2 thinking off, A3 adaptive thinking, C1 (review_before_finish vs go-pitfalls skill), OpenCode baseline.
+- The eval queue (eval/queue.txt) runs in the background via eval/runner/queue.sh; it commits results itself.
+  If the session restarted, check `test -f eval/queue.pid && kill -0 $(cat eval/queue.pid)`; if not running and
+  queue.txt has lines, restart it with `nohup eval/runner/queue.sh >> eval/queue.log 2>&1 &`.
 
 ## Next steps
-1. Finish it0 baseline (Tier A), run Tier B + held-out baseline.
-2. Probe EXP-1 candidates on edit-heavy tasks (a04, a05, h01, h02); adopt if contrast supports.
-3. OpenCode baseline on Tier A subset + Tier B.
-4. Phase 3: planner + per-step fresh contexts if Tier-B traces show context/planning failures.
+1. When A2/A3 finish: compare with it0-base-p1 (+ it0-baseline for h02/h04). Adopt if success holds and time drops.
+2. When Tier B + C1 probes finish: decide C1 (INV review vs DOM skill vs both).
+3. Compose harness/it1 = base + adopted edits (fuzzy_edit, + winners); run full suite (Tier A+B+held-out) and
+   OpenCode comparison; write up results in README.
+4. Phase 6: run `qh propose` (Qwen as editor) on failing runs; compare its proposals with the human-editor ones.
+5. More/harder tasks if Tier B saturates.
 
 ## Log
 - 2026-10-21 14:00 — endpoint probed; harness skeleton; smoke test 49/50.
 - 2026-10-21 14:05 — Tier-A baseline it0 started (parallel 2). First results: 4/4 success.
 - 2026-10-21 14:35 — Tier-B tasks b01–b04, held-out h01–h02 added; EXP-1 candidates implemented (config knobs
   `read_line_sep`, `fuzzy_edit`; defaults keep old behaviour).
+- 2026-10-21 22:40 — EXP-3/4 and A1 rejected; thinking on/off found cache-neutral; A2/A3 queued.
