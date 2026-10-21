@@ -40,3 +40,8 @@ Template:
   tokenizer in its head. Class F4-ish (runaway thinking at `medium`). Candidate lever: a streaming thinking
   budget (`think_budget_tokens`): abort the turn when reasoning exceeds N tokens before any action, append a
   "decide and act" hint, and let the next turn run unbudgeted. Prompt was cached, so the retry costs only the hint.
+- **E4 (a10-topk-words r1, turn 4):** prefill 7,890 tokens / 202 s — the 7.7K reasoning tokens generated in
+  turn 3 are sent back (`preserve_thinking`) but generated tokens are never cached, so they are re-prefilled,
+  then occupy context for the rest of the run. Thinking is 32% of all completion tokens in it0 Tier A.
+  Candidate (Phase-5-style ablation): `strip_reasoning` — never send reasoning back, consistently from the
+  first turn (prefix stays stable). Risk: losing the model's own earlier reasoning may hurt continuity.

@@ -96,8 +96,14 @@ func (a *Agent) logf(format string, args ...any) {
 }
 
 func (a *Agent) push(m llm.Message) {
-	a.msgs = append(a.msgs, m)
 	a.Tr.Message(a.Name, a.segment, m)
+	if a.H.Config.StripReasoning {
+		// Never send reasoning back. Applied to every assistant message from
+		// the start, so the prefix stays stable and thinking is neither
+		// re-prefilled nor kept in context.
+		m.ReasoningContent = ""
+	}
+	a.msgs = append(a.msgs, m)
 }
 
 func (a *Agent) code(c string) {

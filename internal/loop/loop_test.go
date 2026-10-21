@@ -182,7 +182,11 @@ func TestLoopCompactsAndKeepsEffort(t *testing.T) {
 		{content: "## Progress\nnothing yet\n## Next steps\nwrite hello.txt", prompt: 9600}, // checkpoint
 		{calls: []llm.ToolCall{call("c2", "write_file", map[string]any{"path": "hello.txt", "content": "x"})}, prompt: 3000},
 		{calls: []llm.ToolCall{call("c3", "finish", map[string]any{"summary": "ok"})}, prompt: 3100},
-	}, func(c *harness.Config) { c.CompactAtTokens = 9000; c.ReasoningEffort = "medium"; c.PlannerEffort = "medium" })
+	}, func(c *harness.Config) {
+		c.CompactAtTokens = 9000
+		c.ReasoningEffort = "medium"
+		c.PlannerEffort = "medium"
+	})
 	o := a.Run(context.Background())
 	if !o.CheckPassed || o.Compactions != 1 {
 		t.Fatalf("%+v", o)
