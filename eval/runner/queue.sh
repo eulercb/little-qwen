@@ -31,4 +31,11 @@ for i, l in enumerate(lines):
 open(p, "w").write("\n".join(lines))
 PY
   echo "$(date -u +%FT%TZ) rc=$rc $line" >> "$done_f"
+  # Persist results so an interrupted session loses nothing (retry if the index is busy).
+  for try in 1 2 3; do
+    git add eval/results eval/queue.txt eval/queue.done >/dev/null 2>&1 &&
+      git commit -q -m "eval results: $(echo "$line" | grep -o -- '--out [^ ]*' | cut -d' ' -f2)" >/dev/null 2>&1
+    git push -q >/dev/null 2>&1 && break
+    sleep $((try * 5))
+  done
 done
