@@ -1,0 +1,37 @@
+{
+  "task_id": "b01-expr-lang",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "6e880e0d3539",
+  "success": true,
+  "score": 1,
+  "tests_passed": 20,
+  "tests_total": 20,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Implemented the full expr language spec as Go package `expr/` (module example.com/expr): a byte-oriented lexer (expr/lexer.go) with all number/identifier/operator forms and `unexpected character` errors, a recursive-descent precedence parser (expr/parser.go) with the spec's precedence table — including right-associative `^` binding tighter than unary (`-2^2 = -4`, `2^-1 = 0.5`, `2^3^2 = 512`), C-style ternary with right-associative else branch — plus compile-time validation of built-in names/arities; a short-circuiting tree-walking evaluator (expr/expr.go) with math.Mod/ Pow semantics, division-by-zero, unknown-variable, sqrt-negative and non-finite-result *Error values at the specified positions; and the public API Error/Compile/Program.Eval/Program.Vars/Eval. Added ~120 table-driven test cases in expr/expr_test.go covering arithmetic/precedence, booleans, short-circuiting, ternary nesting, all built-ins, runtime and compile error messages/positions (exact-string checks), Vars sorting/dedup, and program reuse. Verified with `go vet ./... \u0026\u0026 go test ./...` (exit 0) and gofmt.",
+    "Turns": 36,
+    "Compactions": 0,
+    "PromptTokens": 1371431,
+    "PrefillTokens": 51591,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 45970,
+    "ReasoningTokens": 27168,
+    "ToolCalls": 58,
+    "ToolErrors": 9,
+    "Repaired": 1,
+    "Nudges": 0,
+    "LoopHints": 1,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F3": 1
+    },
+    "WallSeconds": 2802.583600196,
+    "Err": ""
+  },
+  "started": "2026-10-22T02:37:38Z",
+  "hidden_output": "=== RUN   TestEvalArithmetic\n--- PASS: TestEvalArithmetic (0.00s)\n=== RUN   TestBooleansAndComparisons\n--- PASS: TestBooleansAndComparisons (0.00s)\n=== RUN   TestShortCircuit\n--- PASS: TestShortCircuit (0.00s)\n=== RUN   TestTernary\n--- PASS: TestTernary (0.00s)\n=== RUN   TestFunctions\n--- PASS: TestFunctions (0.00s)\n=== RUN   TestRuntimeErrors\n--- PASS: TestRuntimeErrors (0.00s)\n=== RUN   TestUnknownVariable\n--- PASS: TestUnknownVariable (0.00s)\n=== RUN   TestNotFinite\n--- PASS: TestNotFinite (0.00s)\n=== RUN   TestSqrtNegative\n--- PASS: TestSqrtNegative (0.00s)\n=== RUN   TestCompileErrors\n--- PASS: TestCompileErrors (0.00s)\n=== RUN   TestVars\n--- PASS: TestVars (0.00s)\n=== RUN   TestProgramReuse\n--- PASS: TestProgramReuse (0.00s)\n=== RUN   TestErrorTypeAndFormat\n--- PASS: TestErrorTypeAndFormat (0.00s)\n=== RUN   TestHiddenArithmetic\n--- PASS: TestHiddenArithmetic (0.00s)\n=== RUN   TestHiddenLogic\n--- PASS: TestHiddenLogic (0.00s)\n=== RUN   TestHiddenShortCircuit\n--- PASS: TestHiddenShortCircuit (0.00s)\n=== RUN   TestHiddenFunctions\n--- PASS: TestHiddenFunctions (0.00s)\n=== RUN   TestHiddenCompileErrors\n--- PASS: TestHiddenCompileErrors (0.00s)\n=== RUN   TestHiddenRuntimeErrors\n--- PASS: TestHiddenRuntimeErrors (0.00s)\n=== RUN   TestHiddenProgramReuseAndVars\n--- PASS: TestHiddenProgramReuseAndVars (0.00s)\nPASS\nok  \texample.com/expr/expr\t0.004s",
+  "work": "/tmp/qh-runs/it0-baseline/b01-expr-lang-r1"
+}

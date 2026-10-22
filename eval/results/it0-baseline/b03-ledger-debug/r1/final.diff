@@ -1,0 +1,89 @@
+ ledger/ledger.go | 44 ++++++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 40 insertions(+), 4 deletions(-)
+
+diff --git a/ledger/ledger.go b/ledger/ledger.go
+index 2c4c98f..bacec0e 100644
+--- a/ledger/ledger.go
++++ b/ledger/ledger.go
+@@ -5,12 +5,17 @@ import (
+ 	"encoding/json"
+ 	"fmt"
+ 	"io"
++	"sort"
+ 	"time"
+ )
+ 
+ // Rates converts one unit of a currency to USD.
+ var Rates = map[string]float64{"USD": 1, "EUR": 1.0825, "GBP": 1.2675}
+ 
++// rateNum holds Rates scaled by 1e4 so conversion can be done in exact
++// integer arithmetic: usd = amount * rateNum / 1e4.
++var rateNum = map[string]int64{"USD": 10000, "EUR": 10825, "GBP": 12675}
++
+ // Event is one log entry.
+ type Event struct {
+ 	ID       string    `json:"id"`
+@@ -28,6 +33,7 @@ type Event struct {
+ func ReadEvents(r io.Reader) ([]Event, error) {
+ 	var out []Event
+ 	sc := bufio.NewScanner(r)
++	sc.Buffer(make([]byte, 64*1024), 1024*1024)
+ 	line := 0
+ 	for sc.Scan() {
+ 		line++
+@@ -43,21 +49,51 @@ func ReadEvents(r io.Reader) ([]Event, error) {
+ 	return out, sc.Err()
+ }
+ 
+-// toUSD converts an amount in minor units to USD cents.
++// toUSD converts an amount in minor units to USD cents, rounded to the
++// nearest cent with ties to even (banker's rounding).
+ func toUSD(amount int64, currency string) (int64, error) {
+-	rate, ok := Rates[currency]
++	num, ok := rateNum[currency]
+ 	if !ok {
+ 		return 0, fmt.Errorf("unknown currency %q", currency)
+ 	}
+-	return int64(float64(amount) * rate), nil
++	x := amount * num
++	// Round |x|/1e4 to nearest, ties to even, then restore the sign.
++	a := x
++	if a < 0 {
++		a = -a
++	}
++	q, r := a/10000, a%10000
++	if 2*r > 10000 || (2*r == 10000 && q%2 != 0) {
++		q++
++	}
++	if x < 0 {
++		q = -q
++	}
++	return q, nil
+ }
+ 
+ // Replay applies the events and returns balances in USD cents.
+ func Replay(events []Event) (map[string]int64, error) {
++	sorted := make([]Event, len(events))
++	copy(sorted, events)
++	// The log is not sorted: apply events in timestamp order, ties in seq
++	// order.
++	sort.SliceStable(sorted, func(i, j int) bool {
++		if !sorted[i].TS.Equal(sorted[j].TS) {
++			return sorted[i].TS.Before(sorted[j].TS)
++		}
++		return sorted[i].Seq < sorted[j].Seq
++	})
+ 	bal := map[string]int64{}
+ 	applied := map[string]Event{}
+ 	reversed := map[string]bool{}
+-	for _, e := range events {
++	seen := map[string]bool{}
++	for _, e := range sorted {
++		// Delivery is at-least-once: only the first occurrence of an id counts.
++		if seen[e.ID] {
++			continue
++		}
++		seen[e.ID] = true
+ 		switch e.Type {
+ 		case "deposit", "withdrawal", "transfer":
+ 			usd, err := toUSD(e.Amount, e.Currency)

@@ -9,9 +9,59 @@ and a Harness²-style improvement loop.
 - **Progress log (start here when resuming):** [`STATUS.md`](STATUS.md)
 - **Experiment log (Propose → Probe → Compose records):** [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md)
 
+## Results so far (2026-10-22)
+
+Snapshot of an ongoing run; full records in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), raw data in `eval/results/`.
+All runs are single repetitions unless stated, so per-task differences of a few minutes are within noise.
+
+### The model + server, measured
+| | finding | consequence for the harness |
+|---|---|---|
+| Speed | cold prefill ~80–140 tok/s, decode ~25–50 tok/s (10× slower prefill than the plan assumed) | cache discipline is the #1 performance property |
+| Prefix cache | reuses up to the previous prompt; **generated tokens are never cached** | append-only context; big outputs are paid twice (decode + re-prefill) |
+| `reasoning_effort` | rendered into the prompt prefix — switching it breaks the cache | one effort per context segment; side requests reuse the segment's effort |
+| Thinking on/off | only changes the prompt suffix — cache-neutral | per-turn thinking policies are possible (but see below) |
+| Concurrency | 2 parallel agents ≈ same total throughput as 1 | evals run one at a time |
+| Tool calling | 49/50 single-tool prompts → correct structured call (98%) | repair layer kept as a safety net; 0 repairs needed so far |
+
+### Baseline harness (`harness/base`)
+| suite | result |
+|---|---|
+| Tier A (12 small Go tasks, hidden tests) | **12/12** solved; single-stream mean **6.7 min**, 12 turns, 7.7K output tokens per task |
+| Held-out (4 tasks) | 2/4 fully correct, mean score **0.96** (two runs missed one spec clause each) |
+| Tier B (6 multi-step tasks) | **3/3 solved so far** (b01 expression language 46.7 min, b02 feature in existing codebase 19.9 min, b03 ledger debugging 4.7 min); b04–b06 running |
+| vs stock OpenCode (same model/server) | h01: both solve it; **qh 3.2 min vs OpenCode 9.2 min**; broader comparison queued |
+
+Infrastructure features verified with the real model: re-prefill events **0** across baseline runs (prefix stays
+stable); prefix warm-up makes a task's first turn hit ~1.9K cached tokens (8 s instead of 20–50 s); compaction
+writes a useful checkpoint as a cache hit and the new segment resumes from its "Next steps".
+
+### Harness experiments (Harness² Propose → Probe → Compose)
+| experiment | idea | outcome |
+|---|---|---|
+| EXP-1 fuzzy `edit_file` | tolerate indentation mismatches (seen when the model copied a separator tab) | **adopted as safety net** — rare failure, no measurable effect |
+| EXP-3 thinking budget | abort runaway thinking turns (one turn thought for 13 min) | **rejected** — the next turn re-derives the same plan, net cost higher |
+| EXP-4 strip reasoning | don't send old thinking back (less prefill) | **rejected** — prefill −55%, but thinking nearly doubles; slower overall |
+| A1 effort `low` | cheaper thinking | **rejected** — counter-intuitively *doubles* thinking; ~3× slower |
+| A2 thinking off | no thinking at all | **rejected** — easy tasks 2× faster, hard tasks flail into the 80-turn cap (score 7.83 → 5.24) |
+| A3 adaptive thinking | think on early turns and after errors | **rejected** — drifts without visible errors; 2 tasks hit the turn cap |
+| C1 spec-clause review / `go-pitfalls` skill | catch silently-missed spec clauses (both held-out misses) | **queued** |
+
+**Takeaways so far.** Qwen3.8-27B is strong on well-specified Go tasks: every Tier-A task and the first three
+Tier-B tasks are solved. The harness's main contributions are speed (cache-stable context, warm-up, no
+concurrency) and reliability (retries over a flaky tunnel, acceptance check on `finish`, compaction).
+All five attempts to save time by reducing thinking made things worse: this model plans and debugs in its thinking,
+so the default (`medium`, thinking every turn, reasoning kept in context) stays. The remaining failure pattern is
+**explicit spec clauses that the model never tests** (an empty-but-non-nil slice, a `|` inside a quoted argument),
+which is what the queued C1 experiments target.
+
+Not possible in this environment: Terminal-Bench (Tier C, needs a Docker daemon) and the PWA task (Tier D, spec
+not provided). Several eval bugs found along the way were fixed and rescored (hidden-test helper name collisions,
+over-strict checks); see the "Eval fix" notes in the experiment log.
+
 ## Layout
 ```
-cmd/qh/                 CLI: run, eval, report, digest, validate, smoke
+cmd/qh/                 CLI: run, eval, report, digest, validate, smoke, rescore, propose
 internal/llm/           streaming OpenAI-compatible client (retries, idle watchdog, usage + cache metrics)
 internal/loop/          append-only agent loop, finish→acceptance check, compaction, delegation
 internal/tools/         read_file, write_file, edit_file, run, grep, list_dir (+ update_plan, delegate, finish in loop)
