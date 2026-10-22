@@ -130,12 +130,16 @@ func (a *Agent) TaskCard() string {
 	b.WriteString("# Task\n")
 	b.WriteString(strings.TrimSpace(a.Task.Prompt) + "\n\n")
 	b.WriteString("# Workspace\n")
-	fmt.Fprintf(&b, "Your workspace root is the current directory for all tools (absolute path: %s). It is a git repository; the initial state is committed.\n", a.Env.Root)
+	if a.Env.Container != "" {
+		fmt.Fprintf(&b, "You are root inside a disposable Linux container. Tools run in the container; relative paths are relative to %s, and absolute paths anywhere are allowed. You may install packages (internet access is available). Nobody will check your work until you call finish, and then it is graded automatically, so verify it yourself first.\n", a.Env.Root)
+	} else {
+		fmt.Fprintf(&b, "Your workspace root is the current directory for all tools (absolute path: %s). It is a git repository; the initial state is committed.\n", a.Env.Root)
+	}
 	if a.Task.Check != "" {
 		fmt.Fprintf(&b, "\n# Acceptance check\nWhen you call finish, the harness runs: `%s`\nIt must exit 0. Run it yourself before calling finish.\n", a.Task.Check)
 	}
 	listing := a.Env.Exec(context.Background(), "list_dir", tools.Args{"path": ".", "depth": float64(3)})
-	out, _ := ctxmgr.Cap(a.Env.Root, "initial-listing", listing.Output, 1200)
+	out, _ := ctxmgr.Cap(a.Env, "initial-listing", listing.Output, 1200)
 	b.WriteString("\n# Initial file tree\n```\n" + strings.TrimPrefix(out, "OK ") + "```\n")
 	return b.String()
 }
@@ -415,7 +419,7 @@ func (a *Agent) handleCall(ctx context.Context, turn, idx int, tc llm.ToolCall) 
 		}
 	}
 	spillName := fmt.Sprintf("%s-t%d-%d-%s", a.Name, turn, idx, name)
-	capped, spilled := ctxmgr.Cap(a.Env.Root, spillName, out, a.cfg.ToolCapTokens)
+	capped, spilled := ctxmgr.Cap(a.Env, spillName, out, a.cfg.ToolCapTokens)
 	progress := len(res.Changed) > 0 || res.TestSignal != ""
 	if hint, cls := a.loops.Observe(name, rawArgs, progress); hint != "" && !finished {
 		capped += "\n\n" + hint
@@ -435,13 +439,13 @@ func (a *Agent) verifyWrite(ctx context.Context, changed []string) string {
 	var notes []string
 	for _, f := range changed {
 		if strings.HasSuffix(f, ".go") {
-			out, code, _ := tools.Shell(ctx, a.Env.Root, a.Env.RunEnv, "gofmt -l -e "+shellQuote(f)+" 2>&1 >/dev/null | head -8", 20*time.Second)
+			out, code := a.Env.RunCmd(ctx, "command -v gofmt >/dev/null || exit 0; gofmt -l -e "+shellQuote(f)+" 2>&1 >/dev/null | head -8", 20*time.Second)
 			if code == 0 && strings.TrimSpace(out) != "" {
 				notes = append(notes, "WARNING syntax errors in "+f+" (gofmt):\n"+strings.TrimSpace(out))
 			}
 		}
 		if strings.HasSuffix(f, ".json") {
-			out, code, _ := tools.Shell(ctx, a.Env.Root, a.Env.RunEnv, "python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "+shellQuote(f)+" 2>&1 | tail -1", 20*time.Second)
+			out, code := a.Env.RunCmd(ctx, "command -v python3 >/dev/null || exit 0; python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "+shellQuote(f)+" 2>&1 | tail -1", 20*time.Second)
 			if code == 0 && strings.TrimSpace(out) != "" {
 				notes = append(notes, "WARNING invalid JSON in "+f+": "+strings.TrimSpace(out))
 			}
@@ -469,7 +473,8 @@ func (a *Agent) finish(ctx context.Context, turn int, args tools.Args) (tools.Re
 		a.out.Status = "finished"
 		return tools.Result{OK: true, Output: "OK finished"}, true
 	}
-	out, code, timedOut := tools.Shell(ctx, a.Env.Root, a.Env.RunEnv, a.Task.Check, 10*time.Minute)
+	out, code := a.Env.RunCmd(ctx, a.Task.Check, 10*time.Minute)
+	timedOut := false
 	a.Tr.Event(trace.Event{Agent: a.Name, Turn: turn, Name: "acceptance_check", Detail: fmt.Sprintf("exit=%d timeout=%v", code, timedOut)})
 	if code == 0 && !timedOut {
 		a.out.Status = "finished"
@@ -493,9 +498,15 @@ func (a *Agent) updatePlan(args tools.Args) tools.Result {
 	if step == "" {
 		return tools.Result{ErrorClass: "missing_arg", Output: "ERROR missing_arg: update_plan needs step"}
 	}
-	path := filepath.Join(a.Env.Root, ".qh", "PLAN.md")
-	_ = os.MkdirAll(filepath.Dir(path), 0o755)
-	data, _ := os.ReadFile(path)
+	path := filepath.Join(ctxmgr.QHDir(a.Env), "PLAN.md")
+	var data []byte
+	if a.Env.Container == "" {
+		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+		data, _ = os.ReadFile(path)
+	} else {
+		out, _ := a.Env.RunCmd(context.Background(), "cat "+shellQuote(path)+" 2>/dev/null", 10*time.Second)
+		data = []byte(out)
+	}
 	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 	if len(lines) == 1 && lines[0] == "" {
 		lines = nil
@@ -515,7 +526,7 @@ func (a *Agent) updatePlan(args tools.Args) tools.Result {
 		lines = append(lines, entry)
 	}
 	content := strings.Join(lines, "\n") + "\n"
-	_ = os.WriteFile(path, []byte(content), 0o644)
+	_ = a.Env.WriteFile(path, []byte(content))
 	return tools.Result{OK: true, Output: "OK plan updated:\n" + content}
 }
 
@@ -558,7 +569,7 @@ func (a *Agent) delegate(ctx context.Context, args tools.Args) tools.Result {
 	if report == "" {
 		report = "(sub-agent returned no report; status " + o.Status + ")"
 	}
-	capped, _ := ctxmgr.Cap(a.Env.Root, sub.Name+"-report", report, 1200)
+	capped, _ := ctxmgr.Cap(a.Env, sub.Name+"-report", report, 1200)
 	return tools.Result{OK: o.Status == "finished", ErrorClass: map[bool]string{true: "", false: "subagent_" + o.Status}[o.Status == "finished"],
 		Output: fmt.Sprintf("OK sub-agent report (%d turns, status %s):\n%s", o.Turns, o.Status, capped)}
 }
@@ -593,14 +604,16 @@ func (a *Agent) compact(ctx context.Context, turn int, reason string) error {
 	if summary == "" {
 		summary = "(no model-written checkpoint available)"
 	}
-	state := ctxmgr.StateSnapshot(ctx, a.Env.Root)
+	state := ctxmgr.StateSnapshot(ctx, a.Env)
 	a.segment++
 	a.out.Compactions++
 	cp := fmt.Sprintf("# Checkpoint %d (context was reset after %d turns)\nYou already worked on this task. Below is your own checkpoint and the current workspace state. Continue from \"Next steps\". Re-read files before editing them; your earlier views of them are gone.\n\n%s\n\n## Workspace state (generated)\n%s",
 		a.segment, turn-1, summary, state)
-	dir := filepath.Join(a.Env.Root, ".qh", "state")
-	_ = os.MkdirAll(dir, 0o755)
-	_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("CHECKPOINT-%d.md", a.segment)), []byte(cp), 0o644)
+	dir := filepath.Join(ctxmgr.QHDir(a.Env), "state")
+	if a.Env.Container == "" {
+		_ = os.MkdirAll(dir, 0o755)
+	}
+	_ = a.Env.WriteFile(filepath.Join(dir, fmt.Sprintf("CHECKPOINT-%d.md", a.segment)), []byte(cp))
 	a.Tr.Event(trace.Event{Agent: a.Name, Turn: turn, Name: "compaction", Detail: reason, Data: map[string]any{"prompt_tokens": a.lastProm, "checkpoint_chars": len(cp)}})
 	a.msgs = nil
 	a.push(llm.Message{Role: "system", Content: llm.Str(a.H.System)})

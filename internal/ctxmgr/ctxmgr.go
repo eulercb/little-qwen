@@ -23,16 +23,20 @@ func EstTokens(s string) int { return int(float64(len(s))/CharsPerToken) + 1 }
 
 // Cap trims out to capTokens. Oversized output is written in full to
 // <root>/.qh/spill/<name>.txt and replaced with head + tail + a pointer.
-func Cap(root, name, out string, capTokens int) (string, bool) {
+func Cap(env *tools.Env, name, out string, capTokens int) (string, bool) {
 	limit := int(float64(capTokens) * CharsPerToken)
 	if len(out) <= limit {
 		return out, false
 	}
-	dir := filepath.Join(root, ".qh", "spill")
-	_ = os.MkdirAll(dir, 0o755)
-	path := filepath.Join(dir, name+".txt")
-	_ = os.WriteFile(path, []byte(out), 0o644)
-	rel, _ := filepath.Rel(root, path)
+	path := filepath.Join(QHDir(env), "spill", name+".txt")
+	if env.Container == "" {
+		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	}
+	_ = env.WriteFile(path, []byte(out))
+	rel := path
+	if env.Container == "" {
+		rel, _ = filepath.Rel(env.Root, path)
+	}
 	lines := strings.Count(out, "\n") + 1
 	headN := limit * 55 / 100
 	tailN := limit * 35 / 100
@@ -52,10 +56,10 @@ func Cap(root, name, out string, capTokens int) (string, bool) {
 
 // StateSnapshot builds the deterministic part of a compaction checkpoint
 // from git and the plan file.
-func StateSnapshot(ctx context.Context, root string) string {
+func StateSnapshot(ctx context.Context, env *tools.Env) string {
 	var b strings.Builder
 	run := func(title, cmd string) {
-		out, _, _ := tools.Shell(ctx, root, nil, cmd, 30*time.Second)
+		out, _ := env.RunCmd(ctx, cmd, 30*time.Second)
 		out = strings.TrimSpace(out)
 		if out == "" {
 			out = "(none)"
@@ -65,10 +69,20 @@ func StateSnapshot(ctx context.Context, root string) string {
 		}
 		fmt.Fprintf(&b, "### %s\n```\n%s\n```\n", title, out)
 	}
-	if plan, err := os.ReadFile(filepath.Join(root, ".qh", "PLAN.md")); err == nil {
-		fmt.Fprintf(&b, "### Plan (.qh/PLAN.md)\n%s\n", strings.TrimSpace(string(plan)))
+	if plan, _ := env.RunCmd(ctx, "cat "+filepath.Join(QHDir(env), "PLAN.md")+" 2>/dev/null", 10*time.Second); strings.TrimSpace(plan) != "" {
+		fmt.Fprintf(&b, "### Plan\n%s\n", strings.TrimSpace(plan))
 	}
 	run("Files changed since start (git status --short)", "git status --short 2>/dev/null | grep -v '^?? .qh/' | head -60")
 	run("Diff size (git diff --stat)", "git add -A -N . 2>/dev/null; git diff --stat 2>/dev/null | tail -30")
 	return b.String()
+}
+
+// QHDir is where the harness keeps its own files (plan, spills, checkpoints):
+// <root>/.qh on the host; /tmp/qh inside task containers, so the task's
+// working directory (which verifiers may inspect) stays clean.
+func QHDir(env *tools.Env) string {
+	if env.Container != "" {
+		return "/tmp/qh"
+	}
+	return filepath.Join(env.Root, ".qh")
 }

@@ -1,0 +1,33 @@
+# Tier C candidates: CPU-only Terminal-Bench 2 tasks (laude-institute/terminal-bench-2 @ 2fd12b8),
+# excluding large model downloads, VMs/emulators and multi-hour timeouts.
+# Oracle results (reference solve.sh + official verifier) decide the frozen subset (subset.txt).
+cobol-modernization
+fix-git
+prove-plus-comm
+overfull-hbox
+kv-store-grpc
+openssl-selfsigned-cert
+vulnerable-secret
+nginx-request-logging
+multi-source-data-merger
+extract-elf
+sanitize-git-repo
+git-leak-recovery
+sqlite-with-gcov
+regex-log
+db-wal-recovery
+build-cython-ext
+sqlite-db-truncate
+largest-eigenval
+log-summary-date-ranges
+polyglot-c-py
+merge-diff-arc-agi-task
+git-multibranch
+large-scale-text-editing
+pypi-server
+cancel-async-tasks
+fix-code-vulnerability
+configure-git-webserver
+polyglot-rust-c
+constraints-scheduling
+gcode-to-text

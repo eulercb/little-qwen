@@ -53,6 +53,11 @@ func main() {
 		err = cmdSmoke(ctx, os.Args[2:])
 	case "propose":
 		err = cmdPropose(ctx, os.Args[2:])
+	case "toolexec":
+		// Runs inside task containers (see internal/tools/remote.go).
+		err = tools.ToolExecMain(os.Stdin, os.Stdout)
+	case "tbench":
+		err = cmdTBench(ctx, os.Args[2:])
 	case "rescore":
 		err = cmdRescore(ctx, os.Args[2:])
 	default:

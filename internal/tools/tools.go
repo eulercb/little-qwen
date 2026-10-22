@@ -45,6 +45,13 @@ type Env struct {
 	// FuzzyEdit lets edit_file fall back to a whitespace-tolerant line match
 	// (unique match required) and re-indent new_text to the file's indentation.
 	FuzzyEdit bool
+	// AllowAbs accepts absolute paths outside Root (used in disposable
+	// containers, where tasks may touch /etc, /usr, ...).
+	AllowAbs bool
+	// Container, when set, runs every tool inside that docker container via
+	// `docker exec ... qh-tool toolexec` (see remote.go). Root is then the
+	// container's working directory.
+	Container string
 }
 
 func ok(format string, a ...any) Result {
@@ -64,6 +71,9 @@ func (e *Env) Resolve(p string) (string, error) {
 	var abs string
 	if filepath.IsAbs(p) {
 		abs = filepath.Clean(p)
+		if e.AllowAbs {
+			return abs, nil
+		}
 	} else {
 		abs = filepath.Join(e.Root, p)
 	}
@@ -189,6 +199,9 @@ func (a Args) Int(k string, def int) int {
 // Exec dispatches the file/shell tools. update_plan, delegate and finish are
 // handled by the loop.
 func (e *Env) Exec(ctx context.Context, name string, a Args) Result {
+	if e.Container != "" {
+		return e.remoteExec(ctx, name, a)
+	}
 	switch name {
 	case "read_file":
 		return e.readFile(a)
@@ -411,7 +424,11 @@ func (e *Env) run(ctx context.Context, a Args) Result {
 func Shell(ctx context.Context, dir string, env []string, cmdline string, to time.Duration) (string, int, bool) {
 	cctx, cancel := context.WithTimeout(ctx, to)
 	defer cancel()
-	cmd := exec.Command("bash", "-c", cmdline)
+	sh := "bash"
+	if _, err := exec.LookPath("bash"); err != nil {
+		sh = "sh" // minimal container images
+	}
+	cmd := exec.Command(sh, "-c", cmdline)
 	cmd.Dir = dir
 	cmd.Env = env
 	if cmd.Env == nil {

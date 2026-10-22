@@ -31,8 +31,12 @@ type TaskSpec struct {
 	HiddenCheck string `json:"hidden_check"` // run after copying hidden/ over the workdir
 	Score       string `json:"score"`        // "gotest" (fraction of passing tests) or "exit"
 	Setup       string `json:"setup"`        // optional command run in the workdir before the agent starts
-	Dir         string `json:"-"`
-	Prompt      string `json:"-"`
+	// Sessions, when set, runs one fresh agent session per entry, in order and
+	// in the same workdir; each session's prompt is the task prompt followed by
+	// the entry (e.g. "Do milestone M3 now."). Models multi-session work.
+	Sessions []string `json:"sessions"`
+	Dir      string   `json:"-"`
+	Prompt   string   `json:"-"`
 }
 
 func LoadTasks(root string, filter []string) ([]TaskSpec, error) {
@@ -167,16 +171,21 @@ func RunOne(ctx context.Context, c *llm.Client, h *harness.Harness, t TaskSpec, 
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return nil, err
 	}
-	tr, err := trace.Open(outDir)
-	if err != nil {
-		return nil, err
-	}
-	defer tr.Close()
-	env := &tools.Env{Root: work, RunEnv: RunEnv(work)}
-	ag := loop.New(c, h, env, tr, loop.Task{ID: t.ID, Prompt: t.Prompt, Check: t.Check})
-	ag.Log = logf
 	started := time.Now().UTC().Format(time.RFC3339)
-	o := ag.Run(ctx)
+	var o loop.Outcome
+	if len(t.Sessions) == 0 {
+		tr, err := trace.Open(outDir)
+		if err != nil {
+			return nil, err
+		}
+		env := &tools.Env{Root: work, RunEnv: RunEnv(work)}
+		ag := loop.New(c, h, env, tr, loop.Task{ID: t.ID, Prompt: t.Prompt, Check: t.Check})
+		ag.Log = logf
+		o = ag.Run(ctx)
+		tr.Close()
+	} else {
+		o = runSessions(ctx, c, h, t, work, outDir, logf)
+	}
 	res := &Result{TaskID: t.ID, Tier: t.Tier, Rep: rep, HarnessHash: h.Hash, Outcome: o, Started: started, Work: work}
 	// Keep the final diff as an artifact (before hidden files are copied in).
 	saveDiff(ctx, work, outDir)
@@ -186,6 +195,54 @@ func RunOne(ctx context.Context, c *llm.Client, h *harness.Harness, t TaskSpec, 
 		return nil, err
 	}
 	return res, nil
+}
+
+// runSessions runs t.Sessions one after another with fresh contexts in the
+// same workdir. Traces go to <outDir>/s<k>/; the outcome sums the sessions.
+func runSessions(ctx context.Context, c *llm.Client, h *harness.Harness, t TaskSpec, work, outDir string, logf func(string, ...any)) loop.Outcome {
+	var total loop.Outcome
+	total.Codes = map[string]int{}
+	for k, sp := range t.Sessions {
+		sd := filepath.Join(outDir, fmt.Sprintf("s%d", k))
+		tr, err := trace.Open(sd)
+		if err != nil {
+			total.Status, total.Err = "error", err.Error()
+			return total
+		}
+		env := &tools.Env{Root: work, RunEnv: RunEnv(work)}
+		prompt := strings.TrimSpace(t.Prompt) + "\n\n---\n\n# This session\n" + sp
+		ag := loop.New(c, h, env, tr, loop.Task{ID: fmt.Sprintf("%s#%d", t.ID, k), Prompt: prompt, Check: t.Check})
+		ag.Log = func(f string, a ...any) { logf("[s%d] "+f, append([]any{k}, a...)...) }
+		o := ag.Run(ctx)
+		tr.Close()
+		b, _ := json.MarshalIndent(o, "", "  ")
+		_ = os.WriteFile(filepath.Join(sd, "outcome.json"), b, 0o644)
+		logf("session %d (%s): status=%s check=%v turns=%d wall=%.1fmin", k, sp, o.Status, o.CheckPassed, o.Turns, o.WallSeconds/60)
+		total.Turns += o.Turns
+		total.Compactions += o.Compactions
+		total.PromptTokens += o.PromptTokens
+		total.PrefillTokens += o.PrefillTokens
+		total.ReprefillTokens += o.ReprefillTokens
+		total.CompletionTokens += o.CompletionTokens
+		total.ReasoningTokens += o.ReasoningTokens
+		total.ToolCalls += o.ToolCalls
+		total.ToolErrors += o.ToolErrors
+		total.Repaired += o.Repaired
+		total.Nudges += o.Nudges
+		total.LoopHints += o.LoopHints
+		total.FinishAttempts += o.FinishAttempts
+		total.Delegations += o.Delegations
+		total.WallSeconds += o.WallSeconds
+		for c, n := range o.Codes {
+			total.Codes[c] += n
+		}
+		total.Status, total.CheckPassed, total.Summary = o.Status, o.CheckPassed, o.Summary
+		if o.Status == "error" {
+			total.Err = o.Err
+			return total // endpoint/infra problem: stop here
+		}
+	}
+	return total
 }
 
 func scoreHidden(ctx context.Context, t TaskSpec, work string, res *Result) {
@@ -203,7 +260,23 @@ func scoreHidden(ctx context.Context, t TaskSpec, work string, res *Result) {
 	if t.Score == "gotest" {
 		cmd = strings.Replace(cmd, "go test", "go test -json", 1)
 	}
-	out, code, _ := tools.Shell(ctx, work, RunEnv(work), cmd, 10*time.Minute)
+	env := append(RunEnv(work), "QH_TASK_DIR="+t.Dir)
+	out, code, _ := tools.Shell(ctx, work, env, cmd, 30*time.Minute)
+	if t.Score == "fraction" {
+		// The checker prints "SCORE <passed> <total>" as its last such line.
+		for _, l := range strings.Split(out, "\n") {
+			var p, n int
+			if _, err := fmt.Sscanf(strings.TrimSpace(l), "SCORE %d %d", &p, &n); err == nil && n > 0 {
+				res.TestsPassed, res.TestsTotal = p, n
+			}
+		}
+		if res.TestsTotal > 0 {
+			res.Score = float64(res.TestsPassed) / float64(res.TestsTotal)
+		}
+		res.Success = res.TestsTotal > 0 && res.TestsPassed == res.TestsTotal
+		res.HiddenOut = tailLines(out, 80)
+		return
+	}
 	if t.Score == "gotest" {
 		pass, total := countGoTests(out)
 		res.TestsPassed, res.TestsTotal = pass, total
