@@ -79,6 +79,31 @@ Queued (see `eval/queue.txt`):
   the OpenCode comparison;
 - `eval/results/tbC-littlecoder` (Tier C), after qh's own `tbC-base`.
 
+## Results
+
+Single run each, single-stream, wall minutes.
+- qh times for a05/a09/a12 are from `it0-base-p1`; `it0-baseline` ran those at 2× load.
+- The other qh rows are from `it0-baseline`.
+
+| task | qh base | little-coder | pi | OpenCode |
+|---|---|---|---|---|
+| a05-ini-bugfix | 1.00 / 3.0 | 1.00 / 4.4 | queued | — |
+| a09-csv-report | 1.00 / 7.0 | 1.00 / 5.9 | queued | — |
+| a12-jsonpath | 1.00 / 5.6 | 1.00 / 8.5 | queued | — |
+| h01-paginate-bugs | 1.00 / 3.2 | 1.00 / 3.7 | queued | 1.00 / 9.2 |
+| h02-config-merge | 0.92 / 2.3 | 1.00 / 5.4 | queued | queued |
+| h03-worker-pool | 1.00 / 16.3 | 0.86 / 45.0 (killed at the 45-min cap) | queued | queued |
+| h04-mini-template | 0.92 / 19.9 | 1.00 / 11.3 | queued | queued |
+| **mean score / total min** | **0.976 / 57.3** | **0.980 / 84.2** | | |
+
+Reading (n=1, so differences of one hidden test are noise):
+- little-coder is a strong comparator on this model: practically tied on score.
+- Without h03 it is also about tied on time (qh 41.0 vs little-coder 39.2 min).
+- It got h02 and h04 fully right, where qh missed one spec item each (cluster C1). The base rep-2 runs and the C1
+  probes will show whether that is noise.
+- Its h03 run timed out with no output. `pi -p` prints only the final message, so there is no trace.
+- Until the 23:30 wrapper fix, a timeout was recorded as status "finished". The `wall` value of 45.0 is the tell.
+
 ## Mechanisms, mapped to qh, with our evidence
 
 The evidence comes from `eval/runner/tool_stats.py` and trace analysis over the 68 qh runs in `eval/results`

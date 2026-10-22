@@ -50,4 +50,6 @@ case "$flavor" in
     ;;
   *) echo "unknown flavor $flavor" >&2; exit 2 ;;
 esac
+# Report a timeout (exit 124) so qh records status exit_124 instead of "finished".
+[ "${PIPESTATUS[0]}" = 124 ] && exit 124
 exit 0
