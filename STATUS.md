@@ -28,17 +28,16 @@ Then follow "Decisions waiting on those results" below as items finish.
   (Cloudflare 530 "Origin DNS error"); paused again 14:25. Runs that failed only because of the outage (b04, b05)
   were discarded. All finished results are committed and pushed.
 - Remaining queue (`eval/queue.txt`, in order; `eval/queue.done` lists what finished):
-  1. Tier-B baseline (b06 running).
-  2. little-coder baseline.
-  3. pi baseline.
-  4. L1 think-cap probe.
-  5. Base rep 2 on h02/h04.
-  6. C1 INV probe (`e2-review`).
-  7. C1 DOM probe (`c1-dom`).
-  8. Broader OpenCode baseline.
-  9. d01 (Tier D).
-  10. Tier C subset baseline (`tbC-base`).
-  11. little-coder on the Tier C subset (`tbC-littlecoder`).
+  1. little-coder baseline (running; a05 solved in 4.4 min).
+  2. pi baseline.
+  3. L1 think-cap probe (b01, b04, b05, b06, h03, a10).
+  4. Base rep 2 on h02/h04.
+  5. C1 INV probe (`e2-review`).
+  6. C1 DOM probe (`c1-dom`).
+  7. Broader OpenCode baseline.
+  8. d01 (Tier D).
+  9. Tier C subset baseline (`tbC-base`).
+  10. little-coder on the Tier C subset (`tbC-littlecoder`).
 - Outage handling (added at the second pause): `qh eval` aborts the remaining runs when the endpoint is unavailable
   (exit≠0); the queue waits for `$REMOTE_LLM_ENDPOINT/health` before each item and keeps failed items to retry them
   (caveat: an item failing for a non-endpoint reason retries every minute — fix or delete that line).
@@ -147,4 +146,7 @@ Then follow "Decisions waiting on those results" below as items finish.
 - 2026-10-22 18:46 — new tunnel magnitude-academic-technique-imagine; server needs --allowed-host for it; queue started and waiting on /health.
 - 2026-10-22 ~21:30 — Tier-B: b04 0.925, b05 failed (wall clock 60 min; a 20-min runaway thinking turn), b06 running.
   - Studied little-coder and pi (docs/LITTLE_CODER.md).
+- 2026-10-22 22:02 — Tier-B baseline done: b01–b03 solved, b04 0.925, b05 and b06 failed on wall clock.
+  - Both failures were runaway 16K-token thinking turns (b06 had 4 of them).
+  - The L1 probe now includes b06.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.

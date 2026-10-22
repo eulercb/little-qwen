@@ -138,4 +138,8 @@ Template:
   reasoning is kept as an assistant message, a harness nudge says "act now, don't draft code in reasoning", and
   the next turn runs with `enable_thinking:false` (cache-neutral).
   - Differences from EXP-3: the reasoning is kept, not discarded, and the cap is 8K instead of 3K.
-- Probe `eval/results/expL1-think-cap`: b01, b04, b05, h03, a10 ×1, against it0-baseline.
+- Update 22:05: b06 baseline failed (wall clock, 73.7 min, only 7 turns). Turns 2, 5, 6 and 7 each spent 16K
+  tokens on thinking (~17–21 min each) with no action, and each was re-prefilled on the next turn.
+  - Tier-B baseline: b01–b03 solved, b04 0.925, b05 and b06 failed.
+  - Both failures are runaway thinking; b06 was added to the probe.
+- Probe `eval/results/expL1-think-cap`: b01, b04, b05, b06, h03, a10 ×1, against it0-baseline.
