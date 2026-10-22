@@ -11,7 +11,7 @@ and a Harness²-style improvement loop.
 
 ## Results so far (2026-10-22)
 
-Snapshot; experiments are paused (see STATUS.md to resume); full records in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), raw data in `eval/results/`.
+Snapshot; experiments are paused — resume with `eval/runner/resume.sh <tunnel-url>` (see STATUS.md); full records in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), raw data in `eval/results/`.
 All runs are single repetitions unless stated, so per-task differences of a few minutes are within noise.
 
 ### The model + server, measured
@@ -87,6 +87,7 @@ export REMOTE_LLM_ENDPOINT=https://<tunnel>.trycloudflare.com
 ./bin/qh report eval/results/it1
 ./bin/qh digest eval/results/it1/a01-lru-cache/r1
 eval/runner/validate_tasks.sh                     # check that tasks are solvable and hidden tests discriminate
+eval/runner/resume.sh https://<tunnel>            # resume the paused experiment queue (see STATUS.md)
 ```
 
 ## Design in one paragraph

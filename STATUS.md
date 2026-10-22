@@ -9,41 +9,41 @@ and compensates for its weaknesses, then improve it with the Harness² method (P
 evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is the roadmap).
 Results summary for readers: README.md "Results so far". Full experiment records: docs/EXPERIMENTS.md.
 
-## ⏸ Experiments PAUSED (2026-10-22 14:25 UTC: tunnel down) — how to resume
+## ⏸ Session wrapped up (2026-10-22 ~14:40 UTC) — experiments PAUSED, nothing running
 
-Paused at ~04:30, resumed 12:18 with tunnel `massachusetts-refresh-bringing-cubic`, which died at 12:33
-(Cloudflare 530 "Origin DNS error"). Queue stopped; the two runs that failed on the outage (b04, b05) were
-discarded. Nothing is running. Resume needs a new tunnel URL from the user.
-Since this pause: `qh eval` aborts the remaining runs when the endpoint is unavailable (exit≠0), and the queue
-waits for `$REMOTE_LLM_ENDPOINT/health` before each item and keeps failed items (rc≠0) to retry them.
-(Caveat: an item that fails for a non-endpoint reason is retried every minute — fix the line or remove it.) All finished results are
-committed. The interrupted Tier-B baseline run (b04, which was ~33 min in) was deleted, so it reruns from scratch.
+### Resume in one command
+```bash
+eval/runner/resume.sh https://<new-tunnel>.trycloudflare.com      # add --no-opencode to skip the comparator install
+```
+It builds `bin/qh`, runs the offline tests, checks the endpoint (model list + a chat round-trip), installs OpenCode
+into `~/.cache/qh-opencode` for the comparator item, prints the remaining queue and starts the background queue.
+If it stops at the endpoint check: the tunnel is down, or the server needs `--allowed-host <tunnel host>` (403).
+Then follow "Decisions waiting on those results" below as items finish.
 
-**Resume in a fresh session/container:**
-1. Build: `go build -o bin/qh ./cmd/qh` (Go 1.24, stdlib only; `bin/` is gitignored).
-2. Endpoint: `export REMOTE_LLM_ENDPOINT=https://<tunnel>.trycloudflare.com` (Cloudflare quick tunnel; the URL
-   changes whenever the tunnel restarts, and the server must allow that host or it answers 403).
-   Check: `curl -s $REMOTE_LLM_ENDPOINT/v1/models` should list `mlx-community/Qwen3.8-27B-4bit`.
-3. Sanity: `go test ./internal/...` and `./bin/qh validate harness/base`.
-4. OpenCode comparator (only needed for the last queue item): install it anywhere, e.g.
-   `mkdir -p /tmp/oc && cd /tmp/oc && npm install opencode-ai@latest`, then `export OPENCODE_BIN=/tmp/oc/node_modules/.bin/opencode`
-   **before** starting the queue (the queue line reads `${OPENCODE_BIN:-opencode}`). The wrapper
-   `eval/runner/opencode_agent.sh` sets `OPENCODE_DISABLE_MODELS_FETCH=true` (models.opencode.ai is blocked by the
-   egress proxy) and bounds the run with `timeout` (opencode run sometimes doesn't exit).
-5. Start the queue: `nohup eval/runner/queue.sh >> eval/queue.log 2>&1 &`
-   - It runs `eval/queue.txt` top to bottom, one at a time, and commits+pushes `eval/results` after each item.
-   - Remaining items (in order): (1) Tier-B baseline (b01–b03 done → runs b04, b05, b06); (2) base rep 2 on h02/h04;
-     (3) C1 INV probe `harness/cand/e2-review`; (4) C1 DOM probe `harness/cand/c1-dom`; (5) broader OpenCode baseline.
-   - Expect roughly 6–10 hours in total (Tier-B tasks take 5–50 min each; probes are 2 reps × 4 tasks).
-   - `qh eval` resumes: runs with a finished result.json are skipped; runs whose status is `error`
-     (endpoint outage) are re-run.
-6. Is it running? `test -f eval/queue.pid && kill -0 $(cat eval/queue.pid) && echo running`.
-   Stop it: `kill $(cat eval/queue.pid); kill $(cat eval/.eval.lock)` (the unfinished queue line stays in queue.txt;
-   delete the half-finished run dir it was writing, see eval/results/<out>/.inprogress or a result with status error).
-   **Never** use `pgrep -f <pattern>` or a `/proc` cmdline scan for a pattern inside a shell loop: the loop's own shell
-   matches the pattern (this killed/hung watchers twice). Use the pid/lock files.
-7. Waiting for results without polling: a background shell loop on `wc -l < eval/queue.done` works; background
-   commands are stopped after 2 h, so re-arm per queue item.
+### Where things stand
+- Paused on request at ~04:30; resumed 12:18 with tunnel `massachusetts-refresh-bringing-cubic`, which died at 12:33
+  (Cloudflare 530 "Origin DNS error"); paused again 14:25. Runs that failed only because of the outage (b04, b05)
+  were discarded. All finished results are committed and pushed.
+- Remaining queue (`eval/queue.txt`, in order, ~6–10 h): (1) Tier-B baseline — b01–b03 done, runs b04, b05, b06;
+  (2) base rep 2 on h02/h04; (3) C1 INV probe `harness/cand/e2-review`; (4) C1 DOM probe `harness/cand/c1-dom`;
+  (5) broader OpenCode baseline.
+- Outage handling (added at the second pause): `qh eval` aborts the remaining runs when the endpoint is unavailable
+  (exit≠0); the queue waits for `$REMOTE_LLM_ENDPOINT/health` before each item and keeps failed items to retry them
+  (caveat: an item failing for a non-endpoint reason retries every minute — fix or delete that line).
+
+### Manual operation (what resume.sh automates)
+- Endpoint: `export REMOTE_LLM_ENDPOINT=https://<tunnel>` (the queue and qh read it from the environment).
+- OpenCode: `export OPENCODE_BIN=<path to opencode>` before starting the queue (its line reads
+  `${OPENCODE_BIN:-opencode}`); `eval/runner/opencode_agent.sh` disables the models fetch (models.opencode.ai is
+  blocked by the egress proxy) and bounds the run with `timeout`.
+- Start: `nohup eval/runner/queue.sh >> eval/queue.log 2>&1 &` — one item at a time, commits+pushes results per item;
+  `qh eval` skips finished runs and re-runs runs with status `error`.
+- Running? `test -f eval/queue.pid && kill -0 $(cat eval/queue.pid) && echo running`.
+  Stop: `kill $(cat eval/queue.pid); kill $(cat eval/.eval.lock)`; then delete the half-finished run
+  (`eval/results/<out>/.inprogress/` or a result with status `error`). The unfinished line stays in queue.txt.
+- **Never** use `pgrep -f <pattern>` or a `/proc` cmdline scan for a pattern inside a shell loop: the loop's own
+  shell matches (this killed/hung watchers twice). Use the pid/lock files.
+- Waiting for results: a background loop on `wc -l < eval/queue.done`; background commands stop after 2 h, so re-arm.
 
 **Decisions waiting on those results (do these next):**
 1. Tier B baseline complete → update README table (b04–b06).
@@ -96,3 +96,4 @@ committed. The interrupted Tier-B baseline run (b04, which was ~33 min in) was d
 - 2026-10-22 12:18 — resumed with new tunnel URL (massachusetts-refresh-bringing-cubic); queue restarted at Tier-B b04.
 - 2026-10-22 12:33 — tunnel died (530 Origin DNS error); 14:25 queue stopped, b04/b05 outage runs discarded;
   added outage abort in qh eval + health gate/keep-on-failure in queue.sh.
+- 2026-10-22 ~14:40 — session wrapped up: added eval/runner/resume.sh (one-command resume), STATUS rewritten.
