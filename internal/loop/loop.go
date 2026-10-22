@@ -79,6 +79,7 @@ type Agent struct {
 	reviewed    bool
 	allowed     map[string]bool // nil = all tools allowed
 	overBudget  bool            // previous turn hit the thinking budget
+	noThinkNext bool            // run the next request with thinking off (think_cap_continue)
 	lastTurnBad bool            // previous turn had a tool error, failed test/check or no tool call
 	prevProm    int             // prompt tokens of the previous request (for cache-loss accounting)
 }
@@ -203,7 +204,7 @@ func (a *Agent) Run(ctx context.Context) Outcome {
 			Temperature: a.cfg.Temperature, TopP: a.cfg.TopP, PresencePenalty: a.cfg.PresencePenalty,
 			MaxThinkChars: thinkChars,
 		}
-		if !a.thinkThisTurn(turn) {
+		if !a.thinkThisTurn(turn) || a.noThinkNext {
 			// Thinking on/off only changes the generation-prompt suffix, so it
 			// does not disturb the cached prefix (docs/ENDPOINT.md). Use Qwen's
 			// recommended non-thinking sampling.
@@ -212,6 +213,7 @@ func (a *Agent) Run(ctx context.Context) Outcome {
 			req.Temperature, req.TopP, req.PresencePenalty = &t, &p, &pp
 		}
 		resp, err := a.Client.Chat(ctx, req)
+		a.noThinkNext = false
 		if errors.Is(err, llm.ErrThinkBudget) {
 			// Runaway thinking: drop the partial turn (never sent back, so the
 			// prefix is unchanged) and ask for a decision. The next turn runs
@@ -221,6 +223,16 @@ func (a *Agent) Run(ctx context.Context) Outcome {
 			a.Tr.Event(trace.Event{Agent: a.Name, Turn: turn, Name: "think_budget", Code: trace.F4ThinkOverflow,
 				Data: map[string]any{"reasoning_chars": len(resp.Message.ReasoningContent), "latency_ms": resp.LatencyMS}})
 			a.logf("turn %d: thinking budget exceeded after %.0fs; asking for a decision", turn, float64(resp.LatencyMS)/1000)
+			if a.cfg.ThinkCapContinue {
+				// Keep the partial reasoning (EXP-3 showed that discarding it
+				// only moves the work) and make the next turn act on it with
+				// thinking off; thinking on/off is cache-neutral.
+				a.push(llm.Message{Role: "assistant", Content: llm.Str(""), ReasoningContent: resp.Message.ReasoningContent})
+				a.push(llm.Message{Role: "user", Content: llm.Str(fmt.Sprintf(
+					"(harness) You have reasoned for ~%d tokens without acting; that is enough to act on. Do not draft code in your reasoning: make the tool call now (write or edit the files directly, then run the tests). You can refine after seeing the results.", a.cfg.ThinkBudgetTokens))})
+				a.noThinkNext = true
+				continue
+			}
 			a.push(llm.Message{Role: "user", Content: llm.Str(fmt.Sprintf(
 				"(harness) Your reasoning for this step exceeded ~%d tokens without acting. Settle on the simplest approach that meets the requirements, then make the tool call. You can refine it after running the tests.", a.cfg.ThinkBudgetTokens))})
 			continue

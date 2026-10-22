@@ -53,6 +53,7 @@ type Config struct {
 	ReadLineSep        string   `json:"read_line_sep"`        // read_file separator between line number and content ("" = tab)
 	FuzzyEdit          bool     `json:"fuzzy_edit"`           // whitespace-tolerant edit_file fallback
 	ThinkBudgetTokens  int      `json:"think_budget_tokens"`  // abort a turn whose reasoning exceeds this (0 = off)
+	ThinkCapContinue   bool     `json:"think_cap_continue"`   // on think_budget: keep the partial reasoning and act on it with thinking off (little-coder style)
 	StripReasoning     bool     `json:"strip_reasoning"`      // do not send reasoning_content back in history
 	ThinkingMode       string   `json:"thinking_mode"`        // "on" (default) | "off" | "adaptive" (on for turns 1-2 and after errors)
 	NoWarmup           bool     `json:"no_warmup"`            // disable the prefix warm-up request

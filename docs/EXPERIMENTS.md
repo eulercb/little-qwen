@@ -125,3 +125,17 @@ Template:
 - Conclusion of the thinking ablations (A1–A3, EXP-3, EXP-4): for this model, keep thinking on at `medium`
   for every turn and keep the reasoning in context. Time savings must come from elsewhere (cache discipline,
   fewer re-prefills, fewer wasted turns), not from cutting thinking.
+
+## L1: think_cap_continue, little-coder's thinking budget adapted   (status: PROBE QUEUED)
+- Source: little-coder's thinking-budget extension. When reasoning exceeds the budget, it keeps the partial
+  reasoning as context and retries with thinking off. See docs/LITTLE_CODER.md.
+- Evidence (trace scan of 1429 qh turns):
+  - 4 turns hit `max_tokens` 16K with all-thinking and no action: b05 1211 s, b04 705 s, b01 766 s, exp4/h03
+    1016 s. On b05 the next turn also had to re-prefill the 16K tokens, and the task timed out at 60 min.
+  - The model was drafting the full implementation in its reasoning, not looping (unique-line ratio 0.64–0.78).
+  - 9 of 1429 turns exceeded 8K.
+- Candidate `harness/cand/l1-think-cap`: `think_budget_tokens: 8000` plus `think_cap_continue: true`. The partial
+  reasoning is kept as an assistant message, a harness nudge says "act now, don't draft code in reasoning", and
+  the next turn runs with `enable_thinking:false` (cache-neutral).
+  - Differences from EXP-3: the reasoning is kept, not discarded, and the cap is 8K instead of 3K.
+- Probe `eval/results/expL1-think-cap`: b01, b04, b05, h03, a10 ×1, against it0-baseline.

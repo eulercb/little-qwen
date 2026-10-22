@@ -4,7 +4,7 @@
 #   eval/runner/resume.sh https://<tunnel>.trycloudflare.com [--no-opencode]
 #
 # Builds qh, runs the offline tests, checks the endpoint (models + a chat
-# round-trip), installs OpenCode for the comparator item unless --no-opencode,
+# round-trip), installs the comparator agents (OpenCode, pi, little-coder) unless --no-opencode,
 # and starts the background eval queue (eval/queue.txt). Safe to re-run: it
 # refuses to start a second queue.
 set -euo pipefail
@@ -52,6 +52,19 @@ if [ "${2:-}" != "--no-opencode" ] && grep -q OPENCODE_BIN eval/queue.txt; then
   fi
   export OPENCODE_BIN="$oc"
   echo "OpenCode: $OPENCODE_BIN"
+fi
+
+if [ "${2:-}" != "--no-opencode" ] && grep -q pi_agent.sh eval/queue.txt; then
+  # pi (pi.dev) and little-coder comparators (eval/runner/pi_agent.sh); Node >= 22.19.
+  while read -r dir pkg bin; do
+    if [ ! -x "$HOME/.cache/$dir/node_modules/.bin/$bin" ]; then
+      echo "== installing $pkg (comparator) into $HOME/.cache/$dir"
+      mkdir -p "$HOME/.cache/$dir" && (cd "$HOME/.cache/$dir" && npm install --silent "$pkg@latest" >/dev/null)
+    fi
+  done <<'PKGS'
+qh-pi @earendil-works/pi-coding-agent pi
+qh-littlecoder little-coder little-coder
+PKGS
 fi
 
 if grep -q "qh tbench" eval/queue.txt; then

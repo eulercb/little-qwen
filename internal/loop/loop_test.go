@@ -33,18 +33,21 @@ type fakeServer struct {
 	replies  []scripted
 	requests [][]llm.Message
 	efforts  []string
+	noThink  []bool
 }
 
 func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Messages        []llm.Message `json:"messages"`
-		MaxTokens       int           `json:"max_tokens"`
-		ReasoningEffort string        `json:"reasoning_effort"`
+		Messages        []llm.Message  `json:"messages"`
+		MaxTokens       int            `json:"max_tokens"`
+		ReasoningEffort string         `json:"reasoning_effort"`
+		Kwargs          map[string]any `json:"chat_template_kwargs"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 	f.mu.Lock()
 	f.requests = append(f.requests, req.Messages)
 	f.efforts = append(f.efforts, req.ReasoningEffort)
+	f.noThink = append(f.noThink, req.Kwargs["enable_thinking"] == false)
 	var s scripted
 	if req.MaxTokens == 1 { // warm-up
 		s = scripted{content: "."}
@@ -173,6 +176,29 @@ func TestLoopNudgesThenGivesUp(t *testing.T) {
 	last := fs.requests[len(fs.requests)-1]
 	if !strings.Contains(last[len(last)-1].Text(), "without calling a tool") {
 		t.Fatalf("no nudge: %q", last[len(last)-1].Text())
+	}
+}
+
+func TestThinkCapContinueKeepsReasoning(t *testing.T) {
+	long := strings.Repeat("let me think about this some more. ", 40)
+	a, fs, _ := setup(t, []scripted{
+		{reasoning: long, prompt: 100},
+		{calls: []llm.ToolCall{call("c1", "write_file", map[string]any{"path": "hello.txt", "content": "hi\n"})}, prompt: 200},
+		{calls: []llm.ToolCall{call("c2", "finish", map[string]any{"summary": "ok"})}, prompt: 300},
+	}, func(c *harness.Config) { c.ThinkBudgetTokens = 100; c.ThinkCapContinue = true })
+	o := a.Run(context.Background())
+	if !o.CheckPassed {
+		t.Fatalf("%+v", o)
+	}
+	// requests: warm-up, capped turn, act turn (thinking off, partial reasoning kept), finish turn (thinking on).
+	n := len(fs.requests)
+	act := fs.requests[n-2]
+	kept := act[len(act)-2]
+	if kept.Role != "assistant" || !strings.HasPrefix(kept.ReasoningContent, "let me think") {
+		t.Fatalf("partial reasoning not kept: %+v", kept)
+	}
+	if !fs.noThink[n-2] || fs.noThink[n-1] || fs.noThink[n-3] {
+		t.Fatalf("thinking off should apply to the act turn only: %v", fs.noThink)
 	}
 }
 

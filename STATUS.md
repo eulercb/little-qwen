@@ -9,14 +9,17 @@ and compensates for its weaknesses, then improve it with the Harness² method (P
 evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is the roadmap).
 Results summary for readers: README.md "Results so far". Full experiment records: docs/EXPERIMENTS.md.
 
-## ⏸ Session wrapped up (2026-10-22 ~14:40 UTC) — experiments PAUSED, nothing running
+## Running state (2026-10-22 ~21:30 UTC): queue RUNNING on tunnel magnitude-academic-technique-imagine
+
+If this session is gone, the queue died with it: re-run resume.sh (below) with the current tunnel.
 
 ### Resume in one command
 ```bash
 eval/runner/resume.sh https://<new-tunnel>.trycloudflare.com      # add --no-opencode to skip the comparator install
 ```
-It builds `bin/qh`, runs the offline tests, checks the endpoint (model list + a chat round-trip), installs OpenCode
-into `~/.cache/qh-opencode` for the comparator item, prints the remaining queue and starts the background queue.
+It builds `bin/qh`, runs the offline tests, checks the endpoint (model list + a chat round-trip), installs the
+comparator agents (OpenCode into `~/.cache/qh-opencode`; pi and little-coder into `~/.cache/qh-pi` and
+`~/.cache/qh-littlecoder`), prints the remaining queue and starts the background queue.
 If it stops at the endpoint check: the tunnel is down, or the server needs `--allowed-host <tunnel host>` (403).
 Then follow "Decisions waiting on those results" below as items finish.
 
@@ -24,12 +27,36 @@ Then follow "Decisions waiting on those results" below as items finish.
 - Paused on request at ~04:30; resumed 12:18 with tunnel `massachusetts-refresh-bringing-cubic`, which died at 12:33
   (Cloudflare 530 "Origin DNS error"); paused again 14:25. Runs that failed only because of the outage (b04, b05)
   were discarded. All finished results are committed and pushed.
-- Remaining queue (`eval/queue.txt`, in order, ~6–10 h): (1) Tier-B baseline — b01–b03 done, runs b04, b05, b06;
-  (2) base rep 2 on h02/h04; (3) C1 INV probe `harness/cand/e2-review`; (4) C1 DOM probe `harness/cand/c1-dom`;
-  (5) broader OpenCode baseline.
+- Remaining queue (`eval/queue.txt`, in order; `eval/queue.done` lists what finished):
+  1. Tier-B baseline (b06 running).
+  2. little-coder baseline.
+  3. pi baseline.
+  4. L1 think-cap probe.
+  5. Base rep 2 on h02/h04.
+  6. C1 INV probe (`e2-review`).
+  7. C1 DOM probe (`c1-dom`).
+  8. Broader OpenCode baseline.
+  9. d01 (Tier D).
+  10. Tier C subset baseline (`tbC-base`).
 - Outage handling (added at the second pause): `qh eval` aborts the remaining runs when the endpoint is unavailable
   (exit≠0); the queue waits for `$REMOTE_LLM_ENDPOINT/health` before each item and keeps failed items to retry them
   (caveat: an item failing for a non-endpoint reason retries every minute — fix or delete that line).
+
+### pi / little-coder comparison and ideas: added 2026-10-22 ~21:00 (user request)
+- Write-up: docs/LITTLE_CODER.md covers the wiring, the mechanism-by-mechanism mapping to qh with our trace
+  evidence, and the verdicts. The little-coder clone used for the study is at /home/user/itayinbarr/little-coder
+  (commit 89d4fa0).
+- Comparators: `eval/runner/pi_agent.sh` (vanilla pi) and `"eval/runner/pi_agent.sh little"` (little-coder).
+  Both are queued on the same 7 single-session tasks as OpenCode, writing to `eval/results/{littlecoder,pi}-baseline`.
+- Candidate L1 `harness/cand/l1-think-cap` adds `think_budget_tokens: 8000` and `think_cap_continue: true`. It is
+  little-coder's thinking budget with the partial reasoning kept and one thinking-off act turn.
+  - Motivation: runaway all-thinking turns hit the 16K output limit on b01, b04 and b05 (12–20 min each; b05 then
+    timed out).
+  - Probe queued: `eval/results/expL1-think-cap` on b01, b04, b05, h03 and a10. Compare with it0-baseline, and
+    read the `think_budget` trace events.
+- `eval/runner/tool_stats.py <result dirs>` gives per-run overwrite, unread-edit and edit-failure stats.
+- Pending: a bridge so little-coder can run on Terminal-Bench (its harbor adapter uses an RPC shell proxy), and
+  revisiting bg-shell/ShellSession ideas after the Tier C baseline.
 
 ### Tier C (Terminal-Bench 2) and Tier D (Caça-Palavras PWA) — added 2026-10-22 evening
 - Docker works: `eval/runner/docker-up.sh` starts dockerd with the `mirror.gcr.io` registry mirror (Docker Hub
@@ -116,3 +143,6 @@ Then follow "Decisions waiting on those results" below as items finish.
 - 2026-10-22 ~14:40 — session wrapped up: added eval/runner/resume.sh (one-command resume), STATUS rewritten.
 - 2026-10-22 ~18:50 — Tier C runner + Tier D task built and validated (docker enabled, oracle sweep running).
 - 2026-10-22 18:46 — new tunnel magnitude-academic-technique-imagine; server needs --allowed-host for it; queue started and waiting on /health.
+- 2026-10-22 ~21:30 — Tier-B: b04 0.925, b05 failed (wall clock 60 min; a 20-min runaway thinking turn), b06 running.
+  - Studied little-coder and pi (docs/LITTLE_CODER.md).
+  - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
