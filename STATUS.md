@@ -9,9 +9,10 @@ and compensates for its weaknesses, then improve it with the Harness² method (P
 evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is the roadmap).
 Results summary for readers: README.md "Results so far". Full experiment records: docs/EXPERIMENTS.md.
 
-## ⏸ Experiments are PAUSED (2026-10-22 ~04:30 UTC) — how to resume
+## ▶ Experiments RESUMED (2026-10-22 12:18 UTC) — how to resume after a pause
 
-Nothing is running. The queue runner and the in-flight eval were stopped on request. All finished results are
+The queue was paused at ~04:30 and resumed at 12:18 UTC with a new tunnel URL (check `eval/queue.pid` to see
+whether it is still running). All finished results are
 committed. The interrupted Tier-B baseline run (b04, which was ~33 min in) was deleted, so it reruns from scratch.
 
 **Resume in a fresh session/container:**
@@ -88,3 +89,4 @@ committed. The interrupted Tier-B baseline run (b04, which was ~33 min in) was d
 - 2026-10-22 ~01:30 — container restarted (processes lost, files kept); queue restarted, exp7 resumed.
 - 2026-10-22 ~02:40 — A2/A3 rejected; thinking ablations concluded. Tier-B baseline started.
 - 2026-10-22 ~04:30 — experiments PAUSED on request (b01–b03 done; b04 interrupted and discarded).
+- 2026-10-22 12:18 — resumed with new tunnel URL (massachusetts-refresh-bringing-cubic); queue restarted at Tier-B b04.
