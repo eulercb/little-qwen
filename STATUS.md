@@ -115,3 +115,4 @@ Then follow "Decisions waiting on those results" below as items finish.
   added outage abort in qh eval + health gate/keep-on-failure in queue.sh.
 - 2026-10-22 ~14:40 — session wrapped up: added eval/runner/resume.sh (one-command resume), STATUS rewritten.
 - 2026-10-22 ~18:50 — Tier C runner + Tier D task built and validated (docker enabled, oracle sweep running).
+- 2026-10-22 18:46 — new tunnel magnitude-academic-technique-imagine; server needs --allowed-host for it; queue started and waiting on /health.
