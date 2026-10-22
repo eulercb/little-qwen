@@ -1,0 +1,16 @@
+(node:17144) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17152) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Fixed. `go test ./...` exits 0, and edge cases beyond the tests check out.
+
+Six bugs in `ini/Parse`, all in one block:
+
+1. **No line trimming** — `  [Server]` didn't match the section check (the exact test failure). Now `line` is `TrimSpace`d first.
+2. **`#` comments not handled** — the doc says lines starting with `;` *or* `#` are comments.
+3. **Section names not lower-cased** — the doc requires it (tests look up `server` for `[Server]`).
+4. **`LastIndex` → `Index`** — the *first* `=` separates key and value, so values may contain `=`.
+5. **Inline comments** — previously any `;` truncated unquoted values (would mangle `url`/`semi = a;b`); now stripping only happens in unquoted values and only at ` ;`/` #` (whitespace before). Quoted values had their quotes removed *after* the `;` cut and were wrongly re-trimmed; now quoted values get quotes removed with inner whitespace preserved, no comment stripping.
+6. **Repeated keys kept the first value** — the doc says repeated keys overwrite; removed the `!exists` guard.
+
+Untested-behavior verification via a scratch program: overwrites, indented `#`/`;` comments, `;` without preceding whitespace in unquoted values, and quoted values containing `;` all behave per the package comment.
