@@ -1,0 +1,38 @@
+{
+  "task_id": "a12-jsonpath",
+  "tier": "tierA",
+  "rep": 1,
+  "harness_hash": "6ef836d18c55",
+  "success": false,
+  "score": 0.3333333333333333,
+  "tests_passed": 1,
+  "tests_total": 3,
+  "outcome": {
+    "Status": "max_turns",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 80,
+    "Compactions": 0,
+    "PromptTokens": 1452617,
+    "PrefillTokens": 26345,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 13592,
+    "ReasoningTokens": 0,
+    "ToolCalls": 81,
+    "ToolErrors": 6,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 7,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F3": 7
+    },
+    "WallSeconds": 743.67584843,
+    "Err": ""
+  },
+  "started": "2026-10-22T00:16:20Z",
+  "hidden_output": "=== RUN   TestMember\n    jpath_test.go:21: [] invalid path \"$.a.b[1]\": invalid member name\n--- FAIL: TestMember (0.00s)\n=== RUN   TestHiddenTable\n    zz_hidden_test.go:33: $.store.book[0].title: invalid path \"$.store.book[0].title\": invalid member name\n    zz_hidden_test.go:33: $.store.book[-1].title: invalid path \"$.store.book[-1].title\": invalid member name\n    zz_hidden_test.go:33: $.store.book[5]: invalid path \"$.store.book[5]\": invalid member name\n    zz_hidden_test.go:33: $.store.book[*].title: invalid path \"$.store.book[*].title\": invalid member name\n    zz_hidden_test.go:33: $.store.bike.*: invalid path \"$.store.bike.*\": invalid member name\n    zz_hidden_test.go:33: $.store.book[*].meta.price: invalid path \"$.store.book[*].meta.price\": invalid member name\n    zz_hidden_test.go:33: $.nope.deeper: invalid path \"$.nope.deeper\": invalid member name\n    zz_hidden_test.go:33: $.store.book.title: invalid path \"$.store.book.title\": invalid member name\n    zz_hidden_test.go:33: $.store[0]: invalid path \"$.store[0]\": invalid member name\n--- FAIL: TestHiddenTable (0.00s)\n=== RUN   TestHiddenSyntaxErrors\n--- PASS: TestHiddenSyntaxErrors (0.00s)\nFAIL\nFAIL\texample.com/jpath/jpath\t0.003s",
+  "work": "/tmp/qh-runs/exp6-think-off/a12-jsonpath-r1"
+}

@@ -1,0 +1,37 @@
+{
+  "task_id": "a03-http-api",
+  "tier": "tierA",
+  "rep": 1,
+  "harness_hash": "6ef836d18c55",
+  "success": true,
+  "score": 1,
+  "tests_passed": 16,
+  "tests_total": 16,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Added api/handler.go implementing NewHandler(s *Store) http.Handler using Go 1.24 method-pattern ServeMux routes: GET /healthz (text/plain \"ok\"), POST/GET /notes (title required, 201 on create, list with ?q= case-insensitive filter returning [] when empty), and GET/DELETE /notes/{id} (404 missing, 400 non-integer id, 204 delete), with JSON error bodies and 405 for other methods. Added api/handler_test.go covering all endpoints via net/http/httptest. Verified with `go vet ./... \u0026\u0026 go test ./... -count=1`, which passes.",
+    "Turns": 10,
+    "Compactions": 0,
+    "PromptTokens": 55363,
+    "PrefillTokens": 5251,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 3528,
+    "ReasoningTokens": 0,
+    "ToolCalls": 11,
+    "ToolErrors": 2,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 1,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F3": 1
+    },
+    "WallSeconds": 152.990173783,
+    "Err": ""
+  },
+  "started": "2026-10-21T23:14:26Z",
+  "hidden_output": "=== RUN   TestHealthz\n--- PASS: TestHealthz (0.00s)\n=== RUN   TestCreateNote\n--- PASS: TestCreateNote (0.00s)\n=== RUN   TestCreateNoteRequiresTitle\n--- PASS: TestCreateNoteRequiresTitle (0.00s)\n=== RUN   TestListNotesEmpty\n--- PASS: TestListNotesEmpty (0.00s)\n=== RUN   TestListNotesOrderedAndFiltered\n--- PASS: TestListNotesOrderedAndFiltered (0.00s)\n=== RUN   TestGetNote\n--- PASS: TestGetNote (0.00s)\n=== RUN   TestDeleteNote\n--- PASS: TestDeleteNote (0.00s)\n=== RUN   TestMethodNotAllowed\n--- PASS: TestMethodNotAllowed (0.00s)\n=== RUN   TestHiddenHealth\n--- PASS: TestHiddenHealth (0.00s)\n=== RUN   TestHiddenCreateAndGet\n--- PASS: TestHiddenCreateAndGet (0.00s)\n=== RUN   TestHiddenValidation\n--- PASS: TestHiddenValidation (0.00s)\n=== RUN   TestHiddenListEmptyIsArray\n--- PASS: TestHiddenListEmptyIsArray (0.00s)\n=== RUN   TestHiddenListFilter\n--- PASS: TestHiddenListFilter (0.00s)\n=== RUN   TestHiddenNotFoundAndBadID\n--- PASS: TestHiddenNotFoundAndBadID (0.00s)\n=== RUN   TestHiddenDelete\n--- PASS: TestHiddenDelete (0.00s)\n=== RUN   TestHiddenMethodNotAllowed\n--- PASS: TestHiddenMethodNotAllowed (0.00s)\nPASS\nok  \texample.com/notes/api\t0.014s",
+  "work": "/tmp/qh-runs/exp6-think-off/a03-http-api-r1"
+}

@@ -1,0 +1,344 @@
+ api/handler.go      |  99 +++++++++++++++++++++++
+ api/handler_test.go | 229 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 328 insertions(+)
+
+diff --git a/api/handler.go b/api/handler.go
+new file mode 100644
+index 0000000..ca54f42
+--- /dev/null
++++ b/api/handler.go
+@@ -0,0 +1,99 @@
++package api
++
++import (
++	"encoding/json"
++	"net/http"
++	"strconv"
++	"strings"
++)
++
++// NewHandler returns an HTTP handler serving the notes API backed by s.
++func NewHandler(s *Store) http.Handler {
++	mux := http.NewServeMux()
++	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
++		w.Header().Set("Content-Type", "text/plain")
++		w.WriteHeader(http.StatusOK)
++		_, _ = w.Write([]byte("ok"))
++	})
++	mux.HandleFunc("/notes", func(w http.ResponseWriter, r *http.Request) {
++		switch r.Method {
++		case http.MethodPost:
++			createNote(w, r, s)
++		case http.MethodGet:
++			listNotes(w, r, s)
++		default:
++			methodNotAllowed(w)
++		}
++	})
++	mux.HandleFunc("/notes/{id}", func(w http.ResponseWriter, r *http.Request) {
++		id, err := strconv.Atoi(r.PathValue("id"))
++		if err != nil {
++			writeError(w, http.StatusBadRequest, "id must be an integer")
++			return
++		}
++		switch r.Method {
++		case http.MethodGet:
++			n, ok := s.Get(id)
++			if !ok {
++				writeError(w, http.StatusNotFound, "note not found")
++				return
++			}
++			writeJSON(w, http.StatusOK, n)
++		case http.MethodDelete:
++			if !s.Delete(id) {
++				writeError(w, http.StatusNotFound, "note not found")
++				return
++			}
++			w.WriteHeader(http.StatusNoContent)
++		default:
++			methodNotAllowed(w)
++		}
++	})
++	return mux
++}
++
++func createNote(w http.ResponseWriter, r *http.Request, s *Store) {
++	var in struct {
++		Title string `json:"title"`
++		Body  string `json:"body"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		writeError(w, http.StatusBadRequest, "invalid JSON body")
++		return
++	}
++	if strings.TrimSpace(in.Title) == "" {
++		writeError(w, http.StatusBadRequest, "title is required")
++		return
++	}
++	n := s.Create(in.Title, in.Body)
++	writeJSON(w, http.StatusCreated, n)
++}
++
++func listNotes(w http.ResponseWriter, r *http.Request, s *Store) {
++	q := strings.ToLower(r.URL.Query().Get("q"))
++	notes := s.List()
++	if q != "" {
++		filtered := make([]Note, 0, len(notes))
++		for _, n := range notes {
++			if strings.Contains(strings.ToLower(n.Title), q) || strings.Contains(strings.ToLower(n.Body), q) {
++				filtered = append(filtered, n)
++			}
++		}
++		notes = filtered
++	}
++	writeJSON(w, http.StatusOK, notes)
++}
++
++func writeJSON(w http.ResponseWriter, status int, v any) {
++	w.Header().Set("Content-Type", "application/json")
++	w.WriteHeader(status)
++	_ = json.NewEncoder(w).Encode(v)
++}
++
++func writeError(w http.ResponseWriter, status int, msg string) {
++	writeJSON(w, status, map[string]string{"error": msg})
++}
++
++func methodNotAllowed(w http.ResponseWriter) {
++	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
++}
+diff --git a/api/handler_test.go b/api/handler_test.go
+new file mode 100644
+index 0000000..2e2d3d7
+--- /dev/null
++++ b/api/handler_test.go
+@@ -0,0 +1,229 @@
++package api
++
++import (
++	"encoding/json"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++)
++
++func newTestServer() *httptest.Server {
++	return httptest.NewServer(NewHandler(NewStore()))
++}
++
++func do(t *testing.T, method, url string, body any) *http.Response {
++	t.Helper()
++	var rd io.Reader
++	if body != nil {
++		data, err := json.Marshal(body)
++		if err != nil {
++			t.Fatalf("marshal body: %v", err)
++		}
++		rd = strings.NewReader(string(data))
++	}
++	resp, err := http.NewRequest(method, url, rd)
++	if err != nil {
++		t.Fatalf("new request: %v", err)
++	}
++	if body != nil {
++		resp.Header.Set("Content-Type", "application/json")
++	}
++	client := &http.Client{}
++	r, err := client.Do(resp)
++	if err != nil {
++		t.Fatalf("do request: %v", err)
++	}
++	return r
++}
++
++func TestHealthz(t *testing.T) {
++	ts := newTestServer()
++	defer ts.Close()
++	resp, err := http.Get(ts.URL + "/healthz")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer resp.Body.Close()
++	if resp.StatusCode != 200 {
++		t.Fatalf("status = %d, want 200", resp.StatusCode)
++	}
++	if ct := resp.Header.Get("Content-Type"); ct != "text/plain" {
++		t.Errorf("content-type = %q, want text/plain", ct)
++	}
++	b, _ := io.ReadAll(resp.Body)
++	if string(b) != "ok" {
++		t.Errorf("body = %q, want ok", b)
++	}
++}
++
++func TestCreateNote(t *testing.T) {
++	s := NewStore()
++	ts := httptest.NewServer(NewHandler(s))
++	defer ts.Close()
++
++	resp := do(t, http.MethodPost, ts.URL+"/notes", map[string]string{"title": "First", "body": "hello"})
++	if resp.StatusCode != 201 {
++		t.Fatalf("status = %d, want 201", resp.StatusCode)
++	}
++	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
++		t.Errorf("content-type = %q, want application/json", ct)
++	}
++	var n Note
++	if err := json.NewDecoder(resp.Body).Decode(&n); err != nil {
++		t.Fatal(err)
++	}
++	resp.Body.Close()
++	if n.ID != 1 || n.Title != "First" || n.Body != "hello" {
++		t.Errorf("note = %+v", n)
++	}
++}
++
++func TestCreateNoteRequiresTitle(t *testing.T) {
++	ts := newTestServer()
++	defer ts.Close()
++	for _, title := range []string{"", "   "} {
++		resp := do(t, http.MethodPost, ts.URL+"/notes", map[string]string{"title": title, "body": "x"})
++		if resp.StatusCode != 400 {
++			t.Errorf("title %q: status = %d, want 400", title, resp.StatusCode)
++		}
++		if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
++			t.Errorf("error content-type = %q, want application/json", ct)
++		}
++		var e struct{ Error string `json:"error"` }
++		if err := json.NewDecoder(resp.Body).Decode(&e); err != nil {
++			t.Fatal(err)
++		}
++		resp.Body.Close()
++		if e.Error == "" {
++			t.Error("expected non-empty error message")
++		}
++	}
++}
++
++func TestListNotesEmpty(t *testing.T) {
++	ts := newTestServer()
++	defer ts.Close()
++	resp := do(t, http.MethodGet, ts.URL+"/notes", nil)
++	if resp.StatusCode != 200 {
++		t.Fatalf("status = %d, want 200", resp.StatusCode)
++	}
++	b, _ := io.ReadAll(resp.Body)
++	if strings.TrimSpace(string(b)) != "[]" {
++		t.Errorf("body = %q, want []", b)
++	}
++}
++
++func TestListNotesOrderedAndFiltered(t *testing.T) {
++	s := NewStore()
++	s.Create("Alpha", "one")
++	s.Create("beta", "two")
++	s.Create("Gamma", "three two")
++	ts := httptest.NewServer(NewHandler(s))
++	defer ts.Close()
++
++	resp := do(t, http.MethodGet, ts.URL+"/notes", nil)
++	if resp.StatusCode != 200 {
++		t.Fatalf("status = %d, want 200", resp.StatusCode)
++	}
++	var notes []Note
++	if err := json.NewDecoder(resp.Body).Decode(&notes); err != nil {
++		t.Fatal(err)
++	}
++	resp.Body.Close()
++	if len(notes) != 3 {
++		t.Fatalf("len = %d, want 3", len(notes))
++	}
++	for i, want := range []int{1, 2, 3} {
++		if notes[i].ID != want {
++			t.Errorf("notes[%d].ID = %d, want %d", i, notes[i].ID, want)
++		}
++	}
++
++	resp = do(t, http.MethodGet, ts.URL+"/notes?q=TWO", nil)
++	if resp.StatusCode != 200 {
++		t.Fatalf("status = %d, want 200", resp.StatusCode)
++	}
++	notes = nil
++	if err := json.NewDecoder(resp.Body).Decode(&notes); err != nil {
++		t.Fatal(err)
++	}
++	resp.Body.Close()
++	if len(notes) != 2 {
++		t.Fatalf("filtered len = %d, want 2", len(notes))
++	}
++	if notes[0].ID != 2 || notes[1].ID != 3 {
++		t.Errorf("filtered ids = [%d %d], want [2 3]", notes[0].ID, notes[1].ID)
++	}
++}
++
++func TestGetNote(t *testing.T) {
++	s := NewStore()
++	s.Create("Only", "b")
++	ts := httptest.NewServer(NewHandler(s))
++	defer ts.Close()
++
++	resp := do(t, http.MethodGet, ts.URL+"/notes/1", nil)
++	if resp.StatusCode != 200 {
++		t.Fatalf("status = %d, want 200", resp.StatusCode)
++	}
++	var n Note
++	if err := json.NewDecoder(resp.Body).Decode(&n); err != nil {
++		t.Fatal(err)
++	}
++	resp.Body.Close()
++	if n.Title != "Only" {
++		t.Errorf("title = %q, want Only", n.Title)
++	}
++
++	resp = do(t, http.MethodGet, ts.URL+"/notes/99", nil)
++	if resp.StatusCode != 404 {
++		t.Errorf("missing note status = %d, want 404", resp.StatusCode)
++	}
++	resp.Body.Close()
++
++	resp = do(t, http.MethodGet, ts.URL+"/notes/notanint", nil)
++	if resp.StatusCode != 400 {
++		t.Errorf("bad id status = %d, want 400", resp.StatusCode)
++	}
++	resp.Body.Close()
++}
++
++func TestDeleteNote(t *testing.T) {
++	s := NewStore()
++	s.Create("Doomed", "")
++	ts := httptest.NewServer(NewHandler(s))
++	defer ts.Close()
++
++	resp := do(t, http.MethodDelete, ts.URL+"/notes/1", nil)
++	if resp.StatusCode != 204 {
++		t.Fatalf("status = %d, want 204", resp.StatusCode)
++	}
++	resp.Body.Close()
++
++	resp = do(t, http.MethodDelete, ts.URL+"/notes/1", nil)
++	if resp.StatusCode != 404 {
++		t.Errorf("second delete status = %d, want 404", resp.StatusCode)
++	}
++	resp.Body.Close()
++}
++
++func TestMethodNotAllowed(t *testing.T) {
++	ts := newTestServer()
++	defer ts.Close()
++	for _, tc := range []struct{ method, path string }{
++		{http.MethodPut, "/notes"},
++		{http.MethodPatch, "/notes"},
++		{http.MethodPut, "/notes/1"},
++		{http.MethodPatch, "/notes/1"},
++		{http.MethodDelete, "/notes"},
++		{http.MethodPost, "/notes/1"},
++	} {
++		resp := do(t, tc.method, ts.URL+tc.path, nil)
++		if resp.StatusCode != 405 {
++			t.Errorf("%s %s: status = %d, want 405", tc.method, tc.path, resp.StatusCode)
++		}
++		resp.Body.Close()
++	}
++}

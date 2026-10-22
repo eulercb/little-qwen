@@ -1,0 +1,38 @@
+{
+  "task_id": "h04-mini-template",
+  "tier": "heldout",
+  "rep": 1,
+  "harness_hash": "6ef836d18c55",
+  "success": false,
+  "score": 0.10526315789473684,
+  "tests_passed": 2,
+  "tests_total": 19,
+  "outcome": {
+    "Status": "max_turns",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 80,
+    "Compactions": 0,
+    "PromptTokens": 1589043,
+    "PrefillTokens": 29683,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 16245,
+    "ReasoningTokens": 0,
+    "ToolCalls": 80,
+    "ToolErrors": 5,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 15,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F3": 15
+    },
+    "WallSeconds": 875.555844691,
+    "Err": ""
+  },
+  "started": "2026-10-22T00:31:57Z",
+  "hidden_output": "=== RUN   TestValueFormatting\n    tmpl_test.go:93: Render(\"{{count}}\") error: empty tag\n--- FAIL: TestValueFormatting (0.00s)\n=== RUN   TestDottedName\n    tmpl_test.go:100: Render(\"{{user.name}} is {{user.age}}\") error: empty tag\n--- FAIL: TestDottedName (0.00s)\n=== RUN   TestDottedNameIntoNonMap\n    tmpl_test.go:107: error \"empty tag\" does not contain \"user.name.first\"\n--- FAIL: TestDottedNameIntoNonMap (0.00s)\n=== RUN   TestFiltersUpperLowerTrim\n    tmpl_test.go:112: got \"Ann\"\n--- FAIL: TestFiltersUpperLowerTrim (0.00s)\n=== RUN   TestDefaultFilter\n    tmpl_test.go:124: got \"\"\n--- FAIL: TestDefaultFilter (0.00s)\n=== RUN   TestTruncateFilter\n    tmpl_test.go:136: got \"abcdefghij\"\n--- FAIL: TestTruncateFilter (0.00s)\n=== RUN   TestHtmlFilter\n    tmpl_test.go:153: got \"\u003ca href=\\\"x\\\"\u003e\u0026'\", want \"\u0026lt;a href=\u0026#34;x\u0026#34;\u0026gt;\u0026amp;\u0026#39;\"\n--- FAIL: TestHtmlFilter (0.00s)\n=== RUN   TestFilterArgEscapes\n    tmpl_test.go:160: got \"\"\n--- FAIL: TestFilterArgEscapes (0.00s)\n=== RUN   TestChainedFilters\n    tmpl_test.go:167: got \"ANN\"\n--- FAIL: TestChainedFilters (0.00s)\n=== RUN   TestMultipleTagsAndText\n    tmpl_test.go:172: Render(\"Hi {{user.name}}, you have {{count}} items.\") error: empty tag\n--- FAIL: TestMultipleTagsAndText (0.00s)\n=== RUN   TestErrors\n    tmpl_test.go:205: Render(\"{{title | bogus}}\") = \"Hello World\", want error containing [bogus]\n--- FAIL: TestErrors (0.00s)\n=== RUN   TestUnterminatedAtEOF\n--- PASS: TestUnterminatedAtEOF (0.00s)\n=== RUN   TestHiddenRender\n    zz_hidden_test.go:34: Render(\"{{ name | default:\\\"x\\\" | trim }}\") = \"  Ada  \", \u003cnil\u003e; want \"Ada\"\n    zz_hidden_test.go:34: Render(\"{{ long | truncate:\\\"5\\\" }}\") = \"héllo wörld\", \u003cnil\u003e; want \"héllo…\"\n    zz_hidden_test.go:34: Render(\"{{name|trim|lower}}\") = \"Ada\", \u003cnil\u003e; want \"ada\"\n    zz_hidden_test.go:34: Render(\"{{ name | trim | upper }}\") = \"Ada\", \u003cnil\u003e; want \"ADA\"\n    zz_hidden_test.go:34: Render(\"[{{none}}][{{missing}}]\") = \"\", empty tag; want \"[][]\"\n    zz_hidden_test.go:34: Render(\"{{{{not a tag}}\") = \"\", empty tag; want \"{{not a tag}}\"\n    zz_hidden_test.go:34: Render(\"{{ missing | default:\\\"say \\\\\\\"hi\\\\\\\" \\\\\\\\ |\\\" }}\") = \"\", \u003cnil\u003e; want \"say \\\"hi\\\" \\\\ |\"\n    zz_hidden_test.go:34: Render(\"Hi {{name}}!\") = \"\", empty tag; want \"Hi   Ada  !\"\n    zz_hidden_test.go:34: Render(\"{{ missing | default:\\\"anon\\\" }}\") = \"\", \u003cnil\u003e; want \"anon\"\n    zz_hidden_test.go:34: Render(\"{{user.name}} from {{user.addr.city}}\") = \"\", empty tag; want \"bob from Lisbon\"\n    zz_hidden_test.go:34: Render(\"{{ long | truncate:\\\"0\\\" }}\") = \"héllo wörld\", \u003cnil\u003e; want \"…\"\n    zz_hidden_test.go:34: Render(\"{{ html | html }}\") = \"\u003ca href=\\\"x\\\"\u003e'\u0026'\u003c/a\u003e\", \u003cnil\u003e; want \"\u0026lt;a href=\u0026#34;x\u0026#34;\u0026gt;\u0026#39;\u0026amp;\u0026#39;\u0026lt;/a\u0026gt;\"\n    zz_hidden_test.go:34: Render(\"{{n}}/{{f}}/{{ok}}\") = \"\", empty tag; want \"42/1.5/true\"\n--- FAIL: TestHiddenRender (0.00s)\n=== RUN   TestHiddenErrors\n    zz_hidden_test.go:55: Render(\"{{ s | default }}\") = \"x\", \u003cnil\u003e; want error\n    zz_hidden_test.go:55: Render(\"{{ s | upper:\\\"x\\\" }}\") = \"x\", \u003cnil\u003e; want error\n    zz_hidden_test.go:55: Render(\"{{ s | truncate:\\\"abc\\\" }}\") = \"x\", \u003cnil\u003e; want error\n    zz_hidden_test.go:59: Render(\"{{ user.name.first }}\") error \"empty tag\" should mention \"user.name.first\"\n    zz_hidden_test.go:55: Render(\"{{ s | shout }}\") = \"x\", \u003cnil\u003e; want error\n    zz_hidden_test.go:55: Render(\"{{ s | truncate:\\\"-1\\\" }}\") = \"x\", \u003cnil\u003e; want error\n--- FAIL: TestHiddenErrors (0.00s)\nFAIL\nFAIL\texample.com/tmpl/tmpl\t0.003s",
+  "work": "/tmp/qh-runs/exp6-think-off/h04-mini-template-r1"
+}

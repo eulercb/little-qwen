@@ -1,0 +1,38 @@
+{
+  "task_id": "a10-topk-words",
+  "tier": "tierA",
+  "rep": 1,
+  "harness_hash": "6ef836d18c55",
+  "success": false,
+  "score": 0,
+  "tests_passed": 0,
+  "tests_total": 0,
+  "outcome": {
+    "Status": "max_turns",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 80,
+    "Compactions": 0,
+    "PromptTokens": 1339082,
+    "PrefillTokens": 25770,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 13480,
+    "ReasoningTokens": 0,
+    "ToolCalls": 80,
+    "ToolErrors": 6,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 14,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F3": 14
+    },
+    "WallSeconds": 1875.927694585,
+    "Err": ""
+  },
+  "started": "2026-10-21T23:35:04Z",
+  "hidden_output": "=== RUN   TestTopKBasic",
+  "work": "/tmp/qh-runs/exp6-think-off/a10-topk-words-r1"
+}

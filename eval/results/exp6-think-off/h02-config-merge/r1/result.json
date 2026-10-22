@@ -1,0 +1,37 @@
+{
+  "task_id": "h02-config-merge",
+  "tier": "heldout",
+  "rep": 1,
+  "harness_hash": "6ef836d18c55",
+  "success": true,
+  "score": 1,
+  "tests_passed": 13,
+  "tests_total": 13,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Extended the config package: added `Timeout time.Duration` (env APP_TIMEOUT via time.ParseDuration, default 30s) and `Tags []string` (env APP_TAGS, comma-separated with trimming/empty-item dropping). Added `Merge(base, override Config)` where non-zero override fields replace base's, a non-nil override Tags slice replaces base even if empty, and both slices are copied so arguments are never mutated. Reworked `Load` to collect all invalid env values and return them joined via errors.Join (zero Config on error), preserving existing field behaviour. Added tests covering defaults, overrides, tag parsing, multi-error collection, merge semantics and argument immutability; `go test ./... -count=1` and `go vet` pass.",
+    "Turns": 19,
+    "Compactions": 0,
+    "PromptTokens": 122629,
+    "PrefillTokens": 7333,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 3665,
+    "ReasoningTokens": 0,
+    "ToolCalls": 20,
+    "ToolErrors": 4,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 1,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F3": 1
+    },
+    "WallSeconds": 192.473925863,
+    "Err": ""
+  },
+  "started": "2026-10-22T00:28:44Z",
+  "hidden_output": "=== RUN   TestLoadDefaults\n--- PASS: TestLoadDefaults (0.00s)\n=== RUN   TestLoadOverrides\n--- PASS: TestLoadOverrides (0.00s)\n=== RUN   TestLoadTimeoutAndTags\n--- PASS: TestLoadTimeoutAndTags (0.00s)\n=== RUN   TestLoadEmptyTags\n--- PASS: TestLoadEmptyTags (0.00s)\n=== RUN   TestLoadCollectsAllErrors\n--- PASS: TestLoadCollectsAllErrors (0.00s)\n=== RUN   TestMerge\n--- PASS: TestMerge (0.00s)\n=== RUN   TestMergeZeroOverrideKeepsBase\n--- PASS: TestMergeZeroOverrideKeepsBase (0.00s)\n=== RUN   TestMergeNilOverrideTagsKeepsBase\n--- PASS: TestMergeNilOverrideTagsKeepsBase (0.00s)\n=== RUN   TestMergeEmptyOverrideTagsReplaces\n--- PASS: TestMergeEmptyOverrideTagsReplaces (0.00s)\n=== RUN   TestMergeDoesNotModifyArguments\n--- PASS: TestMergeDoesNotModifyArguments (0.00s)\n=== RUN   TestHiddenNewFields\n--- PASS: TestHiddenNewFields (0.00s)\n=== RUN   TestHiddenAllErrors\n--- PASS: TestHiddenAllErrors (0.00s)\n=== RUN   TestHiddenMerge\n--- PASS: TestHiddenMerge (0.00s)\nPASS\nok  \texample.com/config/config\t0.002s",
+  "work": "/tmp/qh-runs/exp6-think-off/h02-config-merge-r1"
+}

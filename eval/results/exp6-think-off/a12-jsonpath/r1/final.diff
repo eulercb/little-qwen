@@ -1,0 +1,255 @@
+ jpath/jpath.go | 246 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 246 insertions(+)
+
+diff --git a/jpath/jpath.go b/jpath/jpath.go
+new file mode 100644
+index 0000000..5fe871c
+--- /dev/null
++++ b/jpath/jpath.go
+@@ -0,0 +1,246 @@
++// Package jpath implements a tiny path query language over decoded JSON values.
++package jpath
++
++import (
++	"fmt"
++	"sort"
++)
++
++// Query evaluates path against doc and returns the matching nodes.
++// A query that matches nothing returns an empty non-nil slice.
++func Query(doc any, path string) ([]any, error) {
++	steps, err := parsePath(path)
++	if err != nil {
++		return nil, err
++	}
++	nodes := []any{doc}
++	for _, st := range steps {
++		var out []any
++		for _, n := range nodes {
++			out = append(out, apply(st, n)...)
++		}
++		nodes = out
++	}
++	return nodes, nil
++}
++
++type step struct {
++	kind  int // stepMember, stepIndex, stepAll, stepRecursive
++	name  string
++	index int
++}
++
++const (
++	stepMember = iota
++	stepIndex
++	stepAll
++	stepRecursive
++)
++
++// parsePath parses a full path; it must start with '$'.
++func parsePath(p string) ([]step, error) {
++	if len(p) == 0 || p[0] != '$' {
++		return nil, fmt.Errorf("invalid path %q: must start with $", p)
++	}
++	i := 1
++	var steps []step
++	for i < len(p) {
++		switch p[i] {
++		case '.':
++			if i+1 < len(p) && p[i+1] == '.' { // recursive descent ..name
++				i += 2
++				name, next, err := readName(p, i)
++				if err != nil {
++					return nil, fmt.Errorf("invalid path %q: expected name after ..", p)
++				}
++				steps = append(steps, step{kind: stepRecursive, name: name})
++				i = next
++			} else if i+1 < len(p) && p[i+1] == '*' {
++				steps = append(steps, step{kind: stepAll})
++				i += 2
++			} else {
++				name, next, err := readName(p, i)
++				if err != nil {
++					return nil, err
++				}
++				steps = append(steps, step{kind: stepMember, name: name})
++				i = next
++			}
++		case '[':
++			i++
++			switch {
++			case i < len(p) && p[i] == '*':
++				if i+1 >= len(p) || p[i+1] != ']' {
++					return nil, fmt.Errorf("invalid path %q: expected ] after *", p)
++				}
++				steps = append(steps, step{kind: stepAll})
++				i += 2
++			case i < len(p) && p[i] == '"':
++				key, next, err := readQuoted(p, i)
++				if err != nil {
++					return nil, err
++				}
++				steps = append(steps, step{kind: stepMember, name: key})
++				i = next
++			default:
++				num, next, err := readInt(p, i)
++				if err != nil || next >= len(p) || p[next] != ']' {
++					return nil, fmt.Errorf("invalid path %q: bad bracket expression", p)
++				}
++				steps = append(steps, step{kind: stepIndex, index: num})
++				i = next + 1
++			}
++		default:
++			return nil, fmt.Errorf("invalid path %q: unexpected character %q", p, p[i])
++		}
++	}
++	return steps, nil
++}
++
++// readName reads an identifier at i and returns it plus the index just past it.
++func readName(p string, i int) (string, int, error) {
++	start := i
++	for i < len(p) && isIdentChar(p[i]) {
++		i++
++	}
++	if i == start || !isIdentStart(p[start]) {
++		return "", 0, fmt.Errorf("invalid path %q: invalid member name", p)
++	}
++	return p[start:i], i, nil
++}
++
++func isIdentStart(c byte) bool {
++	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
++}
++
++func isIdentChar(c byte) bool {
++	return isIdentStart(c) || (c >= '0' && c <= '9')
++}
++
++// readQuoted reads a double-quoted string starting at i (p[i] == '"'),
++// handling \" and \\ escapes, and expects a closing ']'.
++func readQuoted(p string, i int) (string, int, error) {
++	i++ // skip opening quote
++	var b []byte
++	for i < len(p) {
++		c := p[i]
++		switch c {
++		case '\\':
++			if i+1 >= len(p) {
++				return "", 0, fmt.Errorf("invalid path %q: dangling escape in quoted key", p)
++			}
++			if p[i+1] != '"' && p[i+1] != '\\' {
++				return "", 0, fmt.Errorf("invalid path %q: invalid escape in quoted key", p)
++			}
++			b = append(b, p[i+1])
++			i += 2
++		case '"':
++			// end of string
++			if i+1 >= len(p) || p[i+1] != ']' {
++				return "", 0, fmt.Errorf("invalid path %q: expected ] after quoted key", p)
++			}
++			return string(b), i + 2, nil
++		default:
++			b = append(b, c)
++			i++
++		}
++	}
++	return "", 0, fmt.Errorf("invalid path %q: unterminated quoted key", p)
++}
++
++// readInt reads an optional '-' followed by digits at i.
++func readInt(p string, i int) (int, int, error) {
++	start := i
++	if i < len(p) && p[i] == '-' {
++		i++
++	}
++	digits := i
++	for i < len(p) && p[i] >= '0' && p[i] <= '9' {
++		i++
++	}
++	if i == digits {
++		return 0, 0, fmt.Errorf("invalid path %q: expected integer", p)
++	}
++	n := 0
++	for _, c := range p[digits:i] {
++		n = n*10 + int(c-'0')
++	}
++	if start < digits && p[start] == '-' {
++		n = -n
++	}
++	return n, i, nil
++}
++
++// apply applies one step to one node, returning zero or more result nodes.
++func apply(st step, n any) []any {
++	switch st.kind {
++	case stepMember:
++		m, ok := n.(map[string]any)
++		if !ok {
++			return nil
++		}
++		v, ok := m[st.name]
++		if !ok {
++			return nil
++		}
++		return []any{v}
++	case stepIndex:
++		a, ok := n.([]any)
++		if !ok {
++			return nil
++		}
++		idx := st.index
++		if idx < 0 {
++			idx += len(a)
++		}
++		if idx < 0 || idx >= len(a) {
++			return nil
++		}
++		return []any{a[idx]}
++	case stepAll:
++		switch v := n.(type) {
++		case []any:
++			return v
++		case map[string]any:
++			keys := make([]string, 0, len(v))
++			for k := range v {
++				keys = append(keys, k)
++			}
++			sort.Strings(keys)
++			out := make([]any, 0, len(keys))
++			for _, k := range keys {
++				out = append(out, v[k])
++			}
++			return out
++		}
++		return nil
++	case stepRecursive:
++		return collectRecursive(n, st.name)
++	}
++	return nil
++}
++
++// collectRecursive gathers the named member of n and every descendant in
++// pre-order: a node's own match first, then its children in order
++// (object children ordered by key).
++func collectRecursive(n any, name string) []any {
++	var out []any
++	if m, ok := n.(map[string]any); ok {
++		if v, ok := m[name]; ok {
++			out = append(out, v)
++		}
++		keys := make([]string, 0, len(m))
++		for k := range m {
++			keys = append(keys, k)
++		}
++		sort.Strings(keys)
++		for _, k := range keys {
++			out = append(out, collectRecursive(m[k], name)...)
++		}
++	} else if a, ok := n.([]any); ok {
++		for _, v := range a {
++			out = append(out, collectRecursive(v, name)...)
++		}
++	}
++	return out
++}
