@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -204,6 +205,9 @@ func cmdEval(ctx context.Context, args []string) error {
 			jobs = append(jobs, job{t, rep})
 		}
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var outage atomic.Bool
 	ch := make(chan job)
 	var wg sync.WaitGroup
 	for i := 0; i < *par; i++ {
@@ -239,6 +243,13 @@ func cmdEval(ctx context.Context, args []string) error {
 					lg("ERROR moving results: %v", err)
 				}
 				lg("DONE success=%v score=%.2f status=%s turns=%d wall=%.1fmin", r.Success, r.Score, r.Outcome.Status, r.Outcome.Turns, r.Outcome.WallSeconds/60)
+				if r.Outcome.Status == "error" && strings.Contains(r.Outcome.Err, "endpoint unavailable") {
+					// The endpoint is down: stop instead of burning the retry
+					// window on every remaining task. The run is re-done on resume.
+					lg("endpoint unavailable; aborting the remaining runs")
+					outage.Store(true)
+					cancel()
+				}
 			}
 		}()
 	}
@@ -251,6 +262,9 @@ func cmdEval(ctx context.Context, args []string) error {
 	close(ch)
 	wg.Wait()
 	_ = os.RemoveAll(filepath.Join(*out, ".inprogress"))
+	if outage.Load() {
+		return fmt.Errorf("endpoint unavailable; eval stopped early (resume re-runs the failed run)")
+	}
 	res, err := eval.LoadResults(*out)
 	if err != nil {
 		return err

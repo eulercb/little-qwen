@@ -9,10 +9,14 @@ and compensates for its weaknesses, then improve it with the Harness² method (P
 evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is the roadmap).
 Results summary for readers: README.md "Results so far". Full experiment records: docs/EXPERIMENTS.md.
 
-## ▶ Experiments RESUMED (2026-10-22 12:18 UTC) — how to resume after a pause
+## ⏸ Experiments PAUSED (2026-10-22 14:25 UTC: tunnel down) — how to resume
 
-The queue was paused at ~04:30 and resumed at 12:18 UTC with a new tunnel URL (check `eval/queue.pid` to see
-whether it is still running). All finished results are
+Paused at ~04:30, resumed 12:18 with tunnel `massachusetts-refresh-bringing-cubic`, which died at 12:33
+(Cloudflare 530 "Origin DNS error"). Queue stopped; the two runs that failed on the outage (b04, b05) were
+discarded. Nothing is running. Resume needs a new tunnel URL from the user.
+Since this pause: `qh eval` aborts the remaining runs when the endpoint is unavailable (exit≠0), and the queue
+waits for `$REMOTE_LLM_ENDPOINT/health` before each item and keeps failed items (rc≠0) to retry them.
+(Caveat: an item that fails for a non-endpoint reason is retried every minute — fix the line or remove it.) All finished results are
 committed. The interrupted Tier-B baseline run (b04, which was ~33 min in) was deleted, so it reruns from scratch.
 
 **Resume in a fresh session/container:**
@@ -90,3 +94,5 @@ committed. The interrupted Tier-B baseline run (b04, which was ~33 min in) was d
 - 2026-10-22 ~02:40 — A2/A3 rejected; thinking ablations concluded. Tier-B baseline started.
 - 2026-10-22 ~04:30 — experiments PAUSED on request (b01–b03 done; b04 interrupted and discarded).
 - 2026-10-22 12:18 — resumed with new tunnel URL (massachusetts-refresh-bringing-cubic); queue restarted at Tier-B b04.
+- 2026-10-22 12:33 — tunnel died (530 Origin DNS error); 14:25 queue stopped, b04/b05 outage runs discarded;
+  added outage abort in qh eval + health gate/keep-on-failure in queue.sh.
