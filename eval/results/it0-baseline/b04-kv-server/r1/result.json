@@ -1,0 +1,39 @@
+{
+  "task_id": "b04-kv-server",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "6e880e0d3539",
+  "success": false,
+  "score": 0.925,
+  "tests_passed": 37,
+  "tests_total": 40,
+  "outcome": {
+    "Status": "wall_clock",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 55,
+    "Compactions": 0,
+    "PromptTokens": 2119539,
+    "PrefillTokens": 61779,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 53566,
+    "ReasoningTokens": 30161,
+    "ToolCalls": 69,
+    "ToolErrors": 2,
+    "Repaired": 0,
+    "Nudges": 1,
+    "LoopHints": 1,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F3": 1,
+      "F4": 1
+    },
+    "WallSeconds": 3622.725834324,
+    "Err": ""
+  },
+  "started": "2026-10-22T18:48:05Z",
+  "hidden_output": "=== RUN   TestSetGet\n--- PASS: TestSetGet (0.00s)\n=== RUN   TestExpiry\n--- PASS: TestExpiry (0.00s)\n=== RUN   TestDel\n--- PASS: TestDel (0.00s)\n=== RUN   TestExpirePersist\n--- PASS: TestExpirePersist (0.00s)\n=== RUN   TestTTL\n--- PASS: TestTTL (0.00s)\n=== RUN   TestIncr\n--- PASS: TestIncr (0.00s)\n=== RUN   TestKeysGlob\n--- PASS: TestKeysGlob (0.00s)\n=== RUN   TestLen\n--- PASS: TestLen (0.00s)\n=== RUN   TestSaveLoad\n--- PASS: TestSaveLoad (0.00s)\n=== RUN   TestConcurrent\n--- PASS: TestConcurrent (0.01s)\n=== RUN   TestHiddenExpiry\n--- PASS: TestHiddenExpiry (0.00s)\n=== RUN   TestHiddenExpirePersist\n--- PASS: TestHiddenExpirePersist (0.00s)\n=== RUN   TestHiddenDelIncr\n--- PASS: TestHiddenDelIncr (0.00s)\n=== RUN   TestHiddenKeysGlob\n--- PASS: TestHiddenKeysGlob (0.00s)\n=== RUN   TestHiddenSnapshot\n--- PASS: TestHiddenSnapshot (0.00s)\n=== RUN   TestHiddenConcurrent\n--- PASS: TestHiddenConcurrent (0.01s)\nPASS\n    debug_test.go:28: read: \"+PONG\\n\" err=\u003cnil\u003e\n    debug_test.go:28: read: \"+PONG\\n\" err=\u003cnil\u003e\nok  \texample.com/kv/store\t1.045s\n    debug_test.go:28: read: \"+PONG\\n\" err=\u003cnil\u003e\n    debug_test.go:28: read: \"+PONG\\n\" err=\u003cnil\u003e\n    debug_test.go:28: read: \"+PONG\\n\" err=\u003cnil\u003e\n    debug_test.go:33: direct: \"$nil\\n\"\n--- PASS: TestDebug (3.00s)\n=== RUN   TestServeRoundTrip\n    server_test.go:110: read response to \"GET hello\\n\": read tcp 127.0.0.1:40194-\u003e127.0.0.1:42229: i/o timeout\n--- FAIL: TestServeRoundTrip (10.01s)\n=== RUN   TestServeMultipleClients\n--- PASS: TestServeMultipleClients (0.00s)\n=== RUN   TestServeLongLine\n--- PASS: TestServeLongLine (0.02s)\n=== RUN   TestServeCancel\n--- PASS: TestServeCancel (0.00s)\n=== RUN   TestHiddenPipelineAndQuit\n--- PASS: TestHiddenPipelineAndQuit (0.00s)\n=== RUN   TestHiddenConcurrentClientsSharedStore\n--- PASS: TestHiddenConcurrentClientsSharedStore (0.01s)\n=== RUN   TestHiddenLineTooLong\n--- PASS: TestHiddenLineTooLong (0.01s)\n=== RUN   TestHiddenCancelClosesIdleConnections\n--- PASS: TestHiddenCancelClosesIdleConnections (0.00s)\nFAIL\nFAIL\texample.com/kv/server\t13.062s",
+  "work": "/tmp/qh-runs/it0-baseline/b04-kv-server-r1"
+}

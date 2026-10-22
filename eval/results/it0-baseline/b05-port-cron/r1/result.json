@@ -1,0 +1,38 @@
+{
+  "task_id": "b05-port-cron",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "6e880e0d3539",
+  "success": false,
+  "score": 0,
+  "tests_passed": 0,
+  "tests_total": 1,
+  "outcome": {
+    "Status": "wall_clock",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 29,
+    "Compactions": 0,
+    "PromptTokens": 1135379,
+    "PrefillTokens": 53395,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 41832,
+    "ReasoningTokens": 26227,
+    "ToolCalls": 35,
+    "ToolErrors": 8,
+    "Repaired": 0,
+    "Nudges": 1,
+    "LoopHints": 0,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F4": 1
+    },
+    "WallSeconds": 3605.528234408,
+    "Err": ""
+  },
+  "started": "2026-10-22T19:48:42Z",
+  "hidden_output": "FAIL\texample.com/cron/cron [build failed]",
+  "work": "/tmp/qh-runs/it0-baseline/b05-port-cron-r1"
+}
