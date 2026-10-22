@@ -1,0 +1,38 @@
+{
+  "task_id": "h04-mini-template",
+  "tier": "heldout",
+  "rep": 1,
+  "harness_hash": "96f9f10eaa38",
+  "success": false,
+  "score": 0.8571428571428571,
+  "tests_passed": 6,
+  "tests_total": 7,
+  "outcome": {
+    "Status": "max_turns",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 80,
+    "Compactions": 0,
+    "PromptTokens": 2580645,
+    "PrefillTokens": 44485,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 26300,
+    "ReasoningTokens": 11877,
+    "ToolCalls": 83,
+    "ToolErrors": 3,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 12,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F3": 12
+    },
+    "WallSeconds": 2071.21640483,
+    "Err": ""
+  },
+  "started": "2026-10-22T02:01:42Z",
+  "hidden_output": "=== RUN   TestPlainText\n--- PASS: TestPlainText (0.00s)\n=== RUN   TestBraceEscape\n--- PASS: TestBraceEscape (0.00s)\n=== RUN   TestBasicValues\n--- PASS: TestBasicValues (0.00s)\n=== RUN   TestMissingAndNil\n--- PASS: TestMissingAndNil (0.00s)\n=== RUN   TestNestedLookup\n    tmpl_test.go:90: got \"[{user.nope.deep}]\"\n--- FAIL: TestNestedLookup (0.00s)\n=== RUN   TestFiltersSimple\n--- PASS: TestFiltersSimple (0.00s)\n=== RUN   TestHTMLFilter\n--- PASS: TestHTMLFilter (0.00s)\n=== RUN   TestDefaultFilter\nsignal: killed\nFAIL\texample.com/tmpl/tmpl\t81.660s",
+  "work": "/tmp/qh-runs/exp7-think-adaptive/h04-mini-template-r1"
+}

@@ -1,0 +1,38 @@
+{
+  "task_id": "a12-jsonpath",
+  "tier": "tierA",
+  "rep": 1,
+  "harness_hash": "96f9f10eaa38",
+  "success": false,
+  "score": 0.5,
+  "tests_passed": 5,
+  "tests_total": 10,
+  "outcome": {
+    "Status": "max_turns",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 80,
+    "Compactions": 0,
+    "PromptTokens": 2199817,
+    "PrefillTokens": 50409,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 38442,
+    "ReasoningTokens": 3545,
+    "ToolCalls": 82,
+    "ToolErrors": 0,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 18,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F3": 18
+    },
+    "WallSeconds": 1621.122294551,
+    "Err": ""
+  },
+  "started": "2026-10-22T01:32:22Z",
+  "hidden_output": "=== RUN   TestRoot\n--- PASS: TestRoot (0.00s)\n=== RUN   TestQuotedKeyAndEscapes\n--- PASS: TestQuotedKeyAndEscapes (0.00s)\n=== RUN   TestArrayIndex\n    jpath_extra_test.go:38: $[-4]: [] jpath: malformed index in path \"$[-4]\"\n--- FAIL: TestArrayIndex (0.00s)\n=== RUN   TestWildcard\n    jpath_extra_test.go:47: [] jpath: expected member name in path \"$.*\"\n--- FAIL: TestWildcard (0.00s)\n=== RUN   TestRecurse\n--- PASS: TestRecurse (0.00s)\n=== RUN   TestNoMatchIsNotError\n    jpath_extra_test.go:91: $.a[0]: [] jpath: malformed index in path \"$.a[0]\"\n--- FAIL: TestNoMatchIsNotError (0.00s)\n=== RUN   TestMalformed\n--- PASS: TestMalformed (0.00s)\n=== RUN   TestMember\n    jpath_test.go:21: [] jpath: malformed index in path \"$.a.b[1]\"\n--- FAIL: TestMember (0.00s)\n=== RUN   TestHiddenTable\n    zz_hidden_test.go:33: $.store.book[0].title: jpath: malformed index in path \"$.store.book[0].title\"\n    zz_hidden_test.go:33: $.store.book[-1].title: jpath: malformed index in path \"$.store.book[-1].title\"\n    zz_hidden_test.go:33: $.store.book[5]: jpath: malformed index in path \"$.store.book[5]\"\n    zz_hidden_test.go:33: $.store.bike.*: jpath: expected member name in path \"$.store.bike.*\"\n    zz_hidden_test.go:33: $.store[0]: jpath: malformed index in path \"$.store[0]\"\n--- FAIL: TestHiddenTable (0.00s)\n=== RUN   TestHiddenSyntaxErrors\n--- PASS: TestHiddenSyntaxErrors (0.00s)\nFAIL\nFAIL\texample.com/jpath/jpath\t0.003s",
+  "work": "/tmp/qh-runs/exp7-think-adaptive/a12-jsonpath-r1"
+}
