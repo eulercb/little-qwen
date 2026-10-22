@@ -116,3 +116,12 @@ Template:
   probes, 14–15 loop warnings per run, no hypothesis forming. Thinking is where this model plans/debugs.
 - Note for A3 (adaptive): many failing probes end in `| head; echo done` and exit 0, so a "bad turn" detector based
   on exit codes misses them; loop warnings are a better trigger.
+
+## A3: adaptive thinking   (status: REJECTED)
+- Probe eval/results/exp7-think-adaptive (same 8 tasks; one run redone after a container restart).
+- Some easy tasks faster (a03 4.7→2.8, a07 6.4→3.9 min) but a12 and h04 hit max_turns (80): score 7.83 → 7.36,
+  wall 59.8 → 95.9 min, turns 97 → 230. Non-thinking turns degrade without producing tool errors (the "bad turn"
+  trigger rarely fires), so the agent drifts before thinking is re-enabled.
+- Conclusion of the thinking ablations (A1–A3, EXP-3, EXP-4): for this model, keep thinking on at `medium`
+  for every turn and keep the reasoning in context. Time savings must come from elsewhere (cache discipline,
+  fewer re-prefills, fewer wasted turns), not from cutting thinking.
