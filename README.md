@@ -11,7 +11,7 @@ and a Harness²-style improvement loop.
 
 ## Results so far (2026-10-22)
 
-Snapshot of an ongoing run; full records in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), raw data in `eval/results/`.
+Snapshot; experiments are paused (see STATUS.md to resume); full records in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), raw data in `eval/results/`.
 All runs are single repetitions unless stated, so per-task differences of a few minutes are within noise.
 
 ### The model + server, measured
@@ -29,7 +29,7 @@ All runs are single repetitions unless stated, so per-task differences of a few 
 |---|---|
 | Tier A (12 small Go tasks, hidden tests) | **12/12** solved; single-stream mean **6.7 min**, 12 turns, 7.7K output tokens per task |
 | Held-out (4 tasks) | 2/4 fully correct, mean score **0.96** (two runs missed one spec clause each) |
-| Tier B (6 multi-step tasks) | **3/3 solved so far** (b01 expression language 46.7 min, b02 feature in existing codebase 19.9 min, b03 ledger debugging 4.7 min); b04–b06 running |
+| Tier B (6 multi-step tasks) | **3/3 solved so far** (b01 expression language 46.7 min, b02 feature in existing codebase 19.9 min, b03 ledger debugging 4.7 min); b04–b06 not run yet (experiments paused) |
 | vs stock OpenCode (same model/server) | h01: both solve it; **qh 3.2 min vs OpenCode 9.2 min**; broader comparison queued |
 
 Infrastructure features verified with the real model: re-prefill events **0** across baseline runs (prefix stays
@@ -45,7 +45,7 @@ writes a useful checkpoint as a cache hit and the new segment resumes from its "
 | A1 effort `low` | cheaper thinking | **rejected** — counter-intuitively *doubles* thinking; ~3× slower |
 | A2 thinking off | no thinking at all | **rejected** — easy tasks 2× faster, hard tasks flail into the 80-turn cap (score 7.83 → 5.24) |
 | A3 adaptive thinking | think on early turns and after errors | **rejected** — drifts without visible errors; 2 tasks hit the turn cap |
-| C1 spec-clause review / `go-pitfalls` skill | catch silently-missed spec clauses (both held-out misses) | **queued** |
+| C1 spec-clause review / `go-pitfalls` skill | catch silently-missed spec clauses (both held-out misses) | **queued (paused)** |
 
 **Takeaways so far.** Qwen3.8-27B is strong on well-specified Go tasks: every Tier-A task and the first three
 Tier-B tasks are solved. The harness's main contributions are speed (cache-stable context, warm-up, no
