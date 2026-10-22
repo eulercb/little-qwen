@@ -1,0 +1,19 @@
+{
+  "id": "d01-caca-palavras",
+  "tier": "tierD",
+  "domain": "web",
+  "check": "npm run check",
+  "sessions": [
+    "Do milestone M0 (Scaffold) now, exactly as specified in \u00a712 and the sections it references. Earlier milestones are already done and committed (see `git log`); do not start later ones. Follow \u00a70: `npm run check` must pass, then commit with `git add -A && git commit -m \"M0: Scaffold\"`. Finish with the final report (\u00a70 item 10) as your finish summary.",
+    "Do milestone M1 (Core utilities) now, exactly as specified in \u00a712 and the sections it references. Earlier milestones are already done and committed (see `git log`); do not start later ones. Follow \u00a70: `npm run check` must pass, then commit with `git add -A && git commit -m \"M1: Core utilities\"`. Finish with the final report (\u00a70 item 10) as your finish summary.",
+    "Do milestone M2 (Data) now, exactly as specified in \u00a712 and the sections it references. Earlier milestones are already done and committed (see `git log`); do not start later ones. Follow \u00a70: `npm run check` must pass, then commit with `git add -A && git commit -m \"M2: Data\"`. Finish with the final report (\u00a70 item 10) as your finish summary.",
+    "Do milestone M3 (Generator) now, exactly as specified in \u00a712 and the sections it references. Earlier milestones are already done and committed (see `git log`); do not start later ones. Follow \u00a70: `npm run check` must pass, then commit with `git add -A && git commit -m \"M3: Generator\"`. Finish with the final report (\u00a70 item 10) as your finish summary.",
+    "Do milestone M4 (Selection geometry) now, exactly as specified in \u00a712 and the sections it references. Earlier milestones are already done and committed (see `git log`); do not start later ones. Follow \u00a70: `npm run check` must pass, then commit with `git add -A && git commit -m \"M4: Selection geometry\"`. Finish with the final report (\u00a70 item 10) as your finish summary.",
+    "Do milestone M5 (Puzzle screen, static) now, exactly as specified in \u00a712 and the sections it references. Earlier milestones are already done and committed (see `git log`); do not start later ones. Follow \u00a70: `npm run check` must pass, then commit with `git add -A && git commit -m \"M5: Puzzle screen, static\"`. Finish with the final report (\u00a70 item 10) as your finish summary.",
+    "Do milestone M6 (Interaction) now, exactly as specified in \u00a712 and the sections it references. Earlier milestones are already done and committed (see `git log`); do not start later ones. Follow \u00a70: `npm run check` must pass, then commit with `git add -A && git commit -m \"M6: Interaction\"`. Finish with the final report (\u00a70 item 10) as your finish summary.",
+    "Do milestone M7 (Home and settings) now, exactly as specified in \u00a712 and the sections it references. Earlier milestones are already done and committed (see `git log`); do not start later ones. Follow \u00a70: `npm run check` must pass, then commit with `git add -A && git commit -m \"M7: Home and settings\"`. Finish with the final report (\u00a70 item 10) as your finish summary.",
+    "Do milestone M8 (PWA and polish) now, exactly as specified in \u00a712 and the sections it references. Earlier milestones are already done and committed (see `git log`); do not start later ones. Follow \u00a70: `npm run check` must pass, then commit with `git add -A && git commit -m \"M8: PWA and polish\"`. Finish with the final report (\u00a70 item 10) as your finish summary."
+  ],
+  "hidden_check": "bash \"$QH_TASK_DIR/checker/check.sh\"",
+  "score": "fraction"
+}
