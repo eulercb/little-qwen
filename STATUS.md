@@ -54,3 +54,4 @@ evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is th
 - 2026-10-21 14:35 — Tier-B tasks b01–b04, held-out h01–h02 added; EXP-1 candidates implemented (config knobs
   `read_line_sep`, `fuzzy_edit`; defaults keep old behaviour).
 - 2026-10-21 22:40 — EXP-3/4 and A1 rejected; thinking on/off found cache-neutral; A2/A3 queued.
+- 2026-10-22 ~01:30 — container restarted (processes lost, files kept); queue restarted, exp7 resumed.
