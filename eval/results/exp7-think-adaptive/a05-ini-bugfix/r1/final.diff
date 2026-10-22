@@ -1,0 +1,72 @@
+ ini/ini.go | 47 ++++++++++++++++++++++++++++++++---------------
+ 1 file changed, 32 insertions(+), 15 deletions(-)
+
+diff --git a/ini/ini.go b/ini/ini.go
+index dc53235..5c12a7d 100644
+--- a/ini/ini.go
++++ b/ini/ini.go
+@@ -51,32 +51,49 @@ func Parse(r io.Reader) (File, error) {
+ 	n := 0
+ 	for sc.Scan() {
+ 		n++
+-		line := sc.Text()
+-		if line == "" || line[0] == ';' {
++		line := strings.TrimSpace(sc.Text())
++		if line == "" || line[0] == ';' || line[0] == '#' {
+ 			continue
+ 		}
+-		if line[0] == '[' && line[len(line)-1] == ']' {
+-			section = strings.TrimSpace(line[1 : len(line)-1])
++		if len(line) >= 2 && line[0] == '[' && line[len(line)-1] == ']' {
++			section = strings.ToLower(strings.TrimSpace(line[1 : len(line)-1]))
+ 			continue
+ 		}
+-		i := strings.LastIndex(line, "=")
++		i := strings.Index(line, "=")
+ 		if i < 0 {
+ 			return nil, &SyntaxError{Line: n, Text: line}
+ 		}
+ 		key := strings.ToLower(strings.TrimSpace(line[:i]))
+-		val := strings.TrimSpace(line[i+1:])
+-		if j := strings.Index(val, ";"); j >= 0 {
+-			val = strings.TrimSpace(val[:j])
+-		}
+-		if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+-			val = strings.TrimSpace(val[1 : len(val)-1])
+-		}
++		val := cleanValue(line[i+1:])
+ 		if f[section] == nil {
+ 			f[section] = map[string]string{}
+ 		}
+-		if _, exists := f[section][key]; !exists {
+-			f[section][key] = val
+-		}
++		f[section][key] = val
+ 	}
+ 	return f, sc.Err()
+ }
++
++// cleanValue trims a raw value and applies quoting / inline-comment rules.
++func cleanValue(v string) string {
++	v = strings.TrimSpace(v)
++	// Quoted value: strip the quotes, keep inner whitespace exactly.
++	if len(v) >= 2 && v[0] == '"' {
++		if end := strings.Index(v[1:], `"`); end >= 0 {
++			rest := strings.TrimSpace(v[end+2:])
++			if rest == "" || rest[0] == ';' || rest[0] == '#' {
++				return v[1 : end+1]
++			}
++		}
++	}
++	// Unquoted value: cut at the first " ;" or " #" inline comment.
++	cut := -1
++	for _, marker := range []string{" ;", " #"} {
++		if j := strings.Index(v, marker); j >= 0 && (cut < 0 || j < cut) {
++			cut = j
++		}
++	}
++	if cut >= 0 {
++		v = v[:cut]
++	}
++	return strings.TrimSpace(v)
++}

@@ -1,0 +1,37 @@
+{
+  "task_id": "a10-topk-words",
+  "tier": "tierA",
+  "rep": 1,
+  "harness_hash": "96f9f10eaa38",
+  "success": true,
+  "score": 1,
+  "tests_passed": 17,
+  "tests_total": 17,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Implemented `TopK` in words/words.go: a rune-level state machine over a buffered reader (bufio.Reader + one-rune lookahead) that tokenizes maximal runs of Unicode letters/digits, keeping apostrophes only when internal to a word (don't, o'clock), case-folds with strings.ToLower, drops stop words (case-insensitive map), and returns the top k by count desc / word asc (byte order); k\u003c=0 returns an empty non-nil slice and read errors from r are propagated. Verified with words/words_test.go covering counts, folding, stopwords, apostrophe edge cases, separators, tie-breaking, unicode, long lines, error propagation, and a 300MB streaming perf check (~6s, bounded memory); `go test ./... -count=1` and `go vet ./...` both pass.",
+    "Turns": 23,
+    "Compactions": 0,
+    "PromptTokens": 308966,
+    "PrefillTokens": 17638,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 13716,
+    "ReasoningTokens": 7408,
+    "ToolCalls": 29,
+    "ToolErrors": 3,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 1,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F3": 1
+    },
+    "WallSeconds": 796.725082267,
+    "Err": ""
+  },
+  "started": "2026-10-22T01:05:25Z",
+  "hidden_output": "=== RUN   TestBasicCounts\n--- PASS: TestBasicCounts (0.00s)\n=== RUN   TestCaseFoldingAndStopwords\n--- PASS: TestCaseFoldingAndStopwords (0.00s)\n=== RUN   TestApostrophes\n--- PASS: TestApostrophes (0.00s)\n=== RUN   TestSeparators\n--- PASS: TestSeparators (0.00s)\n=== RUN   TestTieBreaking\n--- PASS: TestTieBreaking (0.00s)\n=== RUN   TestFewerThanK\n--- PASS: TestFewerThanK (0.00s)\n=== RUN   TestKZeroAndNegative\n--- PASS: TestKZeroAndNegative (0.00s)\n=== RUN   TestUnicodeLettersDigits\n--- PASS: TestUnicodeLettersDigits (0.00s)\n=== RUN   TestEmptyInput\n--- PASS: TestEmptyInput (0.00s)\n=== RUN   TestReadErrorPropagates\n--- PASS: TestReadErrorPropagates (0.00s)\n=== RUN   TestLongLine\n--- PASS: TestLongLine (0.04s)\n=== RUN   TestHiddenBasicTies\n--- PASS: TestHiddenBasicTies (0.00s)\n=== RUN   TestHiddenApostrophes\n--- PASS: TestHiddenApostrophes (0.00s)\n=== RUN   TestHiddenUnicodeAndStop\n--- PASS: TestHiddenUnicodeAndStop (0.00s)\n=== RUN   TestHiddenKZero\n--- PASS: TestHiddenKZero (0.00s)\n=== RUN   TestHiddenLongLine\n--- PASS: TestHiddenLongLine (0.03s)\n=== RUN   TestHiddenReadError\n--- PASS: TestHiddenReadError (0.00s)\nPASS\nok  \texample.com/words/words\t0.076s",
+  "work": "/tmp/qh-runs/exp7-think-adaptive/a10-topk-words-r1"
+}

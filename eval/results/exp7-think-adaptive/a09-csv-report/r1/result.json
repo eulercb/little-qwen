@@ -1,0 +1,37 @@
+{
+  "task_id": "a09-csv-report",
+  "tier": "tierA",
+  "rep": 1,
+  "harness_hash": "96f9f10eaa38",
+  "success": true,
+  "score": 1,
+  "tests_passed": 26,
+  "tests_total": 26,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Implemented `cmd/report` (package main) with `run(args, in, out)`: parses `--by region|product` and `--top N` flags, reads the CSV header to locate required columns in any order (erroring on missing ones), validates qty (integer ≥ 0) and price (≤ 2 decimals, converted to integer cents) with 1-based line numbers via csv.FieldPos, aggregates per group, sorts by revenue descending / name ascending, prints groups plus a TOTAL over all rows with exactly 2 decimals. Added 18 tests in main_test.go covering the example output, aggregation, sorting/ties, --top, column reordering/extra columns, missing columns, bad values, zero/empty input, cent arithmetic without float drift, flag errors, and write-error propagation. Verified `go vet ./... \u0026\u0026 go test ./...` passes and the example CLI run matches the spec.",
+    "Turns": 12,
+    "Compactions": 0,
+    "PromptTokens": 101671,
+    "PrefillTokens": 9575,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 8162,
+    "ReasoningTokens": 1914,
+    "ToolCalls": 15,
+    "ToolErrors": 3,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 1,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F3": 1
+    },
+    "WallSeconds": 392.310811059,
+    "Err": ""
+  },
+  "started": "2026-10-22T00:58:53Z",
+  "hidden_output": "=== RUN   TestExampleByRegion\n--- PASS: TestExampleByRegion (0.00s)\n=== RUN   TestDefaultIsRegion\n--- PASS: TestDefaultIsRegion (0.00s)\n=== RUN   TestByProduct\n--- PASS: TestByProduct (0.00s)\n=== RUN   TestGroupingAggregates\n--- PASS: TestGroupingAggregates (0.00s)\n=== RUN   TestSortRevenueDescTiesByNameAsc\n--- PASS: TestSortRevenueDescTiesByNameAsc (0.00s)\n=== RUN   TestTop\n--- PASS: TestTop (0.00s)\n=== RUN   TestTopLargerThanGroups\n--- PASS: TestTopLargerThanGroups (0.00s)\n=== RUN   TestColumnsAnyOrderAndExtra\n--- PASS: TestColumnsAnyOrderAndExtra (0.00s)\n=== RUN   TestMissingRequiredColumn\n--- PASS: TestMissingRequiredColumn (0.00s)\n=== RUN   TestBadQtyMentionsLine\n--- PASS: TestBadQtyMentionsLine (0.00s)\n=== RUN   TestBadPriceMentionsLine\n--- PASS: TestBadPriceMentionsLine (0.00s)\n=== RUN   TestTooManyDecimalsInPrice\n--- PASS: TestTooManyDecimalsInPrice (0.00s)\n=== RUN   TestIntegerPrice\n--- PASS: TestIntegerPrice (0.00s)\n=== RUN   TestZeroQty\n--- PASS: TestZeroQty (0.00s)\n=== RUN   TestNoRowsStillPrintsTotal\n--- PASS: TestNoRowsStillPrintsTotal (0.00s)\n=== RUN   TestCentsArithmeticNoDrift\n--- PASS: TestCentsArithmeticNoDrift (0.00s)\n=== RUN   TestInvalidByValue\n--- PASS: TestInvalidByValue (0.00s)\n=== RUN   TestInvalidTop\n--- PASS: TestInvalidTop (0.00s)\n=== RUN   TestUnknownFlag\n--- PASS: TestUnknownFlag (0.00s)\n=== RUN   TestMissingFlagValue\n--- PASS: TestMissingFlagValue (0.00s)\n=== RUN   TestEmptyInput\n--- PASS: TestEmptyInput (0.00s)\n=== RUN   TestWriteErrorPropagates\n--- PASS: TestWriteErrorPropagates (0.00s)\n=== RUN   TestHiddenByRegion\n--- PASS: TestHiddenByRegion (0.00s)\n=== RUN   TestHiddenByProductTop\n--- PASS: TestHiddenByProductTop (0.00s)\n=== RUN   TestHiddenCentsPrecision\n--- PASS: TestHiddenCentsPrecision (0.00s)\n=== RUN   TestHiddenErrors\n--- PASS: TestHiddenErrors (0.00s)\nPASS\nok  \texample.com/report/cmd/report\t0.003s",
+  "work": "/tmp/qh-runs/exp7-think-adaptive/a09-csv-report-r1"
+}

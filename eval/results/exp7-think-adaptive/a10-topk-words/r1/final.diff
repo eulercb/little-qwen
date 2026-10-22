@@ -1,0 +1,296 @@
+ words/words.go      | 143 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ words/words_test.go | 137 +++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 280 insertions(+)
+
+diff --git a/words/words.go b/words/words.go
+new file mode 100644
+index 0000000..1583aa1
+--- /dev/null
++++ b/words/words.go
+@@ -0,0 +1,143 @@
++// Package words provides word counting utilities.
++package words
++
++import (
++	"bufio"
++	"io"
++	"sort"
++	"strings"
++	"unicode"
++	"unicode/utf8"
++)
++
++// WordCount is a word together with the number of times it occurred.
++type WordCount struct {
++	Word  string
++	Count int
++}
++
++// runeReader wraps a *bufio.Reader and adds one-rune lookahead.
++type runeReader struct {
++	br      *bufio.Reader
++	cached  rune
++	hasNext bool
++}
++
++func (r *runeReader) readRune() (rune, error) {
++	if r.hasNext {
++		r.hasNext = false
++		return r.cached, nil
++	}
++	c, _, err := r.br.ReadRune()
++	if err != nil {
++		return c, err
++	}
++	return c, nil
++}
++
++// peekRune returns the next rune without consuming it, or -1 if there is
++// no more input.
++func (r *runeReader) peekRune() rune {
++	if r.hasNext {
++		return r.cached
++	}
++	c, _, err := r.br.ReadRune()
++	if err != nil {
++		return -1
++	}
++	r.cached = c
++	r.hasNext = true
++	return c
++}
++
++// isWordRune reports whether c is a Unicode letter or digit.
++func isWordRune(c rune) bool {
++	if c < 0 {
++		return false
++	}
++	return unicode.IsLetter(c) || unicode.IsDigit(c)
++}
++
++// TopK streams r and returns the k most frequent words, by count descending,
++// ties broken by the word ascending (byte order). A word is a maximal run of
++// Unicode letters or digits that may contain apostrophes between two letters;
++// leading and trailing apostrophes are not part of the word. Words are
++// case-folded with strings.ToLower, and any word in stop (compared
++// case-insensitively) is ignored. If there are fewer than k distinct words,
++// all of them are returned. k <= 0 yields an empty non-nil slice. Any read
++// error from r is returned.
++func TopK(r io.Reader, k int, stop []string) ([]WordCount, error) {
++	if k <= 0 {
++		return []WordCount{}, nil
++	}
++	br := bufio.NewReaderSize(r, 1<<20)
++	rr := &runeReader{br: br}
++	stopSet := make(map[string]struct{}, len(stop))
++	for _, s := range stop {
++		stopSet[strings.ToLower(s)] = struct{}{}
++	}
++	counts := make(map[string]int)
++	buf := make([]byte, 0, 64)
++	inWord := false
++	var last rune // last rune appended to buf when inWord
++
++	flush := func() {
++		if len(buf) == 0 {
++			return
++		}
++		w := strings.ToLower(string(buf))
++		buf = buf[:0]
++		if _, ok := stopSet[w]; ok {
++			return
++		}
++		counts[w]++
++	}
++
++	readErr := error(nil)
++	for {
++		c, err := rr.readRune()
++		if err != nil {
++			readErr = err
++			break
++		}
++		switch {
++		case isWordRune(c):
++			if !inWord {
++				buf = buf[:0]
++				inWord = true
++			}
++			buf = utf8.AppendRune(buf, c)
++			last = c
++		case c == '\'' && inWord && isWordRune(last):
++			if isWordRune(rr.peekRune()) {
++				buf = append(buf, '\'')
++				last = '\''
++			} else {
++				flush()
++				inWord = false
++			}
++		default:
++			flush()
++			inWord = false
++		}
++	}
++	flush()
++	if readErr == io.EOF {
++		readErr = nil
++	}
++
++	res := make([]WordCount, 0, len(counts))
++	for w, c := range counts {
++		res = append(res, WordCount{Word: w, Count: c})
++	}
++	sort.Slice(res, func(i, j int) bool {
++		if res[i].Count != res[j].Count {
++			return res[i].Count > res[j].Count
++		}
++		return res[i].Word < res[j].Word
++	})
++	if len(res) > k {
++		res = res[:k]
++	}
++	return res, readErr
++}
+diff --git a/words/words_test.go b/words/words_test.go
+new file mode 100644
+index 0000000..96ce091
+--- /dev/null
++++ b/words/words_test.go
+@@ -0,0 +1,137 @@
++package words
++
++import (
++	"errors"
++	"strings"
++	"testing"
++)
++
++func mustTopK(t *testing.T, input string, k int, stop []string) []WordCount {
++	t.Helper()
++	got, err := TopK(strings.NewReader(input), k, stop)
++	if err != nil {
++		t.Fatalf("TopK(%q): unexpected error %v", input, err)
++	}
++	return got
++}
++
++func assertSame(t *testing.T, got []WordCount, want ...WordCount) {
++	t.Helper()
++	if len(got) != len(want) {
++		t.Fatalf("got %d results %v, want %d %v", len(got), got, len(want), want)
++	}
++	for i := range want {
++		if got[i] != want[i] {
++			t.Fatalf("result[%d] = %+v, want %+v (all: %v)", i, got[i], want[i], got)
++		}
++	}
++}
++
++func TestBasicCounts(t *testing.T) {
++	got := mustTopK(t, "the cat sat on the mat", 10, nil)
++	assertSame(t, got,
++		WordCount{"the", 2}, WordCount{"cat", 1}, WordCount{"mat", 1},
++		WordCount{"on", 1}, WordCount{"sat", 1})
++}
++
++func TestCaseFoldingAndStopwords(t *testing.T) {
++	got := mustTopK(t, "The THE the fox jumps. Don't don't DON'T.", 10, []string{"The"})
++	assertSame(t, got,
++		WordCount{"don't", 3}, WordCount{"fox", 1}, WordCount{"jumps", 1})
++}
++
++func TestApostrophes(t *testing.T) {
++	got := mustTopK(t, "o'clock 'tis ''quotes'' it's a'ight 5'6", 10, nil)
++	assertSame(t, got,
++		WordCount{"5'6", 1}, WordCount{"a'ight", 1}, WordCount{"it's", 1},
++		WordCount{"o'clock", 1}, WordCount{"quotes", 1}, WordCount{"tis", 1})
++}
++
++func TestSeparators(t *testing.T) {
++	got := mustTopK(t, "hello-world foo_bar baz:qux (quux) [corge] <grault> @waldo 42-43", 10, nil)
++	assertSame(t, got,
++		WordCount{"42", 1}, WordCount{"43", 1}, WordCount{"bar", 1},
++		WordCount{"baz", 1}, WordCount{"corge", 1}, WordCount{"foo", 1},
++		WordCount{"grault", 1}, WordCount{"hello", 1}, WordCount{"quux", 1},
++		WordCount{"qux", 1})
++}
++
++func TestTieBreaking(t *testing.T) {
++	got := mustTopK(t, "b a b a c", 10, nil)
++	assertSame(t, got,
++		WordCount{"a", 2}, WordCount{"b", 2}, WordCount{"c", 1})
++}
++
++func TestFewerThanK(t *testing.T) {
++	got := mustTopK(t, "one two three", 10, nil)
++	assertSame(t, got,
++		WordCount{"one", 1}, WordCount{"three", 1}, WordCount{"two", 1})
++}
++
++func TestKZeroAndNegative(t *testing.T) {
++	for _, k := range []int{0, -3} {
++		got, err := TopK(strings.NewReader("some words here"), k, nil)
++		if err != nil {
++			t.Fatalf("k=%d: unexpected error %v", k, err)
++		}
++		if got == nil || len(got) != 0 {
++			t.Fatalf("k=%d: got %#v, want empty non-nil slice", k, got)
++		}
++	}
++}
++
++func TestUnicodeLettersDigits(t *testing.T) {
++	got := mustTopK(t, "café café 42 42 naïve über", 10, nil)
++	assertSame(t, got,
++		WordCount{"42", 2}, WordCount{"café", 2}, WordCount{"naïve", 1}, WordCount{"über", 1})
++}
++
++func TestEmptyInput(t *testing.T) {
++	got, err := TopK(strings.NewReader(""), 5, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if got == nil || len(got) != 0 {
++		t.Fatalf("got %#v, want empty non-nil", got)
++	}
++}
++
++type errReader struct {
++	data  string
++	off   int
++	limit int // serve at most this many bytes, then fail
++}
++
++func (e *errReader) Read(p []byte) (int, error) {
++	remaining := e.limit - e.off
++	if remaining <= 0 {
++		return 0, errors.New("boom")
++	}
++	if remaining > len(e.data)-e.off {
++		remaining = len(e.data) - e.off
++	}
++	if remaining > len(p) {
++		remaining = len(p)
++	}
++	n := copy(p, e.data[e.off:e.off+remaining])
++	e.off += n
++	return n, nil
++}
++
++func TestReadErrorPropagates(t *testing.T) {
++	r := &errReader{data: "aaa bbb ccc ddd eee fff ggg hhh iii jjj", limit: 10}
++	_, err := TopK(r, 3, nil)
++	if err == nil {
++		t.Fatal("expected read error to be returned")
++	}
++}
++
++func TestLongLine(t *testing.T) {
++	var sb strings.Builder
++	for i := 0; i < 200000; i++ {
++		sb.WriteString("word ")
++	}
++	input := sb.String() // one very long line, ~1MB
++	got := mustTopK(t, input, 1, nil)
++	assertSame(t, got, WordCount{"word", 200000})
++}
