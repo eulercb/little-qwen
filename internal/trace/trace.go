@@ -105,6 +105,7 @@ func (t *Tracer) write(f *os.File, v any) {
 		return
 	}
 	b, _ := json.Marshal(v)
+	b = []byte(Redact(string(b)))
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	f.Write(append(b, '\n'))

@@ -208,7 +208,7 @@ func RunTB(ctx context.Context, c *llm.Client, h *harness.Harness, t TBTask, rep
 	if o.Oracle {
 		_, _ = docker(actx, time.Minute, "cp", filepath.Join(t.Dir, "solution"), name+":/solution")
 		out, err := docker(actx, agentTO, "exec", "-w", wd, name, "bash", "/solution/solve.sh")
-		_ = os.WriteFile(filepath.Join(outDir, "oracle.log"), []byte(out), 0o644)
+		_ = os.WriteFile(filepath.Join(outDir, "oracle.log"), []byte(trace.Redact(out)), 0o644)
 		res.Outcome.Status = "finished"
 		if err != nil {
 			res.Outcome.Status = "oracle_failed"
@@ -246,7 +246,7 @@ func RunTB(ctx context.Context, c *llm.Client, h *harness.Harness, t TBTask, rep
 	}
 	res.Score = r
 	res.Success = r >= 1
-	res.HiddenOut = tailLines(vout, 60)
+	res.HiddenOut = trace.Redact(tailLines(vout, 60))
 	res.Outcome.WallSeconds = time.Since(started).Seconds()
 	b, _ := json.MarshalIndent(res, "", "  ")
 	return res, os.WriteFile(filepath.Join(outDir, "result.json"), b, 0o644)

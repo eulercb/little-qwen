@@ -367,7 +367,7 @@ func tailLines(s string, n int) string {
 
 func saveDiff(ctx context.Context, work, outDir string) {
 	diff, _, _ := tools.Shell(ctx, work, RunEnv(work), "git add -A -- . ':!.qh' ':!opencode.json' >/dev/null 2>&1; git diff --cached --stat; echo; git diff --cached | head -c 60000", time.Minute)
-	_ = os.WriteFile(filepath.Join(outDir, "final.diff"), []byte(diff), 0o644)
+	_ = os.WriteFile(filepath.Join(outDir, "final.diff"), []byte(trace.Redact(diff)), 0o644)
 }
 
 // Rescore re-runs hidden scoring for an existing result whose workdir still

@@ -1,0 +1,27 @@
+# Tier C frozen subset (20 tasks) — terminal-bench-2 @ 2fd12b8. Do not tune on these tests.
+# Chosen from candidates.txt among tasks whose reference solution scores 1.0 in this environment
+# (eval/results/tb-oracle: 28/30; build-cython-ext and git-multibranch fail even with the oracle).
+# Stratified: all 4 easy, 4 hard, 12 medium across categories.
+# easy
+cobol-modernization
+fix-git
+prove-plus-comm
+overfull-hbox
+# hard
+cancel-async-tasks
+fix-code-vulnerability
+configure-git-webserver
+polyglot-rust-c
+# medium
+db-wal-recovery
+extract-elf
+git-leak-recovery
+kv-store-grpc
+largest-eigenval
+log-summary-date-ranges
+merge-diff-arc-agi-task
+multi-source-data-merger
+nginx-request-logging
+openssl-selfsigned-cert
+regex-log
+sqlite-db-truncate
