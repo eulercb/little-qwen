@@ -54,7 +54,7 @@ if [ "${2:-}" != "--no-opencode" ] && grep -q OPENCODE_BIN eval/queue.txt; then
   echo "OpenCode: $OPENCODE_BIN"
 fi
 
-if [ "${2:-}" != "--no-opencode" ] && grep -q pi_agent.sh eval/queue.txt; then
+if [ "${2:-}" != "--no-opencode" ] && grep -q -E 'pi_agent.sh|lc_tb_agent' eval/queue.txt; then
   # pi (pi.dev) and little-coder comparators (eval/runner/pi_agent.sh); Node >= 22.19.
   while read -r dir pkg bin; do
     if [ ! -x "$HOME/.cache/$dir/node_modules/.bin/$bin" ]; then
@@ -65,6 +65,11 @@ if [ "${2:-}" != "--no-opencode" ] && grep -q pi_agent.sh eval/queue.txt; then
 qh-pi @earendil-works/pi-coding-agent pi
 qh-littlecoder little-coder little-coder
 PKGS
+fi
+if grep -q lc_tb_agent eval/queue.txt && [ ! -d /home/user/itayinbarr/little-coder ]; then
+  # lc_tb_agent.py drives pi through little-coder's benchmarks/rpc_client.py (studied at 89d4fa0 = v1.20.0).
+  git clone -q https://github.com/itayinbarr/little-coder /home/user/itayinbarr/little-coder &&
+    git -C /home/user/itayinbarr/little-coder checkout -q 89d4fa0
 fi
 
 if grep -q "qh tbench" eval/queue.txt; then

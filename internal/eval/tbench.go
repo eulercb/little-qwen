@@ -140,6 +140,7 @@ type TBOptions struct {
 	Oracle      bool    // run solution/solve.sh instead of the agent (validates the setup)
 	TimeoutMult float64 // multiplier on the task's agent timeout (the local model is slow)
 	UVDir       string  // host dir with static uv/uvx, provisioned for the verifier (see eval/runner/tb-cache.sh)
+	Agent       string  // external agent command run on the host (e.g. eval/runner/lc_tb_agent.py); "" = qh
 }
 
 // provisionUV puts uv/uvx and the env file the official verifiers `source`
@@ -169,6 +170,8 @@ func RunTB(ctx context.Context, c *llm.Client, h *harness.Harness, t TBTask, rep
 	res := &Result{TaskID: "tb-" + t.ID, Tier: "tierC", Rep: rep, HarnessHash: h.Hash, Started: started.UTC().Format(time.RFC3339)}
 	if o.Oracle {
 		res.HarnessHash = "oracle"
+	} else if o.Agent != "" {
+		res.HarnessHash = "external"
 	}
 	fail := func(stage string, err error, out string) (*Result, error) {
 		res.Outcome.Status = "error"
@@ -212,6 +215,22 @@ func RunTB(ctx context.Context, c *llm.Client, h *harness.Harness, t TBTask, rep
 		res.Outcome.Status = "finished"
 		if err != nil {
 			res.Outcome.Status = "oracle_failed"
+		}
+	} else if o.Agent != "" {
+		// External agent on the host; it reaches the task only through
+		// docker exec on QH_CONTAINER (same isolation as qh's own tools).
+		pf, _ := filepath.Abs(filepath.Join(outDir, "prompt.txt"))
+		_ = os.WriteFile(pf, []byte(t.Instruction), 0o644)
+		env := append(os.Environ(), "QH_CONTAINER="+name, "QH_WORKDIR="+wd, "QH_PROMPT_FILE="+pf,
+			fmt.Sprintf("QH_TIMEOUT_S=%d", int(agentTO.Seconds())))
+		logf("external agent start")
+		out, code, timedOut := tools.Shell(actx, ".", env, o.Agent, agentTO+2*time.Minute)
+		_ = os.WriteFile(filepath.Join(outDir, "agent.log"), []byte(trace.Redact(out)), 0o644)
+		res.Outcome.Status = "finished"
+		if timedOut {
+			res.Outcome.Status = "wall_clock"
+		} else if code != 0 {
+			res.Outcome.Status = fmt.Sprintf("exit_%d", code)
 		}
 	} else {
 		tr, err := trace.Open(outDir)

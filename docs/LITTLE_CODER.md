@@ -51,14 +51,33 @@ Gotchas found while wiring them up:
 - `qh eval --agent` runs one prompt; it does not replay multi-session tasks (`sessions`, e.g. b02 and d01).
   Compare on single-session tasks only.
 
-Terminal-Bench: little-coder's harbor adapter (`benchmarks/harbor_adapter`) drives `pi --mode rpc` on the
-host. It exposes only `ShellSession`/`ShellSessionCwd`/`ShellSessionReset`, proxied into the task container
-(a stateful shell: cwd kept, output trimmed to 200 lines, duplicate lines collapsed). Running it under
-`qh tbench` would need a bridge to `docker exec`, which isn't built. Its published 24.6% on the full TB2 (89
-tasks, a different model) is not comparable to our 20-task subset.
+### Terminal-Bench (Tier C)
 
-Queued (see `eval/queue.txt`), on the same 7 single-session tasks as the OpenCode comparison:
-`eval/results/littlecoder-baseline` and `eval/results/pi-baseline`.
+`./bin/qh tbench --agent eval/runner/lc_tb_agent.py …` runs little-coder on our frozen 20-task subset, under
+the same container setup, ×4 time limit and official verifier as qh. `qh tbench --agent <cmd>` runs any host
+command with `QH_CONTAINER`, `QH_WORKDIR`, `QH_PROMPT_FILE` and `QH_TIMEOUT_S` set.
+
+The bridge mirrors little-coder's Harbor adapter (`benchmarks/harbor_adapter/little_coder_agent.py`):
+- the same prompt, `benchmark=terminal_bench`, and a 40-turn cap;
+- only the `ShellSession`/`ShellSessionCwd`/`ShellSessionReset` tools;
+- a stateful shell proxy (cwd carried between calls, ANSI stripped, duplicate lines collapsed, output trimmed
+  to 200 lines).
+
+It drives `pi --mode rpc` through little-coder's own `benchmarks/rpc_client.py` from the clone, with pi and
+the extensions taken from the npm install. Harbor's `env.exec` is replaced by `docker exec`.
+
+One deviation: `LITTLE_CODER_PERMISSION_MODE=accept-all`, as in its aider and gaia runners. Without it the
+permission gate refuses `cat > file` redirects, the only way to write files in that tool set. That was
+verified with a scripted stub.
+
+The plumbing was validated with a scripted model stub (ShellSession round-trip into the container, the
+verifier, the result). little-coder's published 24.6% is for all 89 tasks with a different model, so it isn't
+comparable to our subset numbers.
+
+Queued (see `eval/queue.txt`):
+- `eval/results/littlecoder-baseline` and `eval/results/pi-baseline`, on the same 7 single-session tasks as
+  the OpenCode comparison;
+- `eval/results/tbC-littlecoder` (Tier C), after qh's own `tbC-base`.
 
 ## Mechanisms, mapped to qh, with our evidence
 

@@ -38,6 +38,7 @@ Then follow "Decisions waiting on those results" below as items finish.
   8. Broader OpenCode baseline.
   9. d01 (Tier D).
   10. Tier C subset baseline (`tbC-base`).
+  11. little-coder on the Tier C subset (`tbC-littlecoder`).
 - Outage handling (added at the second pause): `qh eval` aborts the remaining runs when the endpoint is unavailable
   (exit≠0); the queue waits for `$REMOTE_LLM_ENDPOINT/health` before each item and keeps failed items to retry them
   (caveat: an item failing for a non-endpoint reason retries every minute — fix or delete that line).
@@ -55,8 +56,9 @@ Then follow "Decisions waiting on those results" below as items finish.
   - Probe queued: `eval/results/expL1-think-cap` on b01, b04, b05, h03 and a10. Compare with it0-baseline, and
     read the `think_budget` trace events.
 - `eval/runner/tool_stats.py <result dirs>` gives per-run overwrite, unread-edit and edit-failure stats.
-- Pending: a bridge so little-coder can run on Terminal-Bench (its harbor adapter uses an RPC shell proxy), and
-  revisiting bg-shell/ShellSession ideas after the Tier C baseline.
+- Tier C bridge: `qh tbench --agent eval/runner/lc_tb_agent.py` (validated with a scripted stub). It is queued
+  last, as `tbC-littlecoder`, and needs the clone at /home/user/itayinbarr/little-coder (resume.sh clones it).
+- Pending: revisit the bg-shell/ShellSession ideas after the Tier C baseline.
 
 ### Tier C (Terminal-Bench 2) and Tier D (Caça-Palavras PWA) — added 2026-10-22 evening
 - Docker works: `eval/runner/docker-up.sh` starts dockerd with the `mirror.gcr.io` registry mirror (Docker Hub

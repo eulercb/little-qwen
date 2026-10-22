@@ -29,6 +29,7 @@ func cmdTBench(ctx context.Context, args []string) error {
 	oracle := fs.Bool("oracle", false, "run the reference solution instead of the agent")
 	mult := fs.Float64("timeout-mult", 4, "multiplier on each task's agent timeout (the local model is slow)")
 	toolBin := fs.String("tool-bin", "bin/qh-static", "static qh binary for containers")
+	agent := fs.String("agent", "", "external agent command run on the host against the task container (QH_CONTAINER etc.); default: qh")
 	uvDir := fs.String("uv-dir", "/tmp/qh-tbcache/uv", "static uv/uvx for the verifiers (eval/runner/tb-cache.sh)")
 	fs.Parse(args)
 	if *out == "" {
@@ -64,7 +65,7 @@ func cmdTBench(ctx context.Context, args []string) error {
 		return err
 	}
 	var c *llm.Client
-	if !*oracle {
+	if !*oracle && *agent == "" {
 		if c, err = llm.New(); err != nil {
 			return err
 		}
@@ -81,7 +82,7 @@ func cmdTBench(ctx context.Context, args []string) error {
 			}
 			lg := logger(fmt.Sprintf("%s/r%d ", t.ID, rep))
 			lg("start image=%s timeout=%s×%.0f", t.Image, t.AgentTimeout, *mult)
-			r, err := eval.RunTB(ctx, c, h, t, rep, od, eval.TBOptions{ToolBin: tb, Oracle: *oracle, TimeoutMult: *mult, UVDir: *uvDir}, lg)
+			r, err := eval.RunTB(ctx, c, h, t, rep, od, eval.TBOptions{ToolBin: tb, Oracle: *oracle, TimeoutMult: *mult, UVDir: *uvDir, Agent: *agent}, lg)
 			if err != nil {
 				lg("ERROR %v", err)
 				continue
