@@ -27,6 +27,7 @@ rm -f eval/queue.pid eval/.eval.lock
 
 echo "== build + offline tests"
 go build -o bin/qh ./cmd/qh
+CGO_ENABLED=0 go build -o bin/qh-static ./cmd/qh   # copied into Terminal-Bench containers
 go test ./internal/... >/dev/null
 ./bin/qh validate harness/base >/dev/null
 
@@ -51,6 +52,16 @@ if [ "${2:-}" != "--no-opencode" ] && grep -q OPENCODE_BIN eval/queue.txt; then
   fi
   export OPENCODE_BIN="$oc"
   echo "OpenCode: $OPENCODE_BIN"
+fi
+
+if grep -q "qh tbench" eval/queue.txt; then
+  echo "== docker + Terminal-Bench prerequisites"
+  eval/runner/docker-up.sh
+  eval/runner/tb-cache.sh
+  [ -d /home/user/laude-institute/terminal-bench-2 ] || GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 \
+    https://github.com/laude-institute/terminal-bench-2 /home/user/laude-institute/terminal-bench-2
+  git -C /home/user/laude-institute/terminal-bench-2 fetch -q --depth 1 origin 2fd12b88aafdd04a52c298e3940bcb189f9766d6 2>/dev/null &&
+    git -C /home/user/laude-institute/terminal-bench-2 checkout -q 2fd12b88aafdd04a52c298e3940bcb189f9766d6 2>/dev/null || true
 fi
 
 echo "== remaining queue items"

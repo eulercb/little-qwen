@@ -31,6 +31,23 @@ Then follow "Decisions waiting on those results" below as items finish.
   (exit≠0); the queue waits for `$REMOTE_LLM_ENDPOINT/health` before each item and keeps failed items to retry them
   (caveat: an item failing for a non-endpoint reason retries every minute — fix or delete that line).
 
+### Tier C (Terminal-Bench 2) and Tier D (Caça-Palavras PWA) — added 2026-10-22 evening
+- Docker works: `eval/runner/docker-up.sh` starts dockerd with the `mirror.gcr.io` registry mirror (Docker Hub
+  answers 429 to anonymous pulls from this egress IP).
+- Tier C runner: `./bin/qh tbench --only @eval/tbench/subset.txt --out eval/results/<name>` (`--oracle` runs the
+  reference solution). Tasks come from the public repo laude-institute/terminal-bench-2 @ 2fd12b8 cloned to
+  /home/user/laude-institute/terminal-bench-2 (Harbor's registry backend is blocked; not needed). qh's tools run
+  inside the task container (static `bin/qh-static` copied in as qh-tool). Containers get host networking, proxy env
+  and the proxy CA; apt is switched to https. Egress: `*.debian.org` was enabled by the user; `astral.sh` is still
+  blocked, so the runner provisions uv/uvx from PyPI (`eval/runner/tb-cache.sh`) before the official verifier.
+  Agent timeout = task timeout × 4 (`--timeout-mult`, the local model is slow) — a documented deviation.
+- Validated: oracle reward 1.0 on the reference solutions (see eval/results/tb-oracle); a scripted-agent run through
+  qh's container tools also scored 1.0. `build-cython-ext` fails even with the oracle (dependency drift) — excluded.
+- Tier D task: `eval/tasks/d01-caca-palavras` (brief from the user, verbatim). 9 sessions (M0–M8), one fresh qh
+  context per milestone in the same workdir; visible check `npm run check`; hidden checker scores 39 items
+  (static rules, npm check, hidden vitest tests, PWA artifacts, Playwright e2e at 360×740). Reference solution 39/39,
+  empty repo 0/39. Run: `./bin/qh eval --only d01-caca-palavras --out eval/results/<name>`.
+
 ### Manual operation (what resume.sh automates)
 - Endpoint: `export REMOTE_LLM_ENDPOINT=https://<tunnel>` (the queue and qh read it from the environment).
 - OpenCode: `export OPENCODE_BIN=<path to opencode>` before starting the queue (its line reads
@@ -97,3 +114,4 @@ Then follow "Decisions waiting on those results" below as items finish.
 - 2026-10-22 12:33 — tunnel died (530 Origin DNS error); 14:25 queue stopped, b04/b05 outage runs discarded;
   added outage abort in qh eval + health gate/keep-on-failure in queue.sh.
 - 2026-10-22 ~14:40 — session wrapped up: added eval/runner/resume.sh (one-command resume), STATUS rewritten.
+- 2026-10-22 ~18:50 — Tier C runner + Tier D task built and validated (docker enabled, oracle sweep running).
