@@ -107,3 +107,12 @@ Template:
 - **Single-stream base (eval/results/it0-base-p1, a03 a04 a05 a07 a09 a10 a12):** 7/7, wall 6.7 ± 2.7 min,
   7.7K completion (2.8K thinking), 12 turns. Against it, A1 (low) on the 6 shared tasks: 37.6 → 111.9 min,
   thinking 15.2K → 75.2K — confirms the rejection.
+
+## A2: thinking off (all turns)   (status: REJECTED)
+- Probe eval/results/exp6-think-off vs single-stream base (it0-base-p1 + it0-baseline h02/h04).
+- Easy tasks ~2× faster (a03 4.7→2.5, a05 3.0→1.4, a09 7.0→3.1 min) but a07, a10, a12, h04 hit max_turns (80);
+  score 7.83 → 5.24, success 6/8 → 4/8, turns 97 → 368, tool errors 10 → 37.
+- Trajectories (a10, h04): shotgun debugging — dozens of 5–15 s turns of `go test … | grep … ; echo done`
+  probes, 14–15 loop warnings per run, no hypothesis forming. Thinking is where this model plans/debugs.
+- Note for A3 (adaptive): many failing probes end in `| head; echo done` and exit 0, so a "bad turn" detector based
+  on exit codes misses them; loop warnings are a better trigger.
