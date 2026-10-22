@@ -1,0 +1,13 @@
+(node:19691) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:19699) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All tests pass, `go test ./...` exits 0. 
+
+**Fixes in `page/page.go` (`Get`):**
+- **`TotalPages` exact-multiple bug**: replaced `len/size + 1` with ceiling division `(len + size - 1) / size` (0 for empty input), so 10 items / size 5 → 2 pages, not 3.
+- **Last item missing**: the end-clamp was `len(items) - 1`; now `len(items)`.
+- **Panic past the end**: when `start >= len(items)` the function now returns an empty page (nil `Items`, `TotalPages` computed, `HasNext` false, `HasPrev` = `n > 1`) instead of slicing out of bounds.
+- **Doc-contract aliasing**: the returned `Items` is now a fresh copied slice, per the contract that callers may modify it without touching the input.
+
+**Regression tests in `page_test.go`**: `TestLastPagePartial` (last item present, `TotalPages`/`HasNext`/`HasPrev` correct), `TestExactMultiple`, `TestPastEndNoPanic` (pages 3 and 100 → empty, no panic), `TestEmptyInput`, `TestNoAlias` (mutating results leaves input intact), `TestBadArgs`, and `TestAll`.

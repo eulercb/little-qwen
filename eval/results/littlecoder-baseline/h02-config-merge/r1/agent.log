@@ -1,0 +1,12 @@
+(node:20229) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:20237) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All done — `go test ./...` exits 0.
+
+Changes in `config/config.go`:
+- **New fields**: `Timeout time.Duration` (env `APP_TIMEOUT` via `time.ParseDuration`, default `30s` in `Defaults()`) and `Tags []string` (env `APP_TAGS`, comma-separated with items trimmed and empties dropped, default nil).
+- **`Merge(base, override)`**: each non-zero override field replaces base's; a non-nil `Tags` slice replaces base's (even when empty). The override slice is copied into the result, so neither argument's slice is mutated.
+- **`Load`**: all invalid values are now collected and returned via `errors.Join` (each message names its variable, e.g. `APP_PORT: invalid port "..."`); on any error it returns the zero `Config`. Existing per-field validation semantics are unchanged.
+
+Tests added in `config_test.go` cover: timeout valid/invalid, tags parsing (trim/drop empties, all-empty → nil), all-four-invalids reporting each variable name together with a zero Config, `Merge` field-level override semantics, empty-non-nil tag replacement, nil-override keeping base tags, and non-mutation of both arguments' slices. Existing tests retained (with a `Timeout: 30s` assertion added to `TestLoadDefaults`).

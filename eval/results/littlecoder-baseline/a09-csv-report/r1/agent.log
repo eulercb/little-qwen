@@ -1,0 +1,14 @@
+(node:17865) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17873) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Done. `go vet ./... && go test ./...` exits 0.
+
+**`cmd/report/main.go`**:
+- `main` calls `run(os.Args[1:], os.Stdin, os.Stdout)`, prints the error to stderr and exits 1 on failure.
+- `run` parses `--by region|product` (default `region`, `--by=x` form also accepted) and `--top N` (N ≥ 1); any other flag or value → error.
+- Reads CSV via `encoding/csv` (header row is line 1), maps columns by name so order and extra columns don't matter; each missing required column produces an error naming it.
+- Bad `qty` (non-integer or negative) or `price` values error with the 1-based file line number.
+- Revenue is computed in integer cents (price parsed to ≤2 decimals, multiplied by `qty`), eliminating float drift; groups sorted by revenue descending, ties by name ascending; `--top` truncates printed groups while `TOTAL` always covers all rows.
+
+**`cmd/report/main_test.go`** covers: the spec example, `--by product`, revenue ties, `--top` (incl. larger than group count, and TOTAL over all rows), shuffled/extra columns, missing columns (each of the four named in the error), bad qty/price with correct line numbers, all invalid-flag cases, and integer-cents formatting (`3×0.10 → 0.30`).

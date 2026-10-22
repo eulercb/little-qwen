@@ -1,0 +1,18 @@
+(node:21453) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:21461) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Done. The `tmpl` package is complete and the acceptance check passes.
+
+**Implementation** (`tmpl/tmpl.go`, stdlib only):
+- **`Render`** scans the source: `{{{{` → literal `{{`; `{{...}}` → tag (searches for first `}}`, errors with "unterminated" if absent); everything else copied verbatim.
+- **Names**: `[A-Za-z_][A-Za-z0-9_]*` with `.field` segments; whitespace around `name`, `|`, `:` is ignored. Resolution walks nested `map[string]any`; missing top-level key or missing field → `""`; indexing a `.field` into a non-map → error containing the full name (e.g. `user.name.first`).
+- **Formatting**: `string` as-is, `int`/`int64`/`float64` via `fmt.Sprint`, `bool` → `true`/`false`, `nil` → `""`.
+- **Filters** (left to right on the string): `upper`, `lower`, `trim`, `default:"x"` (arg required; replaces empty), `truncate:"N"` (keeps ≤N runes, appends `…` only if cut; non-integer/negative → error), `html` (escapes `& < > " '`; `&` first so no double-escaping). Args are double-quoted with `\"` and `\\` escapes; pipes inside quoted args are not splits.
+- **Errors** (all return `""` + non-nil error): unknown filter (message includes its name), missing/extra args, bad `truncate` arg, unterminated tag, empty tag `{{ }}`, bad name, non-map field indexing.
+
+**Tests** (`tmpl/tmpl_test.go`): 13 tests covering verbatim text, `{{{{` literals, all value types, nested/missing lookups, whitespace handling, every filter (including runes, N=0, escapes, pipe-in-arg), multiple tags, and each error class.
+
+Caught and fixed one bug via a debug run: `parseName` appended the dot *after* the field segment (`user.name` → `username.`); reversed to dot-first.
+
+Final result: `gofmt -l` clean, `go vet ./... && go test ./...` → `ok example.com/tmpl/tmpl`, **exit 0**.

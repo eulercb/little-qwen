@@ -1,0 +1,10 @@
+(node:18650) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:18658) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Done. Implemented `jpath.Query` in `jpath/jpath.go`:
+
+- **Parser** — validates the `$` prefix, then walks steps: `.name` / `.*` (identifiers must match `[A-Za-z_][A-Za-z0-9_]*`), `["key"]` with `\"`/`\\` unescaping, `[N]` (negative ok; oversized integers parse but can never hit), `[*]`, and `..name` recursive descent. Anything else (leading non-`$`, `$.`, `$[`, `$[1`, `$["x]`, `$.1abc`, `$[abc]`, embedded whitespace, trailing junk, `..*`) returns a non-nil error and `nil` result.
+- **Evaluator** — each step maps the current node list to a new one; non-applicable steps (missing key, out-of-range index, member on non-object, index on non-array) simply contribute nothing, so a no-match yields an empty non-nil slice. Wildcards return array elements in order or object values sorted by key; `..name` is pre-order (self match first, then children in order / keys sorted).
+
+`go vet` and `go test ./...` both pass, plus a scratch harness verified every behavior in the spec (including the four-value `$..x` pre-order ordering, negative indices, and all the malformed-path rejections).

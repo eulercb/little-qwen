@@ -1,0 +1,169 @@
+ pool/pool.go | 126 +++++++++++++++++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 114 insertions(+), 12 deletions(-)
+
+diff --git a/pool/pool.go b/pool/pool.go
+index ba7e123..74566ba 100644
+--- a/pool/pool.go
++++ b/pool/pool.go
+@@ -16,6 +16,40 @@ type IndexError struct {
+ func (e *IndexError) Error() string { return fmt.Sprintf("pool: input %d: %v", e.Index, e.Err) }
+ func (e *IndexError) Unwrap() error { return e.Err }
+ 
++type result struct {
++	r   any
++	err error
++	i   int
++}
++
++// firstFailure records the failed result with the lowest index.
++type firstFailure struct {
++	mu sync.Mutex
++	e  error
++}
++
++// record remembers a failure, keeping the one with the lowest index.
++func (f *firstFailure) record(i int, err error) {
++	f.mu.Lock()
++	defer f.mu.Unlock()
++	if f.e == nil {
++		f.e = &IndexError{Index: i, Err: err}
++		return
++	}
++	if prev, ok := f.e.(*IndexError); ok && i < prev.Index {
++		f.e = &IndexError{Index: i, Err: err}
++	}
++}
++
++// take returns the recorded error (nil if none) and forgets it.
++func (f *firstFailure) take() error {
++	f.mu.Lock()
++	defer f.mu.Unlock()
++	e := f.e
++	f.e = nil
++	return e
++}
++
+ // Map calls fn on every element of in using at most workers goroutines
+ // (workers < 1 means 1) and returns the results in input order: out[i] is
+ // fn(ctx, in[i]).
+@@ -32,40 +66,108 @@ func Map[T, R any](ctx context.Context, in []T, workers int, fn func(context.Con
+ 	if workers < 1 {
+ 		workers = 1
+ 	}
+-	type result struct {
+-		r   R
+-		err error
+-		i   int
+-	}
+ 	jobs := make(chan int)
+ 	results := make(chan result)
++	// Unbuffered: the dispatcher keeps draining so workers never block on it.
++	fail := make(chan result)
++	var first firstFailure
+ 	var wg sync.WaitGroup
++
++	// Workers run fn and report results; once a failure is recorded they stop
++	// taking jobs and drain.
+ 	for w := 0; w < workers; w++ {
+ 		wg.Add(1)
+ 		go func() {
+ 			defer wg.Done()
+ 			for i := range jobs {
++				if first.take() != nil {
++					continue // a failure is already recorded; drain and exit
++				}
+ 				r, err := fn(ctx, in[i])
+-				results <- result{r, err, i}
++				if err != nil {
++					first.record(i, err)
++					fail <- result{err: err, i: i}
++				} else {
++					results <- result{r: r, i: i}
++				}
+ 			}
+ 		}()
+ 	}
++
++	// Dispatcher: hands out new inputs until ctx cancels, a call fails, or the
++	// inputs are exhausted.
+ 	go func() {
+ 		for i := range in {
++			if ctx.Err() != nil {
++				break
++			}
++			if first.take() != nil {
++				break
++			}
++			select {
++			case <-ctx.Done():
++				break
++			case <-fail:
++				break
++			default:
++			}
++			if ctx.Err() != nil || first.take() != nil {
++				break
++			}
+ 			jobs <- i
+ 		}
+ 		close(jobs)
+ 	}()
++
++	// Collector: closes results once every worker has exited.
+ 	go func() {
+ 		wg.Wait()
+ 		close(results)
+ 	}()
+-	var out []R
+-	for res := range results {
+-		if res.err != nil {
+-			return nil, &IndexError{Index: res.i, Err: res.err}
++
++	out := make([]R, len(in))
++	filled := 0
++	var ctxErr error
++	for {
++		select {
++		case res, ok := <-results:
++			if !ok {
++				// All workers done. Decide the error to return.
++				if e := first.take(); e != nil {
++					return nil, e
++				}
++				if ctxErr != nil {
++					return nil, ctxErr
++				}
++				if filled == len(in) {
++					return out, nil
++				}
++				// Workers stopped early (cancel/failure) before every input was
++				// attempted. Return the recorded error, or ctx.Err() if the
++				// context was cancelled.
++				if e := first.take(); e != nil {
++					return nil, e
++				}
++				if ctxErr != nil {
++					return nil, ctxErr
++				}
++				return nil, ctx.Err()
++			}
++			if res.err != nil {
++				first.record(res.i, res.err)
++				return nil, first.take()
++			}
++			out[res.i] = res.r.(R)
++			filled++
++			if filled == len(in) {
++				return out, nil
++			}
++		case res := <-fail:
++			first.record(res.i, res.err)
++		case <-ctx.Done():
++			if ctxErr == nil {
++				ctxErr = ctx.Err()
++			}
+ 		}
+-		out = append(out, res.r)
+ 	}
+-	return out, nil
+ }
