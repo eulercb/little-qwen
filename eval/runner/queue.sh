@@ -46,6 +46,7 @@ PY
   for try in 1 2 3; do
     git add eval/results eval/queue.txt eval/queue.done >/dev/null 2>&1 &&
       git commit -q -m "eval results: $(echo "$line" | grep -o -- '--out [^ ]*' | cut -d' ' -f2)" >/dev/null 2>&1
+    git pull -q --rebase origin "$(git rev-parse --abbrev-ref HEAD)" >/dev/null 2>&1
     git push -q >/dev/null 2>&1 && break
     sleep $((try * 5))
   done
