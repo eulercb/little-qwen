@@ -1,18 +1,18 @@
-Harness: 6e880e0d3539 — 19 runs over 19 tasks
+Harness: 6e880e0d3539 — 22 runs over 22 tasks
 
 | metric | mean ± sd |
 |---|---|
-| success | 0.89 ± 0.32 |
-| score | 0.99 ± 0.03 |
-| wall (min) | 14.4 ± 12.6 |
-| turns | 14.4 ± 9.6 |
-| prefill tokens | 14843 ± 12260 |
+| success | 0.77 ± 0.43 |
+| score | 0.90 ± 0.29 |
+| wall (min) | 21.3 ± 21.3 |
+| turns | 16.6 ± 12.9 |
+| prefill tokens | 20366 ± 18284 |
 | re-prefill tokens | 0 ± 0 |
-| completion tokens | 10547 ± 11042 |
-| reasoning tokens | 5440 ± 7068 |
-| tool calls / errors / repaired | 365 / 24 (6.6%) / 1 |
+| completion tokens | 16364 ± 18465 |
+| reasoning tokens | 10172 ± 15251 |
+| tool calls / errors / repaired | 473 / 34 (7.2%) / 1 |
 
-Failure codes: F3=1 
+Failure codes: F4=6 F10=3 F3=2 
 
 | task | tier | success | score | status | turns | wall min | compactions |
 |---|---|---|---|---|---|---|---|
@@ -31,6 +31,9 @@ Failure codes: F3=1
 | b01-expr-lang | tierB | 1.00 | 1.00 | finished | 36 | 46.7 | 0 |
 | b02-tasker-feature | tierB | 1.00 | 1.00 | finished | 30 | 19.9 | 0 |
 | b03-ledger-debug | tierB | 1.00 | 1.00 | finished | 8 | 4.7 | 0 |
+| b04-kv-server | tierB | 0.00 | 0.93 | wall_clock | 55 | 60.4 | 0 |
+| b05-port-cron | tierB | 0.00 | 0.00 | wall_clock | 29 | 60.1 | 0 |
+| b06-markdown | tierB | 0.00 | 0.00 | wall_clock | 7 | 73.7 | 0 |
 | h01-paginate-bugs | heldout | 1.00 | 1.00 | finished | 9 | 3.2 | 0 |
 | h02-config-merge | heldout | 0.00 | 0.92 | finished | 7 | 2.3 | 0 |
 | h03-worker-pool | heldout | 1.00 | 1.00 | finished | 13 | 16.3 | 0 |

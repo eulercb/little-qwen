@@ -1,0 +1,38 @@
+{
+  "task_id": "b06-markdown",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "6e880e0d3539",
+  "success": false,
+  "score": 0,
+  "tests_passed": 0,
+  "tests_total": 1,
+  "outcome": {
+    "Status": "wall_clock",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 7,
+    "Compactions": 0,
+    "PromptTokens": 156549,
+    "PrefillTokens": 50853,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 64218,
+    "ReasoningTokens": 64047,
+    "ToolCalls": 4,
+    "ToolErrors": 0,
+    "Repaired": 0,
+    "Nudges": 4,
+    "LoopHints": 0,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F4": 4
+    },
+    "WallSeconds": 4420.743121447,
+    "Err": ""
+  },
+  "started": "2026-10-22T20:48:48Z",
+  "hidden_output": "FAIL\texample.com/md/md [build failed]",
+  "work": "/tmp/qh-runs/it0-baseline/b06-markdown-r1"
+}
