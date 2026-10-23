@@ -143,3 +143,10 @@ Template:
   - Tier-B baseline: b01–b03 solved, b04 0.925, b05 and b06 failed.
   - Both failures are runaway thinking; b06 was added to the probe.
 - Probe `eval/results/expL1-think-cap`: b01, b04, b05, b06, h03, a10 ×1, against it0-baseline.
+- Partial results (paused 2026-10-23 03:31):
+  - a10: 1.00 in 33.4 min (cap fired once at turn 3).
+  - b01: 0.95, wall clock 60.3 min. The cap fired at turn 2 after 471 s, the act turn wrote lexer.go within 69 s,
+    and the time was lost in later debugging.
+  - b04: 1.00 in 51.6 min (base 0.925).
+  - Still to run: b05, b06, h03. The verdict hinges on b05 and b06, where runaway thinking caused the baseline
+    failures.
