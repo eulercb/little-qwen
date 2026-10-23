@@ -1,0 +1,517 @@
+ cmd/report/main.go      | 259 ++++++++++++++++++++++++++++++++++++++++++++++++
+ cmd/report/main_test.go | 242 ++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 501 insertions(+)
+
+diff --git a/cmd/report/main.go b/cmd/report/main.go
+new file mode 100644
+index 0000000..b84136b
+--- /dev/null
++++ b/cmd/report/main.go
+@@ -0,0 +1,259 @@
++package main
++
++import (
++	"encoding/csv"
++	"errors"
++	"fmt"
++	"io"
++	"os"
++	"sort"
++	"strconv"
++	"strings"
++)
++
++// groupAgg accumulates totals for one group.
++type groupAgg struct {
++	name  string
++	qty   int64
++	cents int64 // revenue in integer cents
++}
++
++// run parses flags from args, reads a sales CSV from in, and writes the
++// summary to out.
++func run(args []string, in io.Reader, out io.Writer) error {
++	by := "region"
++	top := 0
++
++	for i := 0; i < len(args); i++ {
++		a := args[i]
++		switch {
++		case a == "--by":
++			if i+1 >= len(args) {
++				return errors.New("--by requires a value")
++			}
++			i++
++			by = args[i]
++		case strings.HasPrefix(a, "--by="):
++			by = a[len("--by="):]
++		case a == "--top":
++			if i+1 >= len(args) {
++				return errors.New("--top requires a value")
++			}
++			i++
++			n, err := strconv.Atoi(args[i])
++			if err != nil || n < 1 {
++				return fmt.Errorf("invalid --top value %q (must be an integer >= 1)", args[i])
++			}
++			top = n
++		case strings.HasPrefix(a, "--top="):
++			n, err := strconv.Atoi(a[len("--top="):])
++			if err != nil || n < 1 {
++				return fmt.Errorf("invalid --top value %q (must be an integer >= 1)", a[len("--top="):])
++			}
++			top = n
++		default:
++			return fmt.Errorf("unknown argument: %q", a)
++		}
++	}
++
++	if by != "region" && by != "product" {
++		return fmt.Errorf("invalid --by value %q (must be \"region\" or \"product\")", by)
++	}
++
++	required := []string{"region", "product", "qty", "price"}
++
++	r := csv.NewReader(in)
++	r.FieldsPerRecord = -1
++
++	header, err := r.Read()
++	if err != nil && err != io.EOF {
++		return fmt.Errorf("reading header: %w", err)
++	}
++
++	col := make(map[string]int)
++	for i, h := range header {
++		if _, ok := col[strings.TrimSpace(h)]; !ok {
++			col[strings.TrimSpace(h)] = i
++		}
++	}
++	var missing []string
++	for _, name := range required {
++		if _, ok := col[name]; !ok {
++			missing = append(missing, name)
++		}
++	}
++	if len(missing) > 0 {
++		return fmt.Errorf("missing required column(s): %s", strings.Join(missing, ", "))
++	}
++
++	field := make([]int, len(required))
++	for i, name := range required {
++		field[i] = col[name]
++	}
++
++	groups := make(map[string]*groupAgg)
++	var totalQty int64
++	var totalCents int64
++
++	for {
++		rec, err := r.Read()
++		if err == io.EOF {
++			break
++		}
++		if err != nil {
++			return fmt.Errorf("reading CSV: %w", err)
++		}
++		line, _ := r.FieldPos(0) // 1-based line in the file (header is line 1)
++
++		get := func(idx int) string {
++			if idx >= len(rec) {
++				return ""
++			}
++			return strings.TrimSpace(rec[idx])
++		}
++
++		region := get(field[0])
++		product := get(field[1])
++
++		qtyStr := get(field[2])
++		qty, err := parseQty(qtyStr)
++		if err != nil {
++			return fmt.Errorf("line %d: bad qty %q: %v", line, qtyStr, err)
++		}
++
++		priceStr := get(field[3])
++		cents, err := parsePriceCents(priceStr)
++		if err != nil {
++			return fmt.Errorf("line %d: bad price %q: %v", line, priceStr, err)
++		}
++
++		key := region
++		if by == "product" {
++			key = product
++		}
++		g, ok := groups[key]
++		if !ok {
++			g = &groupAgg{name: key}
++			groups[key] = g
++		}
++		g.qty += qty
++		g.cents += cents * qty
++		totalQty += qty
++		totalCents += cents * qty
++	}
++
++	list := make([]*groupAgg, 0, len(groups))
++	for _, g := range groups {
++		list = append(list, g)
++	}
++	sort.Slice(list, func(i, j int) bool {
++		if list[i].cents != list[j].cents {
++			return list[i].cents > list[j].cents
++		}
++		return list[i].name < list[j].name
++	})
++
++	for i, g := range list {
++		if top != 0 && i >= top {
++			break
++		}
++		fmt.Fprintf(out, "%s\t%d\t%s\n", g.name, g.qty, formatCents(g.cents))
++	}
++	fmt.Fprintf(out, "TOTAL\t%d\t%s\n", totalQty, formatCents(totalCents))
++	return nil
++}
++
++// parseQty parses a non-negative integer quantity.
++func parseQty(s string) (int64, error) {
++	n, err := strconv.ParseInt(s, 10, 64)
++	if err != nil {
++		return 0, errors.New("must be an integer")
++	}
++	if n < 0 {
++		return 0, errors.New("must be >= 0")
++	}
++	return n, nil
++}
++
++// parsePriceCents parses a decimal price with at most 2 decimal places and
++// returns its value in integer cents.
++func parsePriceCents(s string) (int64, error) {
++	if s == "" {
++		return 0, errors.New("must not be empty")
++	}
++	neg := false
++	switch s[0] {
++	case '-':
++		neg = true
++		s = s[1:]
++	case '+':
++		s = s[1:]
++	}
++
++	intPart := s
++	fracPart := ""
++	if i := strings.IndexByte(s, '.'); i >= 0 {
++		intPart = s[:i]
++		fracPart = s[i+1:]
++		if len(fracPart) > 2 {
++			return 0, errors.New("must have at most 2 decimal places")
++		}
++	}
++	if intPart == "" && fracPart == "" {
++		return 0, errors.New("must be a decimal number")
++	}
++	if intPart == "" {
++		intPart = "0"
++	}
++	if !isDigits(intPart) || !isDigits(fracPart) {
++		return 0, errors.New("must be a decimal number")
++	}
++
++	intVal, err := strconv.ParseInt(intPart, 10, 64)
++	if err != nil {
++		return 0, errors.New("out of range")
++	}
++	var fracVal int64
++	switch len(fracPart) {
++	case 0:
++	case 1:
++		fracVal = int64(fracPart[0]-'0') * 10
++	case 2:
++		fracVal = int64(fracPart[0]-'0')*10 + int64(fracPart[1]-'0')
++	}
++
++	cents := intVal*100 + fracVal
++	if neg {
++		cents = -cents
++	}
++	return cents, nil
++}
++
++func isDigits(s string) bool {
++	for i := 0; i < len(s); i++ {
++		if s[i] < '0' || s[i] > '9' {
++			return false
++		}
++	}
++	return true
++}
++
++// formatCents formats integer cents with exactly 2 decimals.
++func formatCents(c int64) string {
++	neg := c < 0
++	if neg {
++		c = -c
++	}
++	s := fmt.Sprintf("%d.%02d", c/100, c%100)
++	if neg {
++		s = "-" + s
++	}
++	return s
++}
++
++func main() {
++	if err := run(os.Args[1:], os.Stdin, os.Stdout); err != nil {
++		fmt.Fprintln(os.Stderr, "report:", err)
++		os.Exit(1)
++	}
++}
+diff --git a/cmd/report/main_test.go b/cmd/report/main_test.go
+new file mode 100644
+index 0000000..36b4083
+--- /dev/null
++++ b/cmd/report/main_test.go
+@@ -0,0 +1,242 @@
++package main
++
++import (
++	"bytes"
++	"strings"
++	"testing"
++)
++
++func runCSV(t *testing.T, args []string, in string) (string, error) {
++	t.Helper()
++	var out bytes.Buffer
++	err := run(args, strings.NewReader(in), &out)
++	return out.String(), err
++}
++
++func wantErrContains(t *testing.T, err error, subs ...string) {
++	t.Helper()
++	if err == nil {
++		t.Fatalf("expected error containing %q, got nil", subs)
++	}
++	for _, s := range subs {
++		if !strings.Contains(err.Error(), s) {
++			t.Fatalf("error %q does not contain %q", err, s)
++		}
++	}
++}
++
++func TestExampleByRegion(t *testing.T) {
++	in := "region,product,qty,price\nnorth,apple,3,1.10\nsouth,pear,1,2.00\n"
++	got, err := runCSV(t, []string{"--by", "region"}, in)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := "north\t3\t3.30\nsouth\t1\t2.00\nTOTAL\t4\t5.30\n"
++	if got != want {
++		t.Fatalf("got %q, want %q", got, want)
++	}
++}
++
++func TestDefaultByIsRegion(t *testing.T) {
++	in := "region,product,qty,price\nnorth,apple,3,1.10\nsouth,pear,1,2.00\n"
++	got, err := runCSV(t, nil, in)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := "north\t3\t3.30\nsouth\t1\t2.00\nTOTAL\t4\t5.30\n"
++	if got != want {
++		t.Fatalf("got %q, want %q", got, want)
++	}
++}
++
++func TestByProduct(t *testing.T) {
++	in := "region,product,qty,price\nnorth,apple,3,1.10\nsouth,pear,1,2.00\nsouth,apple,2,1.10\n"
++	got, err := runCSV(t, []string{"--by", "product"}, in)
++	if err != nil {
++		t.Fatal(err)
++	}
++	// apple: 5 @ 110c = 550c, pear: 1 @ 200c = 200c
++	want := "apple\t5\t5.50\npear\t1\t2.00\nTOTAL\t6\t7.50\n"
++	if got != want {
++		t.Fatalf("got %q, want %q", got, want)
++	}
++}
++
++func TestByEqualsForm(t *testing.T) {
++	in := "region,product,qty,price\nnorth,apple,1,1.00\n"
++	got, err := runCSV(t, []string{"--by=product", "--top=1"}, in)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := "apple\t1\t1.00\nTOTAL\t1\t1.00\n"
++	if got != want {
++		t.Fatalf("got %q, want %q", got, want)
++	}
++}
++
++func TestSortingRevenueDescNameAsc(t *testing.T) {
++	in := "region,product,qty,price\n" +
++		"c,x,1,5.00\n" + // 500
++		"a,x,1,5.00\n" + // 500 (tie with c, a first)
++		"b,x,1,9.99\n" + // 999
++		"d,x,2,1.00\n"   // 200
++	got, err := runCSV(t, nil, in)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := "b\t1\t9.99\na\t1\t5.00\nc\t1\t5.00\nd\t2\t2.00\nTOTAL\t5\t21.99\n"
++	if got != want {
++		t.Fatalf("got %q, want %q", got, want)
++	}
++}
++
++func TestTopLimitsGroupsButNotTotal(t *testing.T) {
++	in := "region,product,qty,price\n" +
++		"c,x,1,3.00\n" +
++		"a,x,1,5.00\n" +
++		"b,x,1,9.99\n"
++	got, err := runCSV(t, []string{"--top", "2"}, in)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := "b\t1\t9.99\na\t1\t5.00\nTOTAL\t3\t17.99\n"
++	if got != want {
++		t.Fatalf("got %q, want %q", got, want)
++	}
++}
++
++func TestColumnsAnyOrderWithExtras(t *testing.T) {
++	in := "price,date,qty,region,notes,product\n2.00,2024-01-01,1,south,hi,pear\n1.10,2024-01-02,3,north,lo,apple\n"
++	got, err := runCSV(t, nil, in)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := "north\t3\t3.30\nsouth\t1\t2.00\nTOTAL\t4\t5.30\n"
++	if got != want {
++		t.Fatalf("got %q, want %q", got, want)
++	}
++}
++
++func TestMissingColumns(t *testing.T) {
++	_, err := runCSV(t, nil, "region,product,qty\nnorth,apple,3\n")
++	wantErrContains(t, err, "price")
++
++	_, err = runCSV(t, nil, "region,qty,price\nnorth,3,1.10\n")
++	wantErrContains(t, err, "product")
++
++	_, err = runCSV(t, nil, "zone,product,qty,price\nnorth,apple,3,1.10\n")
++	wantErrContains(t, err, "region")
++}
++
++func TestBadQty(t *testing.T) {
++	_, err := runCSV(t, nil, "region,product,qty,price\nnorth,apple,3,1.10\nsouth,pear,-1,2.00\n")
++	wantErrContains(t, err, "line 3", "qty")
++
++	_, err = runCSV(t, nil, "region,product,qty,price\nnorth,apple,1.5,1.10\n")
++	wantErrContains(t, err, "line 2", "qty")
++
++	_, err = runCSV(t, nil, "region,product,qty,price\nnorth,apple,,1.10\n")
++	wantErrContains(t, err, "line 2", "qty")
++
++	// Short row is also a bad qty, and the line number is still correct.
++	_, err = runCSV(t, nil, "region,product,qty,price\nnorth,apple,3,1.10\nsouth,pear\n")
++	wantErrContains(t, err, "line 3", "qty")
++}
++
++func TestBadPrice(t *testing.T) {
++	_, err := runCSV(t, nil, "region,product,qty,price\nnorth,apple,3,1.10\nsouth,pear,1,2.0\nwest,pear,1,2.345\n")
++	wantErrContains(t, err, "line 4", "price")
++
++	_, err = runCSV(t, nil, "region,product,qty,price\nnorth,apple,3,abc\n")
++	wantErrContains(t, err, "line 2", "price")
++}
++
++func TestPriceFormats(t *testing.T) {
++	in := "region,product,qty,price\n" +
++		"a,x,1,7\n" + // integer price
++		"b,x,1,.5\n" + // no leading digit
++		"c,x,2,0.05\n" // sub-cent-safe
++	got, err := runCSV(t, nil, in)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := "a\t1\t7.00\nb\t1\t0.50\nc\t2\t0.10\nTOTAL\t4\t7.60\n"
++	if got != want {
++		t.Fatalf("got %q, want %q", got, want)
++	}
++}
++
++func TestRevenuePrecision(t *testing.T) {
++	// 0.10 * 3 must be exactly 0.30, not 0.30000000000000004
++	in := "region,product,qty,price\na,x,3,0.10\n"
++	got, err := runCSV(t, nil, in)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := "a\t3\t0.30\nTOTAL\t3\t0.30\n"
++	if got != want {
++		t.Fatalf("got %q, want %q", got, want)
++	}
++}
++
++func TestZeroQtyRows(t *testing.T) {
++	in := "region,product,qty,price\na,x,0,5.00\nb,x,1,2.00\n"
++	got, err := runCSV(t, nil, in)
++	if err != nil {
++		t.Fatal(err)
++	}
++	// a still appears as a group with 0 revenue; 0.00 sorts after 2.00.
++	want := "b\t1\t2.00\na\t0\t0.00\nTOTAL\t1\t2.00\n"
++	if got != want {
++		t.Fatalf("got %q, want %q", got, want)
++	}
++}
++
++func TestInvalidBy(t *testing.T) {
++	_, err := runCSV(t, []string{"--by", "zone"}, "region,product,qty,price\n")
++	wantErrContains(t, err, "zone")
++
++	_, err = runCSV(t, []string{"--by="}, "region,product,qty,price\n")
++	wantErrContains(t, err, "")
++	if err == nil {
++		t.Fatal("expected error for empty --by value")
++	}
++}
++
++func TestInvalidTop(t *testing.T) {
++	in := "region,product,qty,price\na,x,1,1.00\n"
++	_, err := runCSV(t, []string{"--top", "0"}, in)
++	wantErrContains(t, err, "--top")
++
++	_, err = runCSV(t, []string{"--top", "abc"}, in)
++	wantErrContains(t, err, "--top")
++
++	_, err = runCSV(t, []string{"--top", "-2"}, in)
++	wantErrContains(t, err, "--top")
++
++	_, err = runCSV(t, []string{"--top"}, in)
++	wantErrContains(t, err, "--top")
++}
++
++func TestUnknownFlag(t *testing.T) {
++	_, err := runCSV(t, []string{"--bogus"}, "region,product,qty,price\n")
++	wantErrContains(t, err, "--bogus")
++}
++
++func TestEmptyInput(t *testing.T) {
++	_, err := runCSV(t, nil, "")
++	if err == nil {
++		t.Fatal("expected error for empty input (missing columns)")
++	}
++}
++
++func TestNoDataRows(t *testing.T) {
++	got, err := runCSV(t, nil, "region,product,qty,price\n")
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := "TOTAL\t0\t0.00\n"
++	if got != want {
++		t.Fatalf("got %q, want %q", got, want)
++	}
++}

@@ -1,0 +1,26 @@
+(node:26369) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Done. `go test -race -count=1 ./...` exits 0 (also verified stable with `-count=5`).
+
+## What was wrong and how I fixed it (`pool/pool.go`)
+
+**1. Wrong result order** — results were appended as they *arrived*, not as they were *indexed*. Now a collector goroutine writes each result into `outs[res.i]`, so `out[i]` is always `fn(ctx, in[i])`.
+
+**2. Hang on cancel + goroutine leak** — the old code returned from `Map` on the *first* result that erred, abandoning the `results` channel; workers then blocked forever in `results <-` (leak), and the dispatcher kept pushing jobs at no bound. Now:
+- Workers **claim** the next input from a shared counter under a mutex (no unbounded job channel).
+- The collector **drains every result** into the output slots and acks each, so workers can never block forever.
+- On `ctx.Done()` (or a failure) a stopper sets a `stopped` flag under the same mutex; workers check `stopped`/`ctx.Err()` *and* wait for the collector's ack before claiming again — so no new input is ever handed out after cancel/failure, and every goroutine (workers, collector, stopper, closer) provably exits before `Map` returns.
+
+**3. Wrong error returned** — the old code returned the first error that *arrived*. The collector now tracks the **lowest failing index** and `Map` returns `&IndexError{Index: minFail, Err: ...}`. Cancellation returns `ctx.Err()` when no call failed.
+
+Signature unchanged.
+
+## Tests added (`pool/pool_test.go`)
+
+- `TestResultOrder` / `TestResultOrderStress` — inverted and varied latencies across 1–16 workers; assert exact per-index ordering.
+- `TestLowestFailingIndex` — inputs 2 and 5 fail (5's error arrives first); asserts `*IndexError` with `Index == 2` via `errors.As`, wrapped sentinel via `errors.Is`, and `nil` slice.
+- `TestStopsAfterFailure` — single worker fails at index 2; asserts `fn` is called **exactly** 3 times (no post-failure work).
+- `TestContextCancel` / `TestContextAlreadyCancelled` / `TestCancelNoFailure` — cancel mid-flight returns `ctx.Err()` promptly (5s watchdog), stops dispatching, no hang.
+- Edge cases: empty input, `workers > n`, `workers < 1`, `IndexError` formatting/unwrapping.
+
+One flake was caught along the way and fixed at the root: a worker could claim one extra input between a failure and the stop flag; the per-result ack closes that window so "stop handing out new inputs" is airtight.

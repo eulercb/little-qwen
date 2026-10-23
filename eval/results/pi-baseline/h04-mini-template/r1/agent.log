@@ -1,0 +1,16 @@
+(node:27614) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All green. Done.
+
+**`tmpl/tmpl.go`** — the engine, stdlib only (`fmt`, `strconv`, `strings`):
+
+- **Scanner**: copies verbatim text; `{{{{` emits a literal `{{` (re-checked after every `{{` advance so an escaped sequence is never parsed as a tag); `{{...}}` is a tag, missing `}}` → unterminated-tag error.
+- **Tags**: split on `|`, whitespace trimmed around names, `|`, and `:`. Name must be `[A-Za-z_][A-Za-z0-9_]*` with optional `.field` segments; empty tag or bad name → error.
+- **Lookup**: dotted names index nested `map[string]any`; missing name/field → empty string (no error), indexing a non-map → error naming the full path (e.g. `user.name.first`).
+- **Formatting**: `string` as-is, `int`/`int64`/`float64` via `fmt.Sprint`, `bool` via `strconv.FormatBool`, `nil` → `""`.
+- **Filters** (left to right, arity-enforced): `upper`, `lower`, `trim`, `html` (`&amp; &lt; &gt; &#34; &#39;`), `default:"x"`, `truncate:"N"` (rune-based, `…` appended when cut, not counted in N; rejects non-integer/negative N). Unknown filters, missing/extra args, and bad argument strings all produce errors with the filter name.
+- All errors return `("", err)`.
+
+**`tmpl/tmpl_test.go`** — 20 tests covering verbatim text, literal braces, nested/deep names, missing/nil values, all value types, every filter, quote escapes, filter chaining, multiple tags, and each error class (including message-content assertions).
+
+Acceptance: `go vet ./... && go test ./...` → `ok example.com/tmpl/tmpl`, exit 0.

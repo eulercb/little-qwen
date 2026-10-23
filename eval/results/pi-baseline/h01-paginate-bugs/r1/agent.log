@@ -1,0 +1,20 @@
+(node:25348) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All tests pass (`go test ./...` exits 0, `go vet` clean).
+
+## Bugs fixed in `page/page.go`
+
+1. **Last page missing an item** — `end = len(items) - 1` was an off-by-one; now `end = min(start+size, len(items))`.
+2. **`TotalPages` wrong for exact multiples** — `len/size + 1` always over-counted; now ceiling division `(len+size-1)/size` (0 for empty input).
+3. **Panic past the end** — `items[start:end]` panicked when `start > len(items)` (including empty input, where the old `len-1` gave a negative bound); now an early return yields an empty page with correct `TotalPages`/`HasPrev`.
+4. Also honored the documented contract that returned `Items` **must not alias** the input (was a direct sub-slice); pages are now copied.
+
+## Tests added in `page/page_test.go`
+
+- `TestLastPageHasAllRemainingItems` — regression for bug 1
+- `TestTotalPagesExactMultiple` — regression for bug 2
+- `TestPagePastEndIsEmpty` / `TestPagePastEndEmptyInput` — regression for bug 3
+- `TestItemsDoNotAliasInput` — non-aliasing contract
+- `TestErrors`, `TestAll` — coverage of error paths and `All`
+
+(One of my first test runs failed because the test itself asserted `HasPrev == false` for `n=3`; per the struct's contract `HasPrev` reflects `n > 1`, so I corrected the test, not the code.)

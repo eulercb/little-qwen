@@ -1,0 +1,147 @@
+ page/page.go      |  17 +++++----
+ page/page_test.go | 103 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 113 insertions(+), 7 deletions(-)
+
+diff --git a/page/page.go b/page/page.go
+index 4876b58..3f8f9d5 100644
+--- a/page/page.go
++++ b/page/page.go
+@@ -28,17 +28,20 @@ func Get[T any](items []T, size, n int) (Page[T], error) {
+ 	if n < 1 {
+ 		return Page[T]{}, ErrBadPage
+ 	}
+-	total := len(items)/size + 1
+-	if len(items) == 0 {
+-		total = 0
++	var total int
++	if len(items) > 0 {
++		total = (len(items) + size - 1) / size
+ 	}
+ 	start := (n - 1) * size
+-	end := start + size
+-	if end > len(items) {
+-		end = len(items) - 1
++	if start >= len(items) {
++		// Page past the end: no items.
++		return Page[T]{Number: n, TotalPages: total, HasNext: n < total, HasPrev: n > 1}, nil
+ 	}
++	end := min(start+size, len(items))
++	itemsCopy := make([]T, end-start)
++	copy(itemsCopy, items[start:end])
+ 	p := Page[T]{
+-		Items:      items[start:end],
++		Items:      itemsCopy,
+ 		Number:     n,
+ 		TotalPages: total,
+ 		HasNext:    n < total,
+diff --git a/page/page_test.go b/page/page_test.go
+index 0a50795..7777320 100644
+--- a/page/page_test.go
++++ b/page/page_test.go
+@@ -8,3 +8,106 @@ func TestFirstPage(t *testing.T) {
+ 		t.Fatalf("%+v %v", p, err)
+ 	}
+ }
++
++// Regression: the last (partial) page must contain every remaining item.
++func TestLastPageHasAllRemainingItems(t *testing.T) {
++	p, err := Get([]int{1, 2, 3, 4, 5}, 2, 3)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := []int{5}
++	if len(p.Items) != len(want) || p.Items[0] != want[0] {
++		t.Fatalf("got %+v, want items %v", p, want)
++	}
++	if p.TotalPages != 3 || p.HasNext || !p.HasPrev {
++		t.Fatalf("got %+v", p)
++	}
++}
++
++// Regression: when len is an exact multiple of size, TotalPages is
++// len/size, not len/size + 1.
++func TestTotalPagesExactMultiple(t *testing.T) {
++	p, err := Get([]int{1, 2, 3, 4}, 2, 2)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if p.TotalPages != 2 {
++		t.Fatalf("TotalPages = %d, want 2", p.TotalPages)
++	}
++	if len(p.Items) != 2 || p.Items[0] != 3 || p.Items[1] != 4 {
++		t.Fatalf("items = %v, want [3 4]", p.Items)
++	}
++	if p.HasNext {
++		t.Fatalf("HasNext should be false on the final page: %+v", p)
++	}
++	if !p.HasPrev {
++		t.Fatalf("HasPrev should be true: %+v", p)
++	}
++}
++
++// Regression: requesting a page past the end returns an empty page,
++// not a panic.
++func TestPagePastEndIsEmpty(t *testing.T) {
++	p, err := Get([]int{1, 2, 3}, 2, 100)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(p.Items) != 0 {
++		t.Fatalf("items = %v, want empty", p.Items)
++	}
++	if p.TotalPages != 2 {
++		t.Fatalf("TotalPages = %d, want 2", p.TotalPages)
++	}
++	if p.HasNext || !p.HasPrev {
++		t.Fatalf("HasNext = %v, HasPrev = %v; want false, true", p.HasNext, p.HasPrev)
++	}
++}
++
++// Regression: requesting a page past the end of an empty input must not panic.
++func TestPagePastEndEmptyInput(t *testing.T) {
++	p, err := Get([]int(nil), 2, 3)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(p.Items) != 0 || p.TotalPages != 0 || p.HasNext || !p.HasPrev {
++		t.Fatalf("got %+v", p)
++	}
++}
++
++// Contract: the returned Items slice must not alias the input.
++func TestItemsDoNotAliasInput(t *testing.T) {
++	in := []int{1, 2, 3}
++	p, err := Get(in, 2, 1)
++	if err != nil {
++		t.Fatal(err)
++	}
++	p.Items[0] = 99
++	if in[0] != 1 {
++		t.Fatalf("modifying page items altered the input: %v", in)
++	}
++}
++
++func TestErrors(t *testing.T) {
++	if _, err := Get([]int{1}, 0, 1); err != ErrBadSize {
++		t.Fatalf("err = %v, want ErrBadSize", err)
++	}
++	if _, err := Get([]int{1}, 1, 0); err != ErrBadPage {
++		t.Fatalf("err = %v, want ErrBadPage", err)
++	}
++}
++
++func TestAll(t *testing.T) {
++	pages, err := All([]int{1, 2, 3, 4, 5}, 2)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := [][]int{{1, 2}, {3, 4}, {5}}
++	if len(pages) != len(want) {
++		t.Fatalf("got %d pages: %v", len(pages), pages)
++	}
++	for i := range want {
++		if len(pages[i]) != len(want[i]) || pages[i][0] != want[i][0] {
++			t.Fatalf("page %d = %v, want %v", i, pages[i], want[i])
++		}
++	}
++}

@@ -1,0 +1,283 @@
+ config/config.go      |  84 ++++++++++++++++++++++++++++----
+ config/config_test.go | 130 ++++++++++++++++++++++++++++++++++++++++++++++++--
+ 2 files changed, 203 insertions(+), 11 deletions(-)
+
+diff --git a/config/config.go b/config/config.go
+index 869c983..5af2a61 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -2,8 +2,11 @@
+ package config
+ 
+ import (
++	"errors"
+ 	"fmt"
+ 	"strconv"
++	"strings"
++	"time"
+ )
+ 
+ // Config holds application settings.
+@@ -12,40 +15,105 @@ type Config struct {
+ 	Port    int
+ 	Debug   bool
+ 	Workers int
++	Timeout time.Duration
++	Tags    []string
+ }
+ 
+ // Defaults returns the built-in configuration.
+ func Defaults() Config {
+-	return Config{Host: "localhost", Port: 8080, Workers: 4}
++	return Config{Host: "localhost", Port: 8080, Workers: 4, Timeout: 30 * time.Second}
+ }
+ 
+ // Load starts from Defaults and applies environment overrides from getenv:
+-// APP_HOST, APP_PORT (1-65535), APP_DEBUG (strconv.ParseBool), APP_WORKERS (>= 1).
++// APP_HOST, APP_PORT (1-65535), APP_DEBUG (strconv.ParseBool), APP_WORKERS (>= 1),
++// APP_TIMEOUT (time.ParseDuration), APP_TAGS (comma-separated, items trimmed,
++// empty items dropped).
++//
++// All invalid environment values are collected and returned together as a
++// single error listing each offending variable name; in that case the zero
++// Config is returned.
+ func Load(getenv func(string) string) (Config, error) {
+ 	c := Defaults()
++	var errs []error
++
+ 	if v := getenv("APP_HOST"); v != "" {
+ 		c.Host = v
+ 	}
+ 	if v := getenv("APP_PORT"); v != "" {
+ 		p, err := strconv.Atoi(v)
+ 		if err != nil || p < 1 || p > 65535 {
+-			return Config{}, fmt.Errorf("APP_PORT: invalid port %q", v)
++			errs = append(errs, fmt.Errorf("APP_PORT: invalid port %q", v))
++		} else {
++			c.Port = p
+ 		}
+-		c.Port = p
+ 	}
+ 	if v := getenv("APP_DEBUG"); v != "" {
+ 		b, err := strconv.ParseBool(v)
+ 		if err != nil {
+-			return Config{}, fmt.Errorf("APP_DEBUG: invalid bool %q", v)
++			errs = append(errs, fmt.Errorf("APP_DEBUG: invalid bool %q", v))
++		} else {
++			c.Debug = b
+ 		}
+-		c.Debug = b
+ 	}
+ 	if v := getenv("APP_WORKERS"); v != "" {
+ 		n, err := strconv.Atoi(v)
+ 		if err != nil || n < 1 {
+-			return Config{}, fmt.Errorf("APP_WORKERS: invalid count %q", v)
++			errs = append(errs, fmt.Errorf("APP_WORKERS: invalid count %q", v))
++		} else {
++			c.Workers = n
+ 		}
+-		c.Workers = n
++	}
++	if v := getenv("APP_TIMEOUT"); v != "" {
++		d, err := time.ParseDuration(v)
++		if err != nil {
++			errs = append(errs, fmt.Errorf("APP_TIMEOUT: invalid duration %q", v))
++		} else {
++			c.Timeout = d
++		}
++	}
++	if v := getenv("APP_TAGS"); v != "" {
++		tags := []string{}
++		for _, part := range strings.Split(v, ",") {
++			p := strings.TrimSpace(part)
++			if p != "" {
++				tags = append(tags, p)
++			}
++		}
++		if len(tags) == 0 {
++			tags = nil
++		}
++		c.Tags = tags
++	}
++
++	if len(errs) > 0 {
++		return Config{}, errors.Join(errs...)
+ 	}
+ 	return c, nil
+ }
++
++// Merge returns the result of overlaying override on top of base: every
++// field of override that is non-zero replaces the corresponding field in
++// base. For Tags, a non-nil override slice replaces the base slice, even
++// if it is empty. Neither base.Tags nor override.Tags is modified.
++func Merge(base, override Config) Config {
++	c := base
++	if override.Host != "" {
++		c.Host = override.Host
++	}
++	if override.Port != 0 {
++		c.Port = override.Port
++	}
++	if override.Debug {
++		c.Debug = override.Debug
++	}
++	if override.Workers != 0 {
++		c.Workers = override.Workers
++	}
++	if override.Timeout != 0 {
++		c.Timeout = override.Timeout
++	}
++	if override.Tags != nil {
++		c.Tags = override.Tags
++	}
++	return c
++}
+diff --git a/config/config_test.go b/config/config_test.go
+index dbfab42..759d4c2 100644
+--- a/config/config_test.go
++++ b/config/config_test.go
+@@ -1,13 +1,21 @@
+ package config
+ 
+-import "testing"
++import (
++	"strings"
++	"testing"
++	"time"
++)
+ 
+ func env(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
+ 
+ func TestLoadDefaults(t *testing.T) {
+ 	c, err := Load(env(nil))
+-	if err != nil || c.Host != "localhost" || c.Port != 8080 || c.Workers != 4 {
+-		t.Fatalf("%+v %v", c, err)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if c.Host != "localhost" || c.Port != 8080 || c.Workers != 4 ||
++		c.Timeout != 30*time.Second || c.Tags != nil {
++		t.Fatalf("unexpected defaults: %+v", c)
+ 	}
+ }
+ 
+@@ -17,3 +25,119 @@ func TestLoadOverrides(t *testing.T) {
+ 		t.Fatalf("%+v %v", c, err)
+ 	}
+ }
++
++func TestLoadTimeout(t *testing.T) {
++	c, err := Load(env(map[string]string{"APP_TIMEOUT": "2m5s"}))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if c.Timeout != 125*time.Second {
++		t.Fatalf("timeout = %v, want 2m5s", c.Timeout)
++	}
++}
++
++func TestLoadTags(t *testing.T) {
++	c, err := Load(env(map[string]string{"APP_TAGS": "a, b ,,c,"}))
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := []string{"a", "b", "c"}
++	if len(c.Tags) != len(want) {
++		t.Fatalf("tags = %v, want %v", c.Tags, want)
++	}
++	for i := range want {
++		if c.Tags[i] != want[i] {
++			t.Fatalf("tags = %v, want %v", c.Tags, want)
++		}
++	}
++}
++
++func TestLoadTagsEmpty(t *testing.T) {
++	c, err := Load(env(map[string]string{"APP_TAGS": ", ,"}))
++	if err != nil {
++		t.Fatal(err)
++	}
++	if c.Tags != nil {
++		t.Fatalf("tags = %v, want nil", c.Tags)
++	}
++}
++
++func TestLoadInvalidSingle(t *testing.T) {
++	c, err := Load(env(map[string]string{"APP_PORT": "abc"}))
++	if err == nil {
++		t.Fatal("expected error, got nil")
++	}
++	want := Config{}
++	if c.Host != want.Host || c.Port != want.Port || c.Debug != want.Debug ||
++		c.Workers != want.Workers || c.Timeout != want.Timeout || c.Tags != nil {
++		t.Fatalf("config = %+v, want zero value", c)
++	}
++	if !strings.Contains(err.Error(), "APP_PORT") {
++		t.Fatalf("error = %q, want it to mention APP_PORT", err)
++	}
++}
++
++func TestLoadInvalidAll(t *testing.T) {
++	_, err := Load(env(map[string]string{
++		"APP_PORT":    "abc",
++		"APP_DEBUG":   "notabool",
++		"APP_WORKERS": "0",
++		"APP_TIMEOUT": "xyz",
++	}))
++	if err == nil {
++		t.Fatal("expected error, got nil")
++	}
++	for _, name := range []string{"APP_PORT", "APP_DEBUG", "APP_WORKERS", "APP_TIMEOUT"} {
++		if !strings.Contains(err.Error(), name) {
++			t.Fatalf("error = %q, want it to mention %s", err, name)
++		}
++	}
++}
++
++func TestMergeOverridesNonZero(t *testing.T) {
++	base := Defaults()
++	merged := Merge(base, Config{Port: 9999, Timeout: time.Second, Tags: []string{"x"}})
++	if merged.Host != "localhost" || merged.Port != 9999 || merged.Workers != 4 ||
++		merged.Debug != base.Debug ||
++		merged.Timeout != time.Second ||
++		merged.Tags[0] != "x" || len(merged.Tags) != 1 {
++		t.Fatalf("unexpected merge result: %+v", merged)
++	}
++}
++
++func TestMergeZeroOverrideKeepsBase(t *testing.T) {
++	base := Defaults()
++	base.Tags = []string{"keep"}
++	merged := Merge(base, Config{})
++	if merged.Host != base.Host || merged.Port != base.Port || merged.Debug != base.Debug ||
++		merged.Workers != base.Workers || merged.Timeout != base.Timeout ||
++		len(merged.Tags) != 1 || merged.Tags[0] != "keep" {
++		t.Fatalf("zero override changed config: %+v vs %+v", merged, base)
++	}
++}
++
++func TestMergeEmptyTagsOverrideReplaces(t *testing.T) {
++	base := Defaults()
++	base.Tags = []string{"a", "b"}
++	merged := Merge(base, Config{Tags: []string{}})
++	if merged.Tags == nil || len(merged.Tags) != 0 {
++		t.Fatalf("merged.Tags = %v, want empty non-nil", merged.Tags)
++	}
++}
++
++func TestMergeDoesNotModifyArguments(t *testing.T) {
++	base := Defaults()
++	baseTags := []string{"base"}
++	base.Tags = baseTags
++	ov := Config{Tags: []string{"override", "tag2"}}
++	ovTags := ov.Tags
++
++	Merge(base, ov)
++
++	if len(baseTags) != 1 || baseTags[0] != "base" {
++		t.Fatalf("base.Tags modified: %v", baseTags)
++	}
++	if len(ovTags) != 2 || ovTags[0] != "override" || ovTags[1] != "tag2" {
++		t.Fatalf("override.Tags modified: %v", ovTags)
++	}
++}

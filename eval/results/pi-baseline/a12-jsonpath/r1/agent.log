@@ -1,0 +1,23 @@
+(node:24631) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All tests pass (`go test ./...` exits 0, `go vet` clean).
+
+## Summary
+
+**`jpath/jpath.go`** — implements `Query(doc any, path string) ([]any, error)`:
+
+- **Parsing** (`parsePath`): requires a leading `$`; then consumes a sequence of steps:
+  - `.name` — identifier `[A-Za-z_][A-Za-z0-9_]*`
+  - `["key"]` — quoted key with `\"` and `\\` escapes; anything else after the string before `]` is an error (catches `$["x]`)
+  - `[N]` — optional `-` followed by digits, then `]` (catches `$[`, `$[1`, `$[abc]`, `$[+1]`, `$[1.5]`)
+  - `[*]` / `.*` — star step
+  - `..name` — recursive descent (requires a valid identifier after `..`, so `..` and `..1abc` are errors)
+  - Anything else (`a.b`, `$.`, etc.) → non-nil error, nil result.
+- **Evaluation**: starts with `[doc]`; each step maps the node list to a new list:
+  - member: only on `map[string]any` with the key present; `.` on a scalar/array yields nothing
+  - index: only on `[]any`; negatives counted from the end; out-of-range yields nothing
+  - star: array elements in order, or object values ordered by key ascending
+  - recursive: pre-order — a node's own matching member first, then children (object children in key order, array children in index order)
+- A no-match query returns an empty non-nil slice.
+
+**`jpath/extra_test.go`** — added coverage for root, member/index (incl. negative), star on arrays/objects/scalars, bracket keys with escapes, recursive descent (incl. pre-order self-before-children), multi-step queries, no-match results, and all the malformed-path cases. The pre-existing `TestMember` also passes.

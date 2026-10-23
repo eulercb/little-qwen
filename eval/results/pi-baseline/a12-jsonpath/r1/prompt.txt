@@ -1,0 +1,15 @@
+Implement a tiny path query language over decoded JSON (`any` values as produced by `encoding/json`: `map[string]any`, `[]any`, `string`, `float64`, `bool`, `nil`) in package `jpath`, file `jpath/jpath.go`.
+
+`func Query(doc any, path string) ([]any, error)`
+
+Path syntax (no whitespace allowed):
+- Starts with `$` (the document root). `$` alone returns `[doc]`.
+- `.name` — object member; `name` is `[A-Za-z_][A-Za-z0-9_]*`.
+- `["any key"]` — object member with an arbitrary key in double quotes; `\"` and `\\` escapes are supported inside.
+- `[N]` — array index, N may be negative (`-1` is the last element).
+- `[*]` or `.*` — all elements of an array (in order) or all values of an object (ordered by key ascending).
+- `..name` — recursive descent: `name` member of the current node and of every descendant, in pre-order (a node's own match first, then its children in order; object children ordered by key).
+
+Semantics: each step maps the current list of nodes to a new list. Steps that do not apply (missing key, index out of range, member access on a non-object, index on a non-array) produce nothing for that node — that is not an error. Malformed paths (e.g. `a.b`, `$.`, `$[`, `$[1`, `$["x]`, `$.1abc`, `$[abc]`) return a non-nil error and a nil result. A query that matches nothing returns an empty non-nil slice.
+
+Acceptance check: `go test ./...` must exit 0. Run it yourself before you finish.

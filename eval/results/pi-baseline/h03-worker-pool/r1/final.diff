@@ -1,0 +1,362 @@
+ pool/pool.go      |  91 +++++++++++++++++++----
+ pool/pool_test.go | 219 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 297 insertions(+), 13 deletions(-)
+
+diff --git a/pool/pool.go b/pool/pool.go
+index ba7e123..547b8e7 100644
+--- a/pool/pool.go
++++ b/pool/pool.go
+@@ -32,40 +32,105 @@ func Map[T, R any](ctx context.Context, in []T, workers int, fn func(context.Con
+ 	if workers < 1 {
+ 		workers = 1
+ 	}
++	n := len(in)
++	if workers > n {
++		workers = n
++	}
++	if n == 0 {
++		if err := ctx.Err(); err != nil {
++			return nil, err
++		}
++		return []R{}, nil
++	}
+ 	type result struct {
+ 		r   R
+ 		err error
+ 		i   int
++		ack chan struct{} // closed once the collector has recorded this result
+ 	}
+-	jobs := make(chan int)
+ 	results := make(chan result)
++	
++	// Workers claim the next input under mu. Once `stopped` is set under the
++	// same mutex (by the collector on first failure, or by the stopper on
++	// ctx cancellation), no worker ever claims a new input. After sending a
++	// result, a worker waits for the collector's ack before claiming its next
++	// input, so a failure or cancellation is always observed before any
++	// further input is handed out.
++	var (
++		mu      sync.Mutex
++		next    int
++		stopped bool
++	)
++	failed := make(chan struct{})  // closed when the first error is seen
++	allDone := make(chan struct{}) // closed when every worker has exited
++
+ 	var wg sync.WaitGroup
+ 	for w := 0; w < workers; w++ {
+ 		wg.Add(1)
+ 		go func() {
+ 			defer wg.Done()
+-			for i := range jobs {
++			for {
++				mu.Lock()
++				if stopped || next >= n || ctx.Err() != nil {
++					mu.Unlock()
++					return
++				}
++				i := next
++				next++
++				mu.Unlock()
++				ack := make(chan struct{})
+ 				r, err := fn(ctx, in[i])
+-				results <- result{r, err, i}
++				results <- result{r, err, i, ack}
++				<-ack
+ 			}
+ 		}()
+ 	}
++
++	// Collector: drains every result into the output slot so workers never
++	// block forever on `results <-`, remembers the lowest failing index, and
++	// sets stopped on the first failure so no new input is handed out.
++	outs := make([]R, n)
++	var minFail = -1
++	var failErr error
++	go func() {
++		defer close(allDone)
++		var failOnce sync.Once
++		for res := range results {
++			outs[res.i] = res.r
++			if res.err != nil {
++				if minFail == -1 || res.i < minFail {
++					minFail, failErr = res.i, res.err
++				}
++				mu.Lock()
++				stopped = true
++				mu.Unlock()
++				failOnce.Do(func() { close(failed) })
++			}
++			close(res.ack)
++		}
++	}()
++	// Stopper: stop handing out new work on cancellation or first failure.
+ 	go func() {
+-		for i := range in {
+-			jobs <- i
++		select {
++		case <-ctx.Done():
++		case <-failed:
++		case <-allDone:
+ 		}
+-		close(jobs)
++		mu.Lock()
++		stopped = true
++		mu.Unlock()
+ 	}()
+ 	go func() {
+ 		wg.Wait()
+ 		close(results)
+ 	}()
+-	var out []R
+-	for res := range results {
+-		if res.err != nil {
+-			return nil, &IndexError{Index: res.i, Err: res.err}
+-		}
+-		out = append(out, res.r)
++	<-allDone
++	if minFail != -1 {
++		return nil, &IndexError{Index: minFail, Err: failErr}
++	}
++	if err := ctx.Err(); err != nil {
++		return nil, err
+ 	}
+-	return out, nil
++	return outs, nil
+ }
++
+diff --git a/pool/pool_test.go b/pool/pool_test.go
+index 4217e40..f8e8461 100644
+--- a/pool/pool_test.go
++++ b/pool/pool_test.go
+@@ -2,7 +2,11 @@ package pool
+ 
+ import (
+ 	"context"
++	"errors"
++	"fmt"
++	"sync/atomic"
+ 	"testing"
++	"time"
+ )
+ 
+ func TestSquares(t *testing.T) {
+@@ -11,3 +15,218 @@ func TestSquares(t *testing.T) {
+ 		t.Fatal(out, err)
+ 	}
+ }
++
++func TestEmpty(t *testing.T) {
++	out, err := Map(context.Background(), []int{}, 4, func(_ context.Context, x int) (int, error) { t.Fatal("fn called on empty input"); return 0, nil })
++	if err != nil {
++		t.Fatal(err)
++	}
++	if out == nil || len(out) != 0 {
++		t.Fatalf("out = %#v, want empty slice", out)
++	}
++}
++
++// Results must be in input order even when later inputs finish before earlier
++// ones and concurrency is high.
++func TestResultOrder(t *testing.T) {
++	const n = 200
++	in := make([]int, n)
++	for i := range in {
++		in[i] = i
++	}
++	for workers := 1; workers <= 16; workers++ {
++		out, err := Map(context.Background(), in, workers, func(_ context.Context, x int) (int, error) {
++			// Deliberately invert finish order: low indices finish last.
++			time.Sleep(time.Duration(n-x) * time.Microsecond)
++			return x * 2, nil
++		})
++		if err != nil {
++			t.Fatalf("workers=%d: %v", workers, err)
++		}
++		if len(out) != n {
++			t.Fatalf("workers=%d: got %d results, want %d", workers, len(out), n)
++		}
++		for i, r := range out {
++			if r != in[i]*2 {
++				t.Fatalf("workers=%d: out[%d] = %d, want %d (results not in input order)", workers, i, r, in[i]*2)
++			}
++		}
++	}
++}
++
++// Stress: randomised latencies under the race detector.
++func TestResultOrderStress(t *testing.T) {
++	const n = 100
++	in := make([]int, n)
++	for i := range in {
++		in[i] = i
++	}
++	var lat [100]time.Duration
++	for i := range lat {
++		lat[i] = time.Duration((i*2654435761)%100) * time.Microsecond
++	}
++	for iter := 0; iter < 25; iter++ {
++		out, err := Map(context.Background(), in, 8, func(_ context.Context, x int) (int, error) {
++			time.Sleep(lat[x])
++			return x + 1000, nil
++		})
++		if err != nil {
++			t.Fatalf("iter %d: %v", iter, err)
++		}
++		for i, r := range out {
++			if r != in[i]+1000 {
++				t.Fatalf("iter %d: out[%d] = %d, want %d", iter, i, r, in[i]+1000)
++			}
++		}
++	}
++}
++
++var sentinelErr = errors.New("boom")
++
++// On failure Map must return an *IndexError for the LOWEST failing index,
++// not whichever error arrives first.
++func TestLowestFailingIndex(t *testing.T) {
++	// Fail on inputs 5 and 2; input 5 sleeps the least so its error would
++	// almost certainly arrive first if order weren't respected.
++	out, err := Map(context.Background(), []int{0, 1, 2, 3, 4, 5}, 6, func(_ context.Context, x int) (int, error) {
++		switch x {
++		case 2:
++			time.Sleep(20 * time.Millisecond)
++			return 0, sentinelErr
++		case 5:
++			return 0, sentinelErr
++		}
++		time.Sleep(time.Duration(50-x) * time.Millisecond)
++		return x * x, nil
++	})
++	if out != nil {
++		t.Fatalf("out = %#v, want nil on error", out)
++	}
++	var ie *IndexError
++	if !errors.As(err, &ie) {
++		t.Fatalf("err = %v, want *IndexError", err)
++	}
++	if ie.Index != 2 {
++		t.Fatalf("ie.Index = %d, want 2", ie.Index)
++	}
++	if !errors.Is(ie.Err, sentinelErr) {
++		t.Fatalf("ie.Err = %v, want sentinel", ie.Err)
++	}
++}
++
++// After a failure no further inputs may be handed to fn.
++func TestStopsAfterFailure(t *testing.T) {
++	var calls int64
++	_, err := Map(context.Background(), []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, 1, func(_ context.Context, x int) (int, error) {
++		atomic.AddInt64(&calls, 1)
++		if x == 2 {
++			return 0, sentinelErr
++		}
++		time.Sleep(5 * time.Millisecond)
++		return x, nil
++	})
++	if err == nil {
++		t.Fatal("expected error")
++	}
++	// Single worker, ordered claim: inputs 0,1,2 run; 3..9 must not.
++	if got := atomic.LoadInt64(&calls); got != 3 {
++		t.Fatalf("fn called %d times, want exactly 3", got)
++	}
++}
++
++// Cancellation: Map must return promptly with ctx.Err(), not hang, and must
++// stop handing out new inputs.
++func TestContextCancel(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	var calls int64
++	done := make(chan error, 1)
++	go func() {
++		_, err := Map(ctx, make([]int, 100), 8, func(ctx context.Context, x int) (int, error) {
++			atomic.AddInt64(&calls, 1)
++			// Well-behaved fn: obeys cancellation.
++			select {
++			case <-time.After(100 * time.Millisecond):
++				return x, nil
++			case <-ctx.Done():
++				return 0, nil
++			}
++		})
++		done <- err
++	}()
++	time.Sleep(10 * time.Millisecond)
++	cancel()
++	select {
++	case err := <-done:
++		if !errors.Is(err, context.Canceled) {
++			t.Fatalf("err = %v, want context.Canceled", err)
++		}
++	case <-time.After(5 * time.Second):
++		t.Fatal("Map hung after ctx cancellation")
++	}
++	if got := atomic.LoadInt64(&calls); got >= 100 {
++		t.Fatalf("fn called %d times after cancel, want far fewer", got)
++	}
++}
++
++// Already-cancelled ctx with no work: no hang, ctx.Err() surfaced.
++func TestContextAlreadyCancelled(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	_, err := Map(ctx, []int{1, 2, 3}, 2, func(ctx context.Context, x int) (int, error) {
++		t.Fatal("fn should not run for cancelled ctx")
++		return 0, nil
++	})
++	if !errors.Is(err, context.Canceled) {
++		t.Fatalf("err = %v, want context.Canceled", err)
++	}
++}
++
++// More workers than inputs must not leak or deadlock.
++func TestMoreWorkersThanInputs(t *testing.T) {
++	out, err := Map(context.Background(), []int{1, 2}, 10, func(_ context.Context, x int) (int, error) { return x * 10, nil })
++	if err != nil || len(out) != 2 || out[0] != 10 || out[1] != 20 {
++		t.Fatalf("out = %v, err = %v", out, err)
++	}
++}
++
++// workers < 1 means 1.
++func TestWorkersClamped(t *testing.T) {
++	out, err := Map(context.Background(), []int{3, 4, 5}, 0, func(_ context.Context, x int) (int, error) { return x + 1, nil })
++	if err != nil || len(out) != 3 || out[0] != 4 || out[1] != 5 || out[2] != 6 {
++		t.Fatalf("out = %v, err = %v", out, err)
++	}
++}
++
++// Cancellation wins over a failure that never happens: results that complete
++// before the cancel are discarded in favour of ctx.Err().
++func TestCancelNoFailure(t *testing.T) {
++	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
++	defer cancel()
++	out, err := Map(ctx, []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, 4, func(ctx context.Context, x int) (int, error) {
++		select {
++		case <-time.After(50 * time.Millisecond):
++			return x, nil
++		case <-ctx.Done():
++			return 0, nil
++		}
++	})
++	if !errors.Is(err, context.DeadlineExceeded) {
++		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
++	}
++	if out != nil {
++		t.Fatalf("out = %#v, want nil on error", out)
++	}
++}
++
++// Format check for IndexError.
++func TestIndexErrorFormat(t *testing.T) {
++	ie := &IndexError{Index: 3, Err: fmt.Errorf("kaput")}
++	want := "pool: input 3: kaput"
++	if got := ie.Error(); got != want {
++		t.Fatalf("Error() = %q, want %q", got, want)
++	}
++	if errors.Unwrap(ie) != ie.Err {
++		t.Fatal("Unwrap should return wrapped error")
++	}
++}

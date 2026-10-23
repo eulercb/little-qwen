@@ -1,0 +1,15 @@
+(node:22724) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All tests pass and `go vet` is clean. 
+
+Summary of bugs fixed in `ini/ini.go` (all in `Parse`), per the documented format:
+
+1. **Lines not trimmed** — `  [Server]` / `  # comment` lines weren't recognized; now `line` is trimmed before classification.
+2. **`#` comment lines ignored** — only `;` was checked; now both are skipped.
+3. **Section names not lower-cased** — now lower-cased (e.g. `[Server]` → `server`).
+4. **First `=` vs last** — `strings.LastIndex` split `url = http://x/?a=b` into the wrong key/value; now uses `strings.Index`.
+5. **Inline comments** — previously cut at any `;` (would break values containing `;` and ignore `#` comments). Now a comment only starts at whitespace followed by `;` or `#`, and only in *unquoted* values.
+6. **Quoted values re-trimmed** — `"  a  "` was being re-trimmed to `a`; inner whitespace is now kept exactly.
+7. **Repeated keys didn't overwrite** — now later assignments overwrite earlier values in the same section.
+
+Acceptance: `go test ./...` exits 0 (`ok  example.com/ini/ini`).

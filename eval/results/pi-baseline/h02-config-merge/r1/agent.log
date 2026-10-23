@@ -1,0 +1,17 @@
+(node:25871) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All done. `go test ./...` exits 0 (vet and gofmt also clean).
+
+Changes in `config/config.go`:
+
+1. **New fields** — `Config` gained `Timeout time.Duration` and `Tags []string`. `Defaults()` now sets `Timeout: 30s`; `Load` parses `APP_TIMEOUT` via `time.ParseDuration` and `APP_TAGS` as a comma-separated list (trimmed, empty items dropped, all-empty input → `nil`).
+2. **`Merge(base, override Config) Config`** — returns a new `Config` where each non-zero override field replaces base; `Tags` uses a non-nil check so an empty non-nil slice replaces base. It only assigns slice headers, never writes into either argument's backing array.
+3. **`Load` error collection** — invalid values for `APP_PORT`, `APP_DEBUG`, `APP_WORKERS` (and now `APP_TIMEOUT`) are all collected and returned via `errors.Join`, each error naming its variable; on any error the zero `Config` is returned.
+
+Tests added in `config/config_test.go` (existing two kept, with the defaults test extended):
+
+- `TestLoadTimeout`, `TestLoadTags` (trimming/dropping empties), `TestLoadTagsEmpty`
+- `TestLoadInvalidSingle`, `TestLoadInvalidAll` (multiple bad vars listed in one error; zero Config returned)
+- `TestMergeOverridesNonZero`, `TestMergeZeroOverrideKeepsBase`, `TestMergeEmptyTagsOverrideReplaces` (empty non-nil replaces), `TestMergeDoesNotModifyArguments`
+
+One note: a struct with a slice isn't comparable in Go, so the tests assert field-by-field rather than `c != (Config{})`.

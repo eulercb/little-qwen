@@ -1,0 +1,21 @@
+(node:23387) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Done. Everything is in place and verified:
+
+**`cmd/report/main.go`** (package `main`)
+- `run(args, in, out) error` + `main` that prints errors to stderr and exits 1.
+- **Flags**: `--by region|product` (default `region`, `--by=` form also accepted); `--top N` with N ≥ 1; unknown/invalid flags → error.
+- **CSV parsing**: header columns matched by name in any order, extra columns ignored. Missing required column → error naming each missing column. Bad `qty` (non-integer or negative) or `price` (non-numeric, >2 decimals, empty) → error with the 1-based file line number via `csv.Reader.FieldPos` (header = line 1); short rows are treated as bad values with the right line.
+- **Math in integer cents**: prices parsed strictly (at most 2 fractional digits) into cents; revenue = qty × cents, so no float drift.
+- **Output**: groups sorted by revenue desc, ties by name asc, one line each `<group>\t<qty>\t<rev>`; `--top N` limits printed groups only; final `TOTAL` line always computed over all rows, revenue with exactly 2 decimals.
+
+**`cmd/report/main_test.go`** — 16 tests covering the spec example, `--by product`, `--by=`/`--top=` forms, sorting with ties, `--top` not affecting TOTAL, reordered/extra columns, missing-column errors, bad qty/price with line numbers (including short rows and 3-decimal prices), price edge formats (`7`, `.5`, `0.05`), the 0.10×3 precision case, zero-qty groups, invalid flags, and empty/header-only input.
+
+**Acceptance check** (ran it):
+```
+$ go vet ./... && go test ./...
+ok  example.com/report/cmd/report
+exit=0
+```
+
+Also smoke-tested the built binary: the example prints exactly the expected three lines, and a bad qty prints `report: line 2: bad qty "-1": must be >= 0` to stderr with exit status 1.
