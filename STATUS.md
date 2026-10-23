@@ -9,7 +9,10 @@ and compensates for its weaknesses, then improve it with the Harness² method (P
 evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is the roadmap).
 Results summary for readers: README.md "Results so far". Full experiment records: docs/EXPERIMENTS.md.
 
-## ⏸ PAUSED (2026-10-23 03:31 UTC) on request; nothing is running, everything is committed
+## Running state (2026-10-23 19:55 UTC): queue RUNNING on tunnel nursing-seats-tab-pioneer
+
+If this session is gone, the queue died with it: re-run resume.sh with the current tunnel.
+History: paused 2026-10-23 03:31 on request.
 
 The queue was stopped mid-way through the L1 probe. The interrupted b05 run was discarded.
 On resume, the queue continues with the L1 probe's remaining tasks (b05, b06, h03); `qh eval` skips finished runs.
@@ -166,4 +169,6 @@ Then follow "Decisions waiting on those results" below as items finish.
   - docker-up.sh now removes stale pidfiles left by a restart (dockerd refused to start because the pidfile's pid
     now belonged to another process).
 - 2026-10-23 03:31 — PAUSED on request during the L1 probe (b05 run discarded). Resume with eval/runner/resume.sh.
+- 2026-10-23 19:55 — resumed on tunnel nursing-seats-tab-pioneer. Its first /health returned a Cloudflare 502;
+  it was up 20 s later.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
