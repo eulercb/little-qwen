@@ -1,0 +1,39 @@
+{
+  "task_id": "b01-expr-lang",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "a01df662dc3a",
+  "success": false,
+  "score": 0.9545454545454546,
+  "tests_passed": 21,
+  "tests_total": 22,
+  "outcome": {
+    "Status": "wall_clock",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 42,
+    "Compactions": 0,
+    "PromptTokens": 1671095,
+    "PrefillTokens": 68087,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 46734,
+    "ReasoningTokens": 26982,
+    "ToolCalls": 62,
+    "ToolErrors": 3,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 1,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F3": 1,
+      "F4": 1
+    },
+    "WallSeconds": 3618.314129391,
+    "Err": ""
+  },
+  "started": "2026-10-23T01:30:33Z",
+  "hidden_output": "=== RUN   TestNumbers\n--- PASS: TestNumbers (0.00s)\n=== RUN   TestPrecedence\n--- PASS: TestPrecedence (0.00s)\n=== RUN   TestOperators\n--- PASS: TestOperators (0.00s)\n=== RUN   TestShortCircuit\n--- PASS: TestShortCircuit (0.00s)\n=== RUN   TestTernary\n--- PASS: TestTernary (0.00s)\n=== RUN   TestVars\n--- PASS: TestVars (0.00s)\n=== RUN   TestDivisionByZero\n--- PASS: TestDivisionByZero (0.00s)\n=== RUN   TestUnknownVariable\n--- PASS: TestUnknownVariable (0.00s)\n=== RUN   TestNotFinite\n--- PASS: TestNotFinite (0.00s)\n=== RUN   TestBuiltins\n--- PASS: TestBuiltins (0.00s)\n=== RUN   TestCompileErrors\n--- PASS: TestCompileErrors (0.00s)\n=== RUN   TestRuntimeErrorsNotCompileErrors\n--- PASS: TestRuntimeErrorsNotCompileErrors (0.00s)\n=== RUN   TestProgramReuse\n--- PASS: TestProgramReuse (0.00s)\n=== RUN   TestErrorFormatting\n--- PASS: TestErrorFormatting (0.00s)\n=== RUN   TestExtraEdges\n    expr_test.go:289: Eval(\"!!0\", map[]) = 0, want 1\n--- FAIL: TestExtraEdges (0.00s)\n=== RUN   TestHiddenArithmetic\n--- PASS: TestHiddenArithmetic (0.00s)\n=== RUN   TestHiddenLogic\n--- PASS: TestHiddenLogic (0.00s)\n=== RUN   TestHiddenShortCircuit\n--- PASS: TestHiddenShortCircuit (0.00s)\n=== RUN   TestHiddenFunctions\n--- PASS: TestHiddenFunctions (0.00s)\n=== RUN   TestHiddenCompileErrors\n--- PASS: TestHiddenCompileErrors (0.00s)\n=== RUN   TestHiddenRuntimeErrors\n--- PASS: TestHiddenRuntimeErrors (0.00s)\n=== RUN   TestHiddenProgramReuseAndVars\n--- PASS: TestHiddenProgramReuseAndVars (0.00s)\nFAIL\nFAIL\texample.com/expr/expr\t0.003s",
+  "work": "/tmp/qh-runs/expL1-think-cap/b01-expr-lang-r1"
+}
