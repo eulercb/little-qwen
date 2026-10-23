@@ -28,9 +28,9 @@ Then follow "Decisions waiting on those results" below as items finish.
   (Cloudflare 530 "Origin DNS error"); paused again 14:25. Runs that failed only because of the outage (b04, b05)
   were discarded. All finished results are committed and pushed.
 - Remaining queue (`eval/queue.txt`, in order; `eval/queue.done` lists what finished):
-  1. little-coder baseline (running; a05 solved in 4.4 min).
-  2. pi baseline.
-  3. L1 think-cap probe (b01, b04, b05, b06, h03, a10).
+  1. L1 think-cap probe (b01, b04, b05, b06, h03, a10); running.
+  2. pi on Tier B.
+  3. little-coder on Tier B.
   4. Base rep 2 on h02/h04.
   5. C1 INV probe (`e2-review`).
   6. C1 DOM probe (`c1-dom`).
@@ -149,4 +149,9 @@ Then follow "Decisions waiting on those results" below as items finish.
 - 2026-10-22 22:02 — Tier-B baseline done: b01–b03 solved, b04 0.925, b05 and b06 failed on wall clock.
   - Both failures were runaway 16K-token thinking turns (b06 had 4 of them).
   - The L1 probe now includes b06.
+- 2026-10-23 00:22 — comparators on 7 Tier-A/held-out tasks:
+  - qh: 0.976 in 57.3 min.
+  - little-coder: 0.980 in 84.2 min (h03 hit the 45-min cap).
+  - vanilla pi: 0.996 in 54.9 min.
+  - About tied. Tier-B comparisons were queued to test whether qh's design pays off on long tasks.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
