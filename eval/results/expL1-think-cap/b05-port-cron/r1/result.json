@@ -1,0 +1,37 @@
+{
+  "task_id": "b05-port-cron",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "a01df662dc3a",
+  "success": true,
+  "score": 1,
+  "tests_passed": 9,
+  "tests_total": 9,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Ported reference/cron.py to Go package cron (cron/cron.go) with the exact API: Parse, (*Schedule).Next, and (*Schedule).String. It replicates all reference behaviour — field grammar (values, ranges, steps, */S, N/S, names, 7→Sunday), macros, the 5-field check, Vixie day-matching, the 5-year limit, the describe() run-length rendering, and byte-exact CronError text (including Python repr quoting). Verification: cron/cron_test.go contains hardcoded error/String/Next tests plus a golden test (cron/golden.json, 137 records generated from the Python reference) and a live cross-check against the Python CLI; I also ran two 300-case random differential comparisons (random expressions × 6 base times with offsets +00:00/-05:00/+05:30/+09:30/-08:00) against the Python reference with 0 mismatches. `go vet ./... \u0026\u0026 go test ./...` passes.",
+    "Turns": 30,
+    "Compactions": 0,
+    "PromptTokens": 911096,
+    "PrefillTokens": 39384,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 22869,
+    "ReasoningTokens": 7973,
+    "ToolCalls": 37,
+    "ToolErrors": 2,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F4": 1
+    },
+    "WallSeconds": 1982.054112089,
+    "Err": ""
+  },
+  "started": "2026-10-23T19:53:30Z",
+  "hidden_output": "--- PASS: TestGolden/30-55_*_3-19/1_5_* (0.00s)\n=== RUN   TestGolden/38-50/4_9-14/7_19-20_*_2\n--- PASS: TestGolden/38-50/4_9-14/7_19-20_*_2 (0.00s)\n=== RUN   TestGolden/*_5_*_1-5/4_2-5\n--- PASS: TestGolden/*_5_*_1-5/4_2-5 (0.00s)\n=== RUN   TestGolden/4-43/4_18-20_18_5_1\n--- PASS: TestGolden/4-43/4_18-20_18_5_1 (0.00s)\n=== RUN   TestGolden/38-47_3-14_10-23/7_9-12_0-3/1\n--- PASS: TestGolden/38-47_3-14_10-23/7_9-12_0-3/1 (0.00s)\n=== RUN   TestGolden/20-47/5_*_*_1-10_5\n--- PASS: TestGolden/20-47/5_*_*_1-10_5 (0.00s)\n=== RUN   TestGolden/17-58/3_15-20/2_12-14/6_2-11_5\n--- PASS: TestGolden/17-58/3_15-20/2_12-14/6_2-11_5 (0.00s)\n=== RUN   TestGolden/18-42/7_*_9-11_*_*\n--- PASS: TestGolden/18-42/7_*_9-11_*_* (0.00s)\n=== RUN   TestGolden/3-26/4_15-19_2-25/4_3-9_3-5\n--- PASS: TestGolden/3-26/4_15-19_2-25/4_3-9_3-5 (0.00s)\n=== RUN   TestGolden/1-7/4_0_3-8/2_2-11/3_2-5/5\n--- PASS: TestGolden/1-7/4_0_3-8/2_2-11/3_2-5/5 (0.00s)\n=== RUN   TestGolden/1_2_3_4_5\n--- PASS: TestGolden/1_2_3_4_5 (0.00s)\n=== RUN   TestGolden/1_2_3_4\n--- PASS: TestGolden/1_2_3_4 (0.00s)\n=== RUN   TestGolden/1_2_3_4_5_6\n--- PASS: TestGolden/1_2_3_4_5_6 (0.00s)\n=== RUN   TestGolden/1__2___3_4_5\n--- PASS: TestGolden/1__2___3_4_5 (0.00s)\n=== RUN   TestGolden/_1_2_3_4_5\n--- PASS: TestGolden/_1_2_3_4_5 (0.00s)\n=== RUN   TestGolden/0x5_*_*_*_*\n--- PASS: TestGolden/0x5_*_*_*_* (0.00s)\n=== RUN   TestGolden/__\n--- PASS: TestGolden/__ (0.00s)\n=== RUN   TestGolden/#00\n--- PASS: TestGolden/#00 (0.00s)\n=== RUN   TestGolden/@\n--- PASS: TestGolden/@ (0.00s)\n=== RUN   TestGolden/@yearly_\n--- PASS: TestGolden/@yearly_ (0.00s)\n=== RUN   TestGolden/0_0_1_1_*_@x\n--- PASS: TestGolden/0_0_1_1_*_@x (0.00s)\n--- PASS: TestGolden (0.01s)\n=== RUN   TestParseErrors\n--- PASS: TestParseErrors (0.00s)\n=== RUN   TestString\n--- PASS: TestString (0.00s)\n=== RUN   TestNextBasic\n--- PASS: TestNextBasic (0.00s)\n=== RUN   TestNextNoMatchError\n--- PASS: TestNextNoMatchError (0.00s)\n=== RUN   TestPythonReference\n--- PASS: TestPythonReference (0.16s)\n=== RUN   TestHiddenParseErrors\n--- PASS: TestHiddenParseErrors (0.00s)\n=== RUN   TestHiddenDescribe\n--- PASS: TestHiddenDescribe (0.00s)\n=== RUN   TestHiddenNext\n--- PASS: TestHiddenNext (0.00s)\nPASS\nok  \texample.com/cron/cron\t0.182s",
+  "work": "/tmp/qh-runs/expL1-think-cap/b05-port-cron-r1"
+}

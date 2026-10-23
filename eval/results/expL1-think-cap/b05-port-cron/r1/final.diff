@@ -1,0 +1,1524 @@
+ cron/cron.go      | 293 +++++++++++++++++
+ cron/cron_test.go | 262 +++++++++++++++
+ cron/golden.json  | 946 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 1501 insertions(+)
+
+diff --git a/cron/cron.go b/cron/cron.go
+new file mode 100644
+index 0000000..e19797a
+--- /dev/null
++++ b/cron/cron.go
+@@ -0,0 +1,293 @@
++// Package cron is a Go port of the reference cron-expression library
++// (reference/cron.py), with identical behaviour, including error messages.
++package cron
++
++import (
++	"fmt"
++	"strconv"
++	"strings"
++	"time"
++)
++
++// Schedule holds a parsed cron expression: five value sets plus the
++// Vixie-cron day-matching flags.
++type Schedule struct {
++	expr    string
++	minute  map[int]bool
++	hour    map[int]bool
++	dom     map[int]bool
++	month   map[int]bool
++	dow     map[int]bool
++	domStar bool
++	dowStar bool
++}
++
++type fieldSpec struct {
++	name string
++	lo   int
++	hi   int
++}
++
++var fieldSpecs = [5]fieldSpec{
++	{"minute", 0, 59},
++	{"hour", 0, 23},
++	{"day-of-month", 1, 31},
++	{"month", 1, 12},
++	{"day-of-week", 0, 6},
++}
++
++var monthNames = []string{"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"}
++
++var dayNames = []string{"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"}
++
++var macros = map[string]string{
++	"@yearly":   "0 0 1 1 *",
++	"@annually": "0 0 1 1 *",
++	"@monthly":  "0 0 1 * *",
++	"@weekly":   "0 0 * * 0",
++	"@daily":    "0 0 * * *",
++	"@midnight": "0 0 * * *",
++	"@hourly":   "0 * * * *",
++}
++
++// pyRepr formats s the way Python's repr() does for strings, so that
++// error messages match the reference exactly.
++func pyRepr(s string) string {
++	if strings.ContainsRune(s, '\'') && !strings.ContainsRune(s, '"') {
++		return `"` + strings.ReplaceAll(s, `\`, `\\`) + `"`
++	}
++	t := strings.ReplaceAll(s, `\`, `\\`)
++	t = strings.ReplaceAll(t, `'`, `\'`)
++	return "'" + t + "'"
++}
++
++func isDigits(s string) bool {
++	if s == "" {
++		return false
++	}
++	for i := 0; i < len(s); i++ {
++		if s[i] < '0' || s[i] > '9' {
++			return false
++		}
++	}
++	return true
++}
++
++// value resolves a single token against field idx, mirroring _value().
++func value(tok string, idx int) (int, error) {
++	fs := fieldSpecs[idx]
++	t := strings.ToUpper(tok)
++	switch idx {
++	case 3:
++		for i, m := range monthNames {
++			if t == m {
++				return i + 1, nil
++			}
++		}
++	case 4:
++		for i, d := range dayNames {
++			if t == d {
++				return i, nil
++			}
++		}
++	}
++	if !isDigits(tok) {
++		return 0, fmt.Errorf("%s: invalid value %s", fs.name, pyRepr(tok))
++	}
++	v, _ := strconv.Atoi(tok)
++	if idx == 4 && v == 7 {
++		v = 0
++	}
++	if v < fs.lo || v > fs.hi {
++		return 0, fmt.Errorf("%s: value %d out of range %d-%d", fs.name, v, fs.lo, fs.hi)
++	}
++	return v, nil
++}
++
++// parseField parses one comma-separated field, mirroring _field().
++func parseField(text string, idx int) (map[int]bool, error) {
++	fs := fieldSpecs[idx]
++	if text == "" {
++		return nil, fmt.Errorf("%s: empty field", fs.name)
++	}
++	values := make(map[int]bool)
++	for _, item := range strings.Split(text, ",") {
++		if item == "" {
++			return nil, fmt.Errorf("%s: empty item", fs.name)
++		}
++		step := 1
++		base := item
++		if i := strings.Index(item, "/"); i >= 0 {
++			s := item[i+1:]
++			if !isDigits(s) {
++				return nil, fmt.Errorf("%s: invalid step %s", fs.name, pyRepr(s))
++			}
++			st, _ := strconv.Atoi(s)
++			if st < 1 {
++				return nil, fmt.Errorf("%s: invalid step %s", fs.name, pyRepr(s))
++			}
++			step = st
++			base = item[:i]
++		}
++		var start, end int
++		switch {
++		case base == "*":
++			start, end = fs.lo, fs.hi
++		case strings.Contains(base, "-"):
++			k := strings.Index(base, "-")
++			a, b := base[:k], base[k+1:]
++			s, err := value(a, idx)
++			if err != nil {
++				return nil, err
++			}
++			e, err := value(b, idx)
++			if err != nil {
++				return nil, err
++			}
++			if s > e {
++				return nil, fmt.Errorf("%s: range %d-%d is reversed", fs.name, s, e)
++			}
++			start, end = s, e
++		default:
++			s, err := value(base, idx)
++			if err != nil {
++				return nil, err
++			}
++			start = s
++			end = start
++			if strings.Contains(item, "/") {
++				end = fs.hi
++			}
++		}
++		for v := start; v <= end; v += step {
++			values[v] = true
++		}
++	}
++	return values, nil
++}
++
++// Parse parses a cron expression, mirroring parse().
++func Parse(expr string) (*Schedule, error) {
++	original := expr
++	expr = strings.TrimSpace(expr)
++	if strings.HasPrefix(expr, "@") {
++		m, ok := macros[strings.ToLower(expr)]
++		if !ok {
++			return nil, fmt.Errorf("unknown macro %s", pyRepr(expr))
++		}
++		expr = m
++	}
++	parts := strings.Fields(expr)
++	if len(parts) != 5 {
++		return nil, fmt.Errorf("expected 5 fields, got %d", len(parts))
++	}
++	s := &Schedule{expr: strings.TrimSpace(original)}
++	fields := [5]map[int]bool{}
++	for i, p := range parts {
++		v, err := parseField(p, i)
++		if err != nil {
++			return nil, err
++		}
++		fields[i] = v
++	}
++	s.minute, s.hour, s.dom, s.month, s.dow = fields[0], fields[1], fields[2], fields[3], fields[4]
++	s.domStar = parts[2] == "*"
++	s.dowStar = parts[4] == "*"
++	return s, nil
++}
++
++// dayOK mirrors _day_ok(): Vixie cron day matching.
++func dayOK(s *Schedule, d time.Time) bool {
++	dow := int(d.Weekday()) // Sunday=0 .. Saturday=6, same as the reference
++	inDom := s.dom[d.Day()]
++	inDow := s.dow[dow]
++	if !s.domStar && !s.dowStar {
++		return inDom || inDow
++	}
++	return inDom && inDow
++}
++
++// Next returns the first matching time strictly after `after`, in
++// after's location, mirroring next_run().
++func (s *Schedule) Next(after time.Time) (time.Time, error) {
++	loc := after.Location()
++	t := time.Date(after.Year(), after.Month(), after.Day(), after.Hour(), after.Minute()+1, 0, 0, loc)
++	limit := after.Add(366 * 5 * 24 * time.Hour)
++	for !t.After(limit) {
++		if !s.month[int(t.Month())] {
++			y, m := t.Year(), int(t.Month())
++			if m == 12 {
++				y, m = y+1, 1
++			} else {
++				m++
++			}
++			t = time.Date(y, time.Month(m), 1, 0, 0, 0, 0, loc)
++			continue
++		}
++		if !dayOK(s, t) {
++			t = time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, loc)
++			continue
++		}
++		if !s.hour[t.Hour()] {
++			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour()+1, 0, 0, 0, loc)
++			continue
++		}
++		if !s.minute[t.Minute()] {
++			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute()+1, 0, 0, loc)
++			continue
++		}
++		return t, nil
++	}
++	return time.Time{}, fmt.Errorf("no match within 5 years for %s", pyRepr(s.expr))
++}
++
++// formatField renders one field's value set, mirroring _fmt().
++func formatField(values map[int]bool, idx int) string {
++	fs := fieldSpecs[idx]
++	size := fs.hi - fs.lo + 1
++	if len(values) == size {
++		return "*"
++	}
++	vs := make([]int, 0, len(values))
++	for v := range values {
++		vs = append(vs, v)
++	}
++	sortInts(vs)
++	var out []string
++	i := 0
++	for i < len(vs) {
++		j := i
++		for j+1 < len(vs) && vs[j+1] == vs[j]+1 {
++			j++
++		}
++		switch {
++		case j-i == 0:
++			out = append(out, strconv.Itoa(vs[i]))
++		case j-i == 1:
++			out = append(out, strconv.Itoa(vs[i]), strconv.Itoa(vs[i+1]))
++		default:
++			out = append(out, fmt.Sprintf("%d-%d", vs[i], vs[j]))
++		}
++		i = j + 1
++	}
++	return strings.Join(out, ",")
++}
++
++func sortInts(vs []int) {
++	for i := 1; i < len(vs); i++ {
++		for j := i; j > 0 && vs[j] < vs[j-1]; j-- {
++			vs[j], vs[j-1] = vs[j-1], vs[j]
++		}
++	}
++}
++
++// String renders the schedule, mirroring describe().
++func (s *Schedule) String() string {
++	return strings.Join([]string{
++		formatField(s.minute, 0),
++		formatField(s.hour, 1),
++		formatField(s.dom, 2),
++		formatField(s.month, 3),
++		formatField(s.dow, 4),
++	}, " ")
++}
+diff --git a/cron/cron_test.go b/cron/cron_test.go
+new file mode 100644
+index 0000000..8a1488f
+--- /dev/null
++++ b/cron/cron_test.go
+@@ -0,0 +1,262 @@
++package cron
++
++import (
++	"encoding/json"
++	"os"
++	"os/exec"
++	"strings"
++	"testing"
++	"time"
++)
++
++const isoLayout = "2006-01-02T15:04:05.999999999Z07:00"
++
++// refFormat renders t the way Python's datetime.isoformat() would.
++func refFormat(t time.Time) string {
++	s := t.Format(isoLayout)
++	if _, off := t.Zone(); off == 0 {
++		s = strings.TrimSuffix(s, "Z") + "+00:00"
++	}
++	return s
++}
++
++func parseRefTime(t *testing.T, s string) time.Time {
++	t.Helper()
++	if p, err := time.Parse(isoLayout, s); err == nil {
++		return p
++	}
++	p, err := time.Parse("2006-01-02T15:04:05.999999999", s)
++	if err != nil {
++		t.Fatalf("cannot parse %q: %v", s, err)
++	}
++	return p.UTC()
++}
++
++type goldenRec struct {
++	Expr       string `json:"expr"`
++	ParseError string `json:"parse_error"` // "" means null
++	Describe   string `json:"describe"`
++	N0         string `json:"n0"`
++	N1         string `json:"n1"`
++	N2         string `json:"n2"`
++}
++
++var goldenBases = []string{
++	"2020-01-15T00:00:00",
++	"2020-02-28T23:59:59",
++	"2019-12-31T23:59:59.999000+01:00",
++}
++
++func TestGolden(t *testing.T) {
++	data, err := os.ReadFile("golden.json")
++	if err != nil {
++		t.Fatalf("cannot read golden.json: %v", err)
++	}
++	var recs []goldenRec
++	if err := json.Unmarshal(data, &recs); err != nil {
++		t.Fatalf("cannot decode golden.json: %v", err)
++	}
++	if len(recs) == 0 {
++		t.Fatal("golden.json is empty")
++	}
++	for _, r := range recs {
++		t.Run(r.Expr, func(t *testing.T) {
++			s, err := Parse(r.Expr)
++			if r.ParseError != "" {
++				if err == nil {
++					t.Fatalf("Parse(%q) = %v, want error %q", r.Expr, s, r.ParseError)
++				}
++				if err.Error() != r.ParseError {
++					t.Fatalf("Parse(%q) error = %q, want %q", r.Expr, err, r.ParseError)
++				}
++				return
++			}
++			if err != nil {
++				t.Fatalf("Parse(%q) error: %v", r.Expr, err)
++			}
++			if got := s.String(); got != r.Describe {
++				t.Errorf("Parse(%q).String() = %q, want %q", r.Expr, got, r.Describe)
++			}
++			expectNexts := []string{r.N0, r.N1, r.N2}
++			for k, base := range goldenBases {
++				got, err := s.Next(parseRefTime(t, base))
++				want := expectNexts[k]
++				if strings.HasPrefix(want, "ERROR:") {
++					msg := strings.TrimPrefix(want, "ERROR:")
++					if err == nil {
++						t.Errorf("Next(%s) = %s, want error %q", base, got, msg)
++					} else if err.Error() != msg {
++						t.Errorf("Next(%s) error = %q, want %q", base, err, msg)
++					}
++					continue
++				}
++				if err != nil {
++					t.Errorf("Next(%s) error: %v (want %s)", base, err, want)
++					continue
++				}
++				if gotStr := refFormat(got); gotStr != want {
++					t.Errorf("Next(%s) = %s, want %s", base, gotStr, want)
++				}
++			}
++		})
++	}
++}
++
++func TestParseErrors(t *testing.T) {
++	cases := []struct {
++		expr string
++		err  string
++	}{
++		{"60 * * * *", "minute: value 60 out of range 0-59"},
++		{"* 24 * * *", "hour: value 24 out of range 0-23"},
++		{"* * 32 * *", "day-of-month: value 32 out of range 1-31"},
++		{"* * 0 * *", "day-of-month: value 0 out of range 1-31"},
++		{"* * * 0 *", "month: value 0 out of range 1-12"},
++		{"* * * 13 *", "month: value 13 out of range 1-12"},
++		{"* * * * 8", "day-of-week: value 8 out of range 0-6"},
++		{"a * * * *", "minute: invalid value 'a'"},
++		{"5-1 * * * *", "minute: range 5-1 is reversed"},
++		{"1,,2 * * * *", "minute: empty item"},
++		{"1, * * * *", "minute: empty item"},
++		{"1/ * * * *", "minute: invalid step ''"},
++		{"1/-1 * * * *", "minute: invalid step '-1'"},
++		{"1/0 * * * *", "minute: invalid step '0'"},
++		{"1,2 3 4", "expected 5 fields, got 3"},
++		{"1 2 3 4 5 6", "expected 5 fields, got 6"},
++		{"@nope", "unknown macro '@nope'"},
++		{"@", "unknown macro '@'"},
++		{"0 0 30 2 *", ""}, // parses fine; next_run fails later
++	}
++	for _, c := range cases {
++		_, err := Parse(c.expr)
++		if c.err == "" {
++			if err != nil {
++				t.Errorf("Parse(%q) error = %v, want nil", c.expr, err)
++			}
++			continue
++		}
++		if err == nil {
++			t.Errorf("Parse(%q) = nil error, want %q", c.expr, c.err)
++			continue
++		}
++		if err.Error() != c.err {
++			t.Errorf("Parse(%q) error = %q, want %q", c.expr, err, c.err)
++		}
++	}
++}
++
++func TestString(t *testing.T) {
++	cases := map[string]string{
++		"*/15 * * * *":     "0,15,30,45 * * * *",
++		"5-20/5 * * * *":   "5,10,15,20 * * * *",
++		"@weekly":          "0 0 * * 0",
++		"@DAILY":           "0 0 * * *",
++		"  5  4  *  * 1  ": "5 4 * * 1",
++		"1,2,3 * * * *":    "1-3 * * * *",
++		"1,2 * * * *":      "1,2 * * * *",
++		"1,3 * * * *":      "1,3 * * * *",
++		"0-59 * * * *":     "* * * * *",
++	}
++	for expr, want := range cases {
++		s, err := Parse(expr)
++		if err != nil {
++			t.Fatalf("Parse(%q) error: %v", expr, err)
++		}
++		if got := s.String(); got != want {
++			t.Errorf("Parse(%q).String() = %q, want %q", expr, got, want)
++		}
++	}
++}
++
++func TestNextBasic(t *testing.T) {
++	utc := time.UTC
++	cases := []struct {
++		expr  string
++		after time.Time
++		want  time.Time
++	}{
++		{"* * * * *", time.Date(2020, 1, 15, 0, 0, 0, 0, utc), time.Date(2020, 1, 15, 0, 1, 0, 0, utc)},
++		{"0 0 * * *", time.Date(2020, 1, 15, 0, 0, 0, 0, utc), time.Date(2020, 1, 16, 0, 0, 0, 0, utc)},
++		{"0 0 29 2 *", time.Date(2020, 1, 15, 0, 0, 0, 0, utc), time.Date(2020, 2, 29, 0, 0, 0, 0, utc)},
++		{"15 10 * * 1-5", time.Date(2020, 1, 15, 10, 15, 0, 0, utc), time.Date(2020, 1, 16, 10, 15, 0, 0, utc)}, // Wed then Thu
++		{"0 9 * * MON,FRI", time.Date(2020, 1, 15, 12, 0, 0, 0, utc), time.Date(2020, 1, 17, 9, 0, 0, 0, utc)},  // Fri
++	}
++	for _, c := range cases {
++		s, err := Parse(c.expr)
++		if err != nil {
++			t.Fatalf("Parse(%q) error: %v", c.expr, err)
++		}
++		got, err := s.Next(c.after)
++		if err != nil {
++			t.Fatalf("Next(%s) error: %v", c.after, err)
++		}
++		if !got.Equal(c.want) || got.Location() != c.after.Location() {
++			t.Errorf("Parse(%q).Next(%s) = %s, want %s", c.expr, c.after, got, c.want)
++		}
++	}
++}
++
++func TestNextNoMatchError(t *testing.T) {
++	s, err := Parse("0 0 30 2 *")
++	if err != nil {
++		t.Fatal(err)
++	}
++	_, err = s.Next(time.Date(2020, 1, 15, 0, 0, 0, 0, time.UTC))
++	if err == nil || err.Error() != "no match within 5 years for '0 0 30 2 *'" {
++		t.Fatalf("want no-match error, got %v", err)
++	}
++}
++
++// TestPythonReference cross-checks Parse/Next against the reference
++// implementation via its CLI, when python3 is available.
++func TestPythonReference(t *testing.T) {
++	if _, err := exec.LookPath("python3"); err != nil {
++		t.Skip("python3 not available")
++	}
++	ref := ".." + string(os.PathSeparator) + "reference" + string(os.PathSeparator) + "cron.py"
++	exprs := []string{
++		"*/15 * * * *", "0 0 1 1 *", "@weekly", "5 4 * * 1-5",
++		"30 4 1,15 * 0", "0-59/2 0-23/3 1-31/5 1-12/2 0-6/3",
++		"1 2 3 4 5/2", "0 0 31 4,6 *", "15 10 * FEB mon",
++	}
++	base := parseRefTime(t, "2020-01-15T00:00:00")
++	for _, expr := range exprs {
++		cmd := exec.Command("python3", ref, expr, "2020-01-15T00:00:00", "3")
++		out, err := cmd.Output()
++		nonZero := err != nil
++		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
++		s, perr := Parse(expr)
++		if perr != nil {
++			if !nonZero {
++				t.Fatalf("reference accepts %q but Parse errored: %v", expr, perr)
++			}
++			want := "error: " + perr.Error()
++			if string(out) != want {
++				t.Errorf("reference output for %q = %q, want %q", expr, out, want)
++			}
++			continue
++		}
++		if len(lines) < 1 || lines[0] != s.String() {
++			t.Errorf("describe(%q) = %q, reference %q", expr, s.String(), lines)
++			continue
++		}
++		tm := base
++		for k := 1; k < len(lines) && k <= 4; k++ {
++			t2, nerr := s.Next(tm)
++			if nerr != nil {
++				want := "error: " + nerr.Error()
++				if lines[k] != want {
++					t.Errorf("Next(%s) error = %q, reference %q", tm, nerr, lines[k])
++				}
++				if !nonZero {
++					t.Errorf("reference exited 0 for %q but Next errored", expr)
++				}
++				break
++			}
++			if lines[k] != refFormat(t2) {
++				t.Errorf("Next(%s) = %s, reference %s", tm, refFormat(t2), lines[k])
++			}
++			tm = t2
++		}
++	}
++}
+diff --git a/cron/golden.json b/cron/golden.json
+new file mode 100644
+index 0000000..9e602fa
+--- /dev/null
++++ b/cron/golden.json
+@@ -0,0 +1,946 @@
++[
++ {
++  "expr": "* * * * *",
++  "parse_error": null,
++  "describe": "* * * * *",
++  "n0": "2020-01-15T00:01:00+00:00",
++  "n1": "2020-02-29T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "0 0 * * *",
++  "parse_error": null,
++  "describe": "0 0 * * *",
++  "n0": "2020-01-16T00:00:00+00:00",
++  "n1": "2020-02-29T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "@daily",
++  "parse_error": null,
++  "describe": "0 0 * * *",
++  "n0": "2020-01-16T00:00:00+00:00",
++  "n1": "2020-02-29T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "@DAILY",
++  "parse_error": null,
++  "describe": "0 0 * * *",
++  "n0": "2020-01-16T00:00:00+00:00",
++  "n1": "2020-02-29T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "  @Daily ",
++  "parse_error": null,
++  "describe": "0 0 * * *",
++  "n0": "2020-01-16T00:00:00+00:00",
++  "n1": "2020-02-29T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "@hourly",
++  "parse_error": null,
++  "describe": "0 * * * *",
++  "n0": "2020-01-15T01:00:00+00:00",
++  "n1": "2020-02-29T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "@weekly",
++  "parse_error": null,
++  "describe": "0 0 * * 0",
++  "n0": "2020-01-19T00:00:00+00:00",
++  "n1": "2020-03-01T00:00:00+00:00",
++  "n2": "2020-01-05T00:00:00+01:00"
++ },
++ {
++  "expr": "@monthly",
++  "parse_error": null,
++  "describe": "0 0 1 * *",
++  "n0": "2020-02-01T00:00:00+00:00",
++  "n1": "2020-03-01T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "@yearly",
++  "parse_error": null,
++  "describe": "0 0 1 1 *",
++  "n0": "2021-01-01T00:00:00+00:00",
++  "n1": "2021-01-01T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "@annually",
++  "parse_error": null,
++  "describe": "0 0 1 1 *",
++  "n0": "2021-01-01T00:00:00+00:00",
++  "n1": "2021-01-01T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "@midnight",
++  "parse_error": null,
++  "describe": "0 0 * * *",
++  "n0": "2020-01-16T00:00:00+00:00",
++  "n1": "2020-02-29T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "@everyDay",
++  "parse_error": "unknown macro '@everyDay'"
++ },
++ {
++  "expr": "5 4 * * *",
++  "parse_error": null,
++  "describe": "5 4 * * *",
++  "n0": "2020-01-15T04:05:00+00:00",
++  "n1": "2020-02-29T04:05:00+00:00",
++  "n2": "2020-01-01T04:05:00+01:00"
++ },
++ {
++  "expr": "59 23 31 12 5",
++  "parse_error": null,
++  "describe": "59 23 31 12 5",
++  "n0": "2020-12-04T23:59:00+00:00",
++  "n1": "2020-12-04T23:59:00+00:00",
++  "n2": "2020-12-04T23:59:00+01:00"
++ },
++ {
++  "expr": "*/15 * * * *",
++  "parse_error": null,
++  "describe": "0,15,30,45 * * * *",
++  "n0": "2020-01-15T00:15:00+00:00",
++  "n1": "2020-02-29T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "0-10/3 * * * *",
++  "parse_error": null,
++  "describe": "0,3,6,9 * * * *",
++  "n0": "2020-01-15T00:03:00+00:00",
++  "n1": "2020-02-29T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "5/15 * * * *",
++  "parse_error": null,
++  "describe": "5,20,35,50 * * * *",
++  "n0": "2020-01-15T00:05:00+00:00",
++  "n1": "2020-02-29T00:05:00+00:00",
++  "n2": "2020-01-01T00:05:00+01:00"
++ },
++ {
++  "expr": "1,2,3 4,5 6,7,8 9,10 1,2",
++  "parse_error": null,
++  "describe": "1-3 4,5 6-8 9,10 1,2",
++  "n0": "2020-09-01T04:01:00+00:00",
++  "n1": "2020-09-01T04:01:00+00:00",
++  "n2": "2020-09-01T04:01:00+01:00"
++ },
++ {
++  "expr": "JAN,JUL * * * MON",
++  "parse_error": "minute: invalid value 'JAN'"
++ },
++ {
++  "expr": "1 2 3 4 5/2",
++  "parse_error": null,
++  "describe": "1 2 3 4 5",
++  "n0": "2020-04-03T02:01:00+00:00",
++  "n1": "2020-04-03T02:01:00+00:00",
++  "n2": "2020-04-03T02:01:00+01:00"
++ },
++ {
++  "expr": "0 0 1 1 *",
++  "parse_error": null,
++  "describe": "0 0 1 1 *",
++  "n0": "2021-01-01T00:00:00+00:00",
++  "n1": "2021-01-01T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "15 10 * * 1-5",
++  "parse_error": null,
++  "describe": "15 10 * * 1-5",
++  "n0": "2020-01-15T10:15:00+00:00",
++  "n1": "2020-03-02T10:15:00+00:00",
++  "n2": "2020-01-01T10:15:00+01:00"
++ },
++ {
++  "expr": "0 9 * * MON,FRI",
++  "parse_error": null,
++  "describe": "0 9 * * 1,5",
++  "n0": "2020-01-17T09:00:00+00:00",
++  "n1": "2020-03-02T09:00:00+00:00",
++  "n2": "2020-01-03T09:00:00+01:00"
++ },
++ {
++  "expr": "*/2 */3 1-15/2 */4 0-3",
++  "parse_error": null,
++  "describe": "0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58 0,3,6,9,12,15,18,21 1,3,5,7,9,11,13,15 1,5,9 0-3",
++  "n0": "2020-01-15T00:02:00+00:00",
++  "n1": "2020-05-01T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "0 0 30 2 *",
++  "parse_error": null,
++  "describe": "0 0 30 2 *",
++  "n0": "ERROR:no match within 5 years for '0 0 30 2 *'",
++  "n1": "ERROR:no match within 5 years for '0 0 30 2 *'",
++  "n2": "ERROR:no match within 5 years for '0 0 30 2 *'"
++ },
++ {
++  "expr": "0 0 29 2 *",
++  "parse_error": null,
++  "describe": "0 0 29 2 *",
++  "n0": "2020-02-29T00:00:00+00:00",
++  "n1": "2020-02-29T00:00:00+00:00",
++  "n2": "2020-02-29T00:00:00+01:00"
++ },
++ {
++  "expr": "0 0 1-3 * SUN",
++  "parse_error": null,
++  "describe": "0 0 1-3 * 0",
++  "n0": "2020-01-19T00:00:00+00:00",
++  "n1": "2020-03-01T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "30 4 1,15 * 0",
++  "parse_error": null,
++  "describe": "30 4 1,15 * 0",
++  "n0": "2020-01-15T04:30:00+00:00",
++  "n1": "2020-03-01T04:30:00+00:00",
++  "n2": "2020-01-01T04:30:00+01:00"
++ },
++ {
++  "expr": "0-59/2 0-23/3 1-31/5 1-12/2 0-6/3",
++  "parse_error": null,
++  "describe": "0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58 0,3,6,9,12,15,18,21 1,6,11,16,21,26,31 1,3,5,7,9,11 0,3,6",
++  "n0": "2020-01-15T00:02:00+00:00",
++  "n1": "2020-03-01T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "0 0 * * 7",
++  "parse_error": null,
++  "describe": "0 0 * * 0",
++  "n0": "2020-01-19T00:00:00+00:00",
++  "n1": "2020-03-01T00:00:00+00:00",
++  "n2": "2020-01-05T00:00:00+01:00"
++ },
++ {
++  "expr": "0 0 1 jan *",
++  "parse_error": null,
++  "describe": "0 0 1 1 *",
++  "n0": "2021-01-01T00:00:00+00:00",
++  "n1": "2021-01-01T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "5-1 * * * *",
++  "parse_error": "minute: range 5-1 is reversed"
++ },
++ {
++  "expr": "60 * * * *",
++  "parse_error": "minute: value 60 out of range 0-59"
++ },
++ {
++  "expr": "* 24 * * *",
++  "parse_error": "hour: value 24 out of range 0-23"
++ },
++ {
++  "expr": "* * 0 * *",
++  "parse_error": "day-of-month: value 0 out of range 1-31"
++ },
++ {
++  "expr": "* * 32 * *",
++  "parse_error": "day-of-month: value 32 out of range 1-31"
++ },
++ {
++  "expr": "* * * 0 *",
++  "parse_error": "month: value 0 out of range 1-12"
++ },
++ {
++  "expr": "* * * 13 *",
++  "parse_error": "month: value 13 out of range 1-12"
++ },
++ {
++  "expr": "* * * * 8",
++  "parse_error": "day-of-week: value 8 out of range 0-6"
++ },
++ {
++  "expr": "* * * * 7",
++  "parse_error": null,
++  "describe": "* * * * 0",
++  "n0": "2020-01-19T00:00:00+00:00",
++  "n1": "2020-03-01T00:00:00+00:00",
++  "n2": "2020-01-05T00:00:00+01:00"
++ },
++ {
++  "expr": "1,,2 * * * *",
++  "parse_error": "minute: empty item"
++ },
++ {
++  "expr": "1, * * * *",
++  "parse_error": "minute: empty item"
++ },
++ {
++  "expr": ", * * * *",
++  "parse_error": "minute: empty item"
++ },
++ {
++  "expr": "1/ * * * *",
++  "parse_error": "minute: invalid step ''"
++ },
++ {
++  "expr": "1/-1 * * * *",
++  "parse_error": "minute: invalid step '-1'"
++ },
++ {
++  "expr": "1/0 * * * *",
++  "parse_error": "minute: invalid step '0'"
++ },
++ {
++  "expr": "1/a * * * *",
++  "parse_error": "minute: invalid step 'a'"
++ },
++ {
++  "expr": "1/2/3 * * * *",
++  "parse_error": "minute: invalid step '2/3'"
++ },
++ {
++  "expr": "*/* * * * *",
++  "parse_error": "minute: invalid step '*'"
++ },
++ {
++  "expr": "a * * * *",
++  "parse_error": "minute: invalid value 'a'"
++ },
++ {
++  "expr": "1.5 * * * *",
++  "parse_error": "minute: invalid value '1.5'"
++ },
++ {
++  "expr": "-1 * * * *",
++  "parse_error": "minute: invalid value ''"
++ },
++ {
++  "expr": "1- * * * *",
++  "parse_error": "minute: invalid value ''"
++ },
++ {
++  "expr": "1-2-3 * * * *",
++  "parse_error": "minute: invalid value '2-3'"
++ },
++ {
++  "expr": "1--2 * * * *",
++  "parse_error": "minute: invalid value '-2'"
++ },
++ {
++  "expr": "JAN * * * *",
++  "parse_error": "minute: invalid value 'JAN'"
++ },
++ {
++  "expr": "FOO * * * *",
++  "parse_error": "minute: invalid value 'FOO'"
++ },
++ {
++  "expr": "jan-mar * * *",
++  "parse_error": "expected 5 fields, got 4"
++ },
++ {
++  "expr": "DEC * * * *",
++  "parse_error": "minute: invalid value 'DEC'"
++ },
++ {
++  "expr": "SAT * * * *",
++  "parse_error": "minute: invalid value 'SAT'"
++ },
++ {
++  "expr": "sun * * * *",
++  "parse_error": "minute: invalid value 'sun'"
++ },
++ {
++  "expr": "0 0 31 4,6 *",
++  "parse_error": null,
++  "describe": "0 0 31 4,6 *",
++  "n0": "ERROR:no match within 5 years for '0 0 31 4,6 *'",
++  "n1": "ERROR:no match within 5 years for '0 0 31 4,6 *'",
++  "n2": "ERROR:no match within 5 years for '0 0 31 4,6 *'"
++ },
++ {
++  "expr": "15 10 * FEB mon",
++  "parse_error": null,
++  "describe": "15 10 * 2 1",
++  "n0": "2020-02-03T10:15:00+00:00",
++  "n1": "2021-02-01T10:15:00+00:00",
++  "n2": "2020-02-03T10:15:00+01:00"
++ },
++ {
++  "expr": "* * 1-3 1-12 *",
++  "parse_error": null,
++  "describe": "* * 1-3 * *",
++  "n0": "2020-02-01T00:00:00+00:00",
++  "n1": "2020-03-01T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "* * * 1-12 0-6",
++  "parse_error": null,
++  "describe": "* * * * *",
++  "n0": "2020-01-15T00:01:00+00:00",
++  "n1": "2020-02-29T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "5-20/4 8-12 1,15,20 JAN,DEC 0,3,6",
++  "parse_error": null,
++  "describe": "5,9,13,17 8-12 1,15,20 1,12 0,3,6",
++  "n0": "2020-01-15T08:05:00+00:00",
++  "n1": "2020-12-01T08:05:00+00:00",
++  "n2": "2020-01-01T08:05:00+01:00"
++ },
++ {
++  "expr": "* 4-7 * * *",
++  "parse_error": null,
++  "describe": "* 4-7 * * *",
++  "n0": "2020-01-15T04:00:00+00:00",
++  "n1": "2020-02-29T04:00:00+00:00",
++  "n2": "2020-01-01T04:00:00+01:00"
++ },
++ {
++  "expr": "38 * 8-15/5 * 1-2",
++  "parse_error": null,
++  "describe": "38 * 8,13 * 1,2",
++  "n0": "2020-01-20T00:38:00+00:00",
++  "n1": "2020-03-02T00:38:00+00:00",
++  "n2": "2020-01-06T00:38:00+01:00"
++ },
++ {
++  "expr": "6 * 12-28 1-8 *",
++  "parse_error": null,
++  "describe": "6 * 12-28 1-8 *",
++  "n0": "2020-01-15T00:06:00+00:00",
++  "n1": "2020-03-12T00:06:00+00:00",
++  "n2": "2020-01-12T00:06:00+01:00"
++ },
++ {
++  "expr": "40-53 6-18 * 4 *",
++  "parse_error": null,
++  "describe": "40-53 6-18 * 4 *",
++  "n0": "2020-04-01T06:40:00+00:00",
++  "n1": "2020-04-01T06:40:00+00:00",
++  "n2": "2020-04-01T06:40:00+01:00"
++ },
++ {
++  "expr": "40-53/6 21 23-30 * 1",
++  "parse_error": null,
++  "describe": "40,46,52 21 23-30 * 1",
++  "n0": "2020-01-20T21:40:00+00:00",
++  "n1": "2020-02-29T21:40:00+00:00",
++  "n2": "2020-01-06T21:40:00+01:00"
++ },
++ {
++  "expr": "17 1 26 5-7 *",
++  "parse_error": null,
++  "describe": "17 1 26 5-7 *",
++  "n0": "2020-05-26T01:17:00+00:00",
++  "n1": "2020-05-26T01:17:00+00:00",
++  "n2": "2020-05-26T01:17:00+01:00"
++ },
++ {
++  "expr": "13-41 12-20/8 8 10-12 3-4/6",
++  "parse_error": null,
++  "describe": "13-41 12,20 8 10-12 3",
++  "n0": "2020-10-07T12:13:00+00:00",
++  "n1": "2020-10-07T12:13:00+00:00",
++  "n2": "2020-10-07T12:13:00+01:00"
++ },
++ {
++  "expr": "31 * 26 2-10/7 3-4/5",
++  "parse_error": null,
++  "describe": "31 * 26 2,9 3",
++  "n0": "2020-02-05T00:31:00+00:00",
++  "n1": "2020-09-02T00:31:00+00:00",
++  "n2": "2020-02-05T00:31:00+01:00"
++ },
++ {
++  "expr": "* * 21-25 2-5 1-3/1",
++  "parse_error": null,
++  "describe": "* * 21-25 2-5 1-3",
++  "n0": "2020-02-03T00:00:00+00:00",
++  "n1": "2020-03-02T00:00:00+00:00",
++  "n2": "2020-02-03T00:00:00+01:00"
++ },
++ {
++  "expr": "32-48 20 21-27 3 *",
++  "parse_error": null,
++  "describe": "32-48 20 21-27 3 *",
++  "n0": "2020-03-21T20:32:00+00:00",
++  "n1": "2020-03-21T20:32:00+00:00",
++  "n2": "2020-03-21T20:32:00+01:00"
++ },
++ {
++  "expr": "1-7/6 1-7 31 * *",
++  "parse_error": null,
++  "describe": "1,7 1-7 31 * *",
++  "n0": "2020-01-31T01:01:00+00:00",
++  "n1": "2020-03-31T01:01:00+00:00",
++  "n2": "2020-01-31T01:01:00+01:00"
++ },
++ {
++  "expr": "30 19 7-31/4 7-11 3-4",
++  "parse_error": null,
++  "describe": "30 19 7,11,15,19,23,27,31 7-11 3,4",
++  "n0": "2020-07-01T19:30:00+00:00",
++  "n1": "2020-07-01T19:30:00+00:00",
++  "n2": "2020-07-01T19:30:00+01:00"
++ },
++ {
++  "expr": "7-15/4 * 1 * *",
++  "parse_error": null,
++  "describe": "7,11,15 * 1 * *",
++  "n0": "2020-02-01T00:07:00+00:00",
++  "n1": "2020-03-01T00:07:00+00:00",
++  "n2": "2020-01-01T00:07:00+01:00"
++ },
++ {
++  "expr": "* * 16-22 12 1-3/7",
++  "parse_error": null,
++  "describe": "* * 16-22 12 1",
++  "n0": "2020-12-07T00:00:00+00:00",
++  "n1": "2020-12-07T00:00:00+00:00",
++  "n2": "2020-12-07T00:00:00+01:00"
++ },
++ {
++  "expr": "27 13-14 * * 0-6",
++  "parse_error": null,
++  "describe": "27 13,14 * * *",
++  "n0": "2020-01-15T13:27:00+00:00",
++  "n1": "2020-02-29T13:27:00+00:00",
++  "n2": "2020-01-01T13:27:00+01:00"
++ },
++ {
++  "expr": "28 8 8-28/2 2-9/1 *",
++  "parse_error": null,
++  "describe": "28 8 8,10,12,14,16,18,20,22,24,26,28 2-9 *",
++  "n0": "2020-02-08T08:28:00+00:00",
++  "n1": "2020-03-08T08:28:00+00:00",
++  "n2": "2020-02-08T08:28:00+01:00"
++ },
++ {
++  "expr": "30 5 1-13/5 5-7/8 1",
++  "parse_error": null,
++  "describe": "30 5 1,6,11 5 1",
++  "n0": "2020-05-01T05:30:00+00:00",
++  "n1": "2020-05-01T05:30:00+00:00",
++  "n2": "2020-05-01T05:30:00+01:00"
++ },
++ {
++  "expr": "* * * 9-12/3 *",
++  "parse_error": null,
++  "describe": "* * * 9,12 *",
++  "n0": "2020-09-01T00:00:00+00:00",
++  "n1": "2020-09-01T00:00:00+00:00",
++  "n2": "2020-09-01T00:00:00+01:00"
++ },
++ {
++  "expr": "4 18 2 * 1-2",
++  "parse_error": null,
++  "describe": "4 18 2 * 1,2",
++  "n0": "2020-01-20T18:04:00+00:00",
++  "n1": "2020-03-02T18:04:00+00:00",
++  "n2": "2020-01-02T18:04:00+01:00"
++ },
++ {
++  "expr": "15-16 4-21/5 11-30/2 * *",
++  "parse_error": null,
++  "describe": "15,16 4,9,14,19 11,13,15,17,19,21,23,25,27,29 * *",
++  "n0": "2020-01-15T04:15:00+00:00",
++  "n1": "2020-02-29T04:15:00+00:00",
++  "n2": "2020-01-11T04:15:00+01:00"
++ },
++ {
++  "expr": "8 2-7 6-10 5-9/1 0-5",
++  "parse_error": null,
++  "describe": "8 2-7 6-10 5-9 0-5",
++  "n0": "2020-05-01T02:08:00+00:00",
++  "n1": "2020-05-01T02:08:00+00:00",
++  "n2": "2020-05-01T02:08:00+01:00"
++ },
++ {
++  "expr": "56 * 20 4 3-4",
++  "parse_error": null,
++  "describe": "56 * 20 4 3,4",
++  "n0": "2020-04-01T00:56:00+00:00",
++  "n1": "2020-04-01T00:56:00+00:00",
++  "n2": "2020-04-01T00:56:00+01:00"
++ },
++ {
++  "expr": "57-58 * 9-27/1 * 1-5",
++  "parse_error": null,
++  "describe": "57,58 * 9-27 * 1-5",
++  "n0": "2020-01-15T00:57:00+00:00",
++  "n1": "2020-03-02T00:57:00+00:00",
++  "n2": "2020-01-01T00:57:00+01:00"
++ },
++ {
++  "expr": "35-45/7 * 27 9-10 0",
++  "parse_error": null,
++  "describe": "35,42 * 27 9,10 0",
++  "n0": "2020-09-06T00:35:00+00:00",
++  "n1": "2020-09-06T00:35:00+00:00",
++  "n2": "2020-09-06T00:35:00+01:00"
++ },
++ {
++  "expr": "23-57 * 12 3-10/4 3",
++  "parse_error": null,
++  "describe": "23-57 * 12 3,7 3",
++  "n0": "2020-03-04T00:23:00+00:00",
++  "n1": "2020-03-04T00:23:00+00:00",
++  "n2": "2020-03-04T00:23:00+01:00"
++ },
++ {
++  "expr": "* 13-21 26 * 1-6/8",
++  "parse_error": null,
++  "describe": "* 13-21 26 * 1",
++  "n0": "2020-01-20T13:00:00+00:00",
++  "n1": "2020-03-02T13:00:00+00:00",
++  "n2": "2020-01-06T13:00:00+01:00"
++ },
++ {
++  "expr": "19-52 21 9 * 4-5/6",
++  "parse_error": null,
++  "describe": "19-52 21 9 * 4",
++  "n0": "2020-01-16T21:19:00+00:00",
++  "n1": "2020-03-05T21:19:00+00:00",
++  "n2": "2020-01-02T21:19:00+01:00"
++ },
++ {
++  "expr": "* 5-18 2-4 6-12/7 *",
++  "parse_error": null,
++  "describe": "* 5-18 2-4 6 *",
++  "n0": "2020-06-02T05:00:00+00:00",
++  "n1": "2020-06-02T05:00:00+00:00",
++  "n2": "2020-06-02T05:00:00+01:00"
++ },
++ {
++  "expr": "45 0-16/4 3-14 6-10 *",
++  "parse_error": null,
++  "describe": "45 0,4,8,12,16 3-14 6-10 *",
++  "n0": "2020-06-03T00:45:00+00:00",
++  "n1": "2020-06-03T00:45:00+00:00",
++  "n2": "2020-06-03T00:45:00+01:00"
++ },
++ {
++  "expr": "26-42 12-22 5-18 7 2",
++  "parse_error": null,
++  "describe": "26-42 12-22 5-18 7 2",
++  "n0": "2020-07-05T12:26:00+00:00",
++  "n1": "2020-07-05T12:26:00+00:00",
++  "n2": "2020-07-05T12:26:00+01:00"
++ },
++ {
++  "expr": "35-53/1 6-9 19-26/6 8-12/4 5-6/3",
++  "parse_error": null,
++  "describe": "35-53 6-9 19,25 8,12 5",
++  "n0": "2020-08-07T06:35:00+00:00",
++  "n1": "2020-08-07T06:35:00+00:00",
++  "n2": "2020-08-07T06:35:00+01:00"
++ },
++ {
++  "expr": "* 2-7 8-26 1 6",
++  "parse_error": null,
++  "describe": "* 2-7 8-26 1 6",
++  "n0": "2020-01-15T02:00:00+00:00",
++  "n1": "2021-01-02T02:00:00+00:00",
++  "n2": "2020-01-04T02:00:00+01:00"
++ },
++ {
++  "expr": "* 15 5-8/1 * 4",
++  "parse_error": null,
++  "describe": "* 15 5-8 * 4",
++  "n0": "2020-01-16T15:00:00+00:00",
++  "n1": "2020-03-05T15:00:00+00:00",
++  "n2": "2020-01-02T15:00:00+01:00"
++ },
++ {
++  "expr": "3-35/4 * 17-22/6 9-10/7 1-5/8",
++  "parse_error": null,
++  "describe": "3,7,11,15,19,23,27,31,35 * 17 9 1",
++  "n0": "2020-09-07T00:03:00+00:00",
++  "n1": "2020-09-07T00:03:00+00:00",
++  "n2": "2020-09-07T00:03:00+01:00"
++ },
++ {
++  "expr": "16-48/4 15-16 3 4-5 2-4",
++  "parse_error": null,
++  "describe": "16,20,24,28,32,36,40,44,48 15,16 3 4,5 2-4",
++  "n0": "2020-04-01T15:16:00+00:00",
++  "n1": "2020-04-01T15:16:00+00:00",
++  "n2": "2020-04-01T15:16:00+01:00"
++ },
++ {
++  "expr": "* 4 14 8-9 0-1/7",
++  "parse_error": null,
++  "describe": "* 4 14 8,9 0",
++  "n0": "2020-08-02T04:00:00+00:00",
++  "n1": "2020-08-02T04:00:00+00:00",
++  "n2": "2020-08-02T04:00:00+01:00"
++ },
++ {
++  "expr": "49-57/1 0-15/6 13-25 9-12/4 1-2/7",
++  "parse_error": null,
++  "describe": "49-57 0,6,12 13-25 9 1",
++  "n0": "2020-09-07T00:49:00+00:00",
++  "n1": "2020-09-07T00:49:00+00:00",
++  "n2": "2020-09-07T00:49:00+01:00"
++ },
++ {
++  "expr": "1-24/6 5-23/8 1 10-12/1 *",
++  "parse_error": null,
++  "describe": "1,7,13,19 5,13,21 1 10-12 *",
++  "n0": "2020-10-01T05:01:00+00:00",
++  "n1": "2020-10-01T05:01:00+00:00",
++  "n2": "2020-10-01T05:01:00+01:00"
++ },
++ {
++  "expr": "11 * 7-15 6-7 3-6",
++  "parse_error": null,
++  "describe": "11 * 7-15 6,7 3-6",
++  "n0": "2020-06-03T00:11:00+00:00",
++  "n1": "2020-06-03T00:11:00+00:00",
++  "n2": "2020-06-03T00:11:00+01:00"
++ },
++ {
++  "expr": "5-53 0-23/1 8-21 * *",
++  "parse_error": null,
++  "describe": "5-53 * 8-21 * *",
++  "n0": "2020-01-15T00:05:00+00:00",
++  "n1": "2020-03-08T00:05:00+00:00",
++  "n2": "2020-01-08T00:05:00+01:00"
++ },
++ {
++  "expr": "* 21 * 6 5",
++  "parse_error": null,
++  "describe": "* 21 * 6 5",
++  "n0": "2020-06-05T21:00:00+00:00",
++  "n1": "2020-06-05T21:00:00+00:00",
++  "n2": "2020-06-05T21:00:00+01:00"
++ },
++ {
++  "expr": "* 18 * 4-7/2 6",
++  "parse_error": null,
++  "describe": "* 18 * 4,6 6",
++  "n0": "2020-04-04T18:00:00+00:00",
++  "n1": "2020-04-04T18:00:00+00:00",
++  "n2": "2020-04-04T18:00:00+01:00"
++ },
++ {
++  "expr": "43-54 * 14-18 2-9 0-3",
++  "parse_error": null,
++  "describe": "43-54 * 14-18 2-9 0-3",
++  "n0": "2020-02-02T00:43:00+00:00",
++  "n1": "2020-03-01T00:43:00+00:00",
++  "n2": "2020-02-02T00:43:00+01:00"
++ },
++ {
++  "expr": "6-27/6 4-22/7 31 9-10 3-6/5",
++  "parse_error": null,
++  "describe": "6,12,18,24 4,11,18 31 9,10 3",
++  "n0": "2020-09-02T04:06:00+00:00",
++  "n1": "2020-09-02T04:06:00+00:00",
++  "n2": "2020-09-02T04:06:00+01:00"
++ },
++ {
++  "expr": "15-54 * 19 1-6/8 1-3",
++  "parse_error": null,
++  "describe": "15-54 * 19 1 1-3",
++  "n0": "2020-01-15T00:15:00+00:00",
++  "n1": "2021-01-04T00:15:00+00:00",
++  "n2": "2020-01-01T00:15:00+01:00"
++ },
++ {
++  "expr": "16 8-19 1-18 12 3-4/4",
++  "parse_error": null,
++  "describe": "16 8-19 1-18 12 3",
++  "n0": "2020-12-01T08:16:00+00:00",
++  "n1": "2020-12-01T08:16:00+00:00",
++  "n2": "2020-12-01T08:16:00+01:00"
++ },
++ {
++  "expr": "41-45/8 0-2/5 8 10-11 3-4",
++  "parse_error": null,
++  "describe": "41 0 8 10,11 3,4",
++  "n0": "2020-10-01T00:41:00+00:00",
++  "n1": "2020-10-01T00:41:00+00:00",
++  "n2": "2020-10-01T00:41:00+01:00"
++ },
++ {
++  "expr": "27-47 11-22 9-10/5 6 *",
++  "parse_error": null,
++  "describe": "27-47 11-22 9 6 *",
++  "n0": "2020-06-09T11:27:00+00:00",
++  "n1": "2020-06-09T11:27:00+00:00",
++  "n2": "2020-06-09T11:27:00+01:00"
++ },
++ {
++  "expr": "47 8-23/5 * 4-6 5",
++  "parse_error": null,
++  "describe": "47 8,13,18,23 * 4-6 5",
++  "n0": "2020-04-03T08:47:00+00:00",
++  "n1": "2020-04-03T08:47:00+00:00",
++  "n2": "2020-04-03T08:47:00+01:00"
++ },
++ {
++  "expr": "3 4-22 4-28/1 8-12 1-2/1",
++  "parse_error": null,
++  "describe": "3 4-22 4-28 8-12 1,2",
++  "n0": "2020-08-03T04:03:00+00:00",
++  "n1": "2020-08-03T04:03:00+00:00",
++  "n2": "2020-08-03T04:03:00+01:00"
++ },
++ {
++  "expr": "30-55 * 3-19/1 5 *",
++  "parse_error": null,
++  "describe": "30-55 * 3-19 5 *",
++  "n0": "2020-05-03T00:30:00+00:00",
++  "n1": "2020-05-03T00:30:00+00:00",
++  "n2": "2020-05-03T00:30:00+01:00"
++ },
++ {
++  "expr": "38-50/4 9-14/7 19-20 * 2",
++  "parse_error": null,
++  "describe": "38,42,46,50 9 19,20 * 2",
++  "n0": "2020-01-19T09:38:00+00:00",
++  "n1": "2020-03-03T09:38:00+00:00",
++  "n2": "2020-01-07T09:38:00+01:00"
++ },
++ {
++  "expr": "* 5 * 1-5/4 2-5",
++  "parse_error": null,
++  "describe": "* 5 * 1,5 2-5",
++  "n0": "2020-01-15T05:00:00+00:00",
++  "n1": "2020-05-01T05:00:00+00:00",
++  "n2": "2020-01-01T05:00:00+01:00"
++ },
++ {
++  "expr": "4-43/4 18-20 18 5 1",
++  "parse_error": null,
++  "describe": "4,8,12,16,20,24,28,32,36,40 18-20 18 5 1",
++  "n0": "2020-05-04T18:04:00+00:00",
++  "n1": "2020-05-04T18:04:00+00:00",
++  "n2": "2020-05-04T18:04:00+01:00"
++ },
++ {
++  "expr": "38-47 3-14 10-23/7 9-12 0-3/1",
++  "parse_error": null,
++  "describe": "38-47 3-14 10,17 9-12 0-3",
++  "n0": "2020-09-01T03:38:00+00:00",
++  "n1": "2020-09-01T03:38:00+00:00",
++  "n2": "2020-09-01T03:38:00+01:00"
++ },
++ {
++  "expr": "20-47/5 * * 1-10 5",
++  "parse_error": null,
++  "describe": "20,25,30,35,40,45 * * 1-10 5",
++  "n0": "2020-01-17T00:20:00+00:00",
++  "n1": "2020-03-06T00:20:00+00:00",
++  "n2": "2020-01-03T00:20:00+01:00"
++ },
++ {
++  "expr": "17-58/3 15-20/2 12-14/6 2-11 5",
++  "parse_error": null,
++  "describe": "17,20,23,26,29,32,35,38,41,44,47,50,53,56 15,17,19 12 2-11 5",
++  "n0": "2020-02-07T15:17:00+00:00",
++  "n1": "2020-03-06T15:17:00+00:00",
++  "n2": "2020-02-07T15:17:00+01:00"
++ },
++ {
++  "expr": "18-42/7 * 9-11 * *",
++  "parse_error": null,
++  "describe": "18,25,32,39 * 9-11 * *",
++  "n0": "2020-02-09T00:18:00+00:00",
++  "n1": "2020-03-09T00:18:00+00:00",
++  "n2": "2020-01-09T00:18:00+01:00"
++ },
++ {
++  "expr": "3-26/4 15-19 2-25/4 3-9 3-5",
++  "parse_error": null,
++  "describe": "3,7,11,15,19,23 15-19 2,6,10,14,18,22 3-9 3-5",
++  "n0": "2020-03-02T15:03:00+00:00",
++  "n1": "2020-03-02T15:03:00+00:00",
++  "n2": "2020-03-02T15:03:00+01:00"
++ },
++ {
++  "expr": "1-7/4 0 3-8/2 2-11/3 2-5/5",
++  "parse_error": null,
++  "describe": "1,5 0 3,5,7 2,5,8,11 2",
++  "n0": "2020-02-03T00:01:00+00:00",
++  "n1": "2020-05-03T00:01:00+00:00",
++  "n2": "2020-02-03T00:01:00+01:00"
++ },
++ {
++  "expr": "1 2 3 4 5",
++  "parse_error": null,
++  "describe": "1 2 3 4 5",
++  "n0": "2020-04-03T02:01:00+00:00",
++  "n1": "2020-04-03T02:01:00+00:00",
++  "n2": "2020-04-03T02:01:00+01:00"
++ },
++ {
++  "expr": "1 2 3 4",
++  "parse_error": "expected 5 fields, got 4"
++ },
++ {
++  "expr": "1 2 3 4 5 6",
++  "parse_error": "expected 5 fields, got 6"
++ },
++ {
++  "expr": "1  2   3 4 5",
++  "parse_error": null,
++  "describe": "1 2 3 4 5",
++  "n0": "2020-04-03T02:01:00+00:00",
++  "n1": "2020-04-03T02:01:00+00:00",
++  "n2": "2020-04-03T02:01:00+01:00"
++ },
++ {
++  "expr": "\t1\t2\t3\t4\t5",
++  "parse_error": null,
++  "describe": "1 2 3 4 5",
++  "n0": "2020-04-03T02:01:00+00:00",
++  "n1": "2020-04-03T02:01:00+00:00",
++  "n2": "2020-04-03T02:01:00+01:00"
++ },
++ {
++  "expr": "0x5 * * * *",
++  "parse_error": "minute: invalid value '0x5'"
++ },
++ {
++  "expr": "  ",
++  "parse_error": "expected 5 fields, got 0"
++ },
++ {
++  "expr": "",
++  "parse_error": "expected 5 fields, got 0"
++ },
++ {
++  "expr": "@",
++  "parse_error": "unknown macro '@'"
++ },
++ {
++  "expr": "@yearly ",
++  "parse_error": null,
++  "describe": "0 0 1 1 *",
++  "n0": "2021-01-01T00:00:00+00:00",
++  "n1": "2021-01-01T00:00:00+00:00",
++  "n2": "2020-01-01T00:00:00+01:00"
++ },
++ {
++  "expr": "0 0 1 1 * @x",
++  "parse_error": "expected 5 fields, got 6"
++ }
++]

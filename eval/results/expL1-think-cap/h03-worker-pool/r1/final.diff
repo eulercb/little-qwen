@@ -1,0 +1,274 @@
+ pool/pool.go      |  35 ++++++++--
+ pool/pool_test.go | 190 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 220 insertions(+), 5 deletions(-)
+
+diff --git a/pool/pool.go b/pool/pool.go
+index ba7e123..f57075f 100644
+--- a/pool/pool.go
++++ b/pool/pool.go
+@@ -39,6 +39,8 @@ func Map[T, R any](ctx context.Context, in []T, workers int, fn func(context.Con
+ 	}
+ 	jobs := make(chan int)
+ 	results := make(chan result)
++	stop := make(chan struct{}) // closed once no further inputs may be handed out
++	var stopOnce sync.Once
+ 	var wg sync.WaitGroup
+ 	for w := 0; w < workers; w++ {
+ 		wg.Add(1)
+@@ -50,22 +52,45 @@ func Map[T, R any](ctx context.Context, in []T, workers int, fn func(context.Con
+ 			}
+ 		}()
+ 	}
++	wg.Add(1)
+ 	go func() {
++		defer wg.Done()
++		defer close(jobs)
++		stopped := false
+ 		for i := range in {
+-			jobs <- i
++			select {
++			case jobs <- i:
++			case <-stop:
++				stopped = true
++			case <-ctx.Done():
++				stopped = true
++			}
++			if stopped {
++				return
++			}
+ 		}
+-		close(jobs)
+ 	}()
+ 	go func() {
+ 		wg.Wait()
+ 		close(results)
+ 	}()
+-	var out []R
++	out := make([]R, len(in))
++	var firstErr *IndexError
+ 	for res := range results {
+ 		if res.err != nil {
+-			return nil, &IndexError{Index: res.i, Err: res.err}
++			if firstErr == nil || res.i < firstErr.Index {
++				firstErr = &IndexError{Index: res.i, Err: res.err}
++			}
++			stopOnce.Do(func() { close(stop) })
++			continue
+ 		}
+-		out = append(out, res.r)
++		out[res.i] = res.r
++	}
++	if firstErr != nil {
++		return nil, firstErr
++	}
++	if err := ctx.Err(); err != nil {
++		return nil, err
+ 	}
+ 	return out, nil
+ }
+diff --git a/pool/pool_test.go b/pool/pool_test.go
+index 4217e40..2d01cfe 100644
+--- a/pool/pool_test.go
++++ b/pool/pool_test.go
+@@ -2,7 +2,11 @@ package pool
+ 
+ import (
+ 	"context"
++	"errors"
++	"fmt"
++	"runtime"
+ 	"testing"
++	"time"
+ )
+ 
+ func TestSquares(t *testing.T) {
+@@ -11,3 +15,189 @@ func TestSquares(t *testing.T) {
+ 		t.Fatal(out, err)
+ 	}
+ }
++
++// fn deliberately runs longer for larger inputs so that completion order
++// differs from input order; out[i] must still correspond to in[i].
++func TestResultOrder(t *testing.T) {
++	const n = 50
++	in := make([]int, n)
++	for i := range in {
++		in[i] = i
++	}
++	out, err := Map(context.Background(), in, 4, func(_ context.Context, x int) (int, error) {
++		time.Sleep(time.Duration(x) * 500 * time.Microsecond)
++		return x * 10, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(out) != n {
++		t.Fatalf("len(out) = %d, want %d", len(out), n)
++	}
++	for i, got := range out {
++		if got != in[i]*10 {
++			t.Fatalf("out[%d] = %d, want %d", i, got, in[i]*10)
++		}
++	}
++}
++
++var sentinel = errors.New("boom")
++
++// Failures at 3, 7 and 11; the largest failing index is deliberately made the
++// slowest so a first-arrival implementation would report it.
++func TestLowestIndexError(t *testing.T) {
++	const n = 20
++	in := make([]int, n)
++	for i := range in {
++		in[i] = i
++	}
++	out, err := Map(context.Background(), in, 4, func(_ context.Context, x int) (int, error) {
++		if x == 3 || x == 7 || x == 11 {
++			if x == 11 {
++				time.Sleep(100 * time.Millisecond)
++			}
++			return 0, sentinel
++		}
++		return x * 10, nil
++	})
++	var ie *IndexError
++	if !errors.As(err, &ie) {
++		t.Fatalf("err = %v, want *IndexError", err)
++	}
++	if ie.Index != 3 {
++		t.Fatalf("Index = %d, want 3", ie.Index)
++	}
++	if !errors.Is(ie.Err, sentinel) {
++		t.Fatalf("Err = %v, want sentinel", ie.Err)
++	}
++	if out != nil {
++		t.Fatalf("out = %v, want nil", out)
++	}
++}
++
++func TestContextCancelReturns(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	const n = 100
++	in := make([]int, n)
++	for i := range in {
++		in[i] = i
++	}
++	type res struct {
++		out []int
++		err error
++	}
++	done := make(chan res, 1)
++	go func() {
++		out, err := Map(ctx, in, 4, func(ctx context.Context, x int) (int, error) {
++			select {
++			case <-ctx.Done():
++				return 0, ctx.Err()
++			case <-time.After(100 * time.Millisecond):
++				return x * 10, nil
++			}
++		})
++		done <- res{out, err}
++	}()
++	time.Sleep(20 * time.Millisecond)
++	cancel()
++	select {
++	case r := <-done:
++		if r.out != nil {
++			t.Fatalf("out = %v, want nil", r.out)
++		}
++		if !errors.Is(r.err, context.Canceled) {
++			t.Fatalf("err = %v, want context.Canceled", r.err)
++		}
++	case <-time.After(5 * time.Second):
++		t.Fatal("Map did not return after ctx cancellation (hang)")
++	}
++}
++
++// Guard against the old behaviour: a cancelled ctx must not leave the pool
++// spinning on work that was never started.
++func TestContextCancelledBeforeStart(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	in := []int{1, 2, 3}
++	type res struct {
++		out []int
++		err error
++	}
++	done := make(chan res, 1)
++	go func() {
++		out, err := Map(ctx, in, 2, func(ctx context.Context, x int) (int, error) {
++			select {
++			case <-ctx.Done():
++				return 0, ctx.Err()
++			case <-time.After(1 * time.Second):
++				return x * 10, nil
++			}
++		})
++		done <- res{out, err}
++	}()
++	select {
++	case r := <-done:
++		if r.out != nil {
++			t.Fatalf("out = %v, want nil", r.out)
++		}
++		if !errors.Is(r.err, context.Canceled) {
++			t.Fatalf("err = %v, want context.Canceled", r.err)
++		}
++	case <-time.After(5 * time.Second):
++		t.Fatal("Map did not return for already-cancelled ctx (hang)")
++	}
++}
++
++func TestNoGoroutineLeak(t *testing.T) {
++	base := runtime.NumGoroutine()
++	for round := 0; round < 5; round++ {
++		if _, err := Map(context.Background(), []int{1, 2, 3, 4}, 2, func(_ context.Context, x int) (int, error) {
++			time.Sleep(time.Millisecond)
++			return x, nil
++		}); err != nil {
++			t.Fatal(err)
++		}
++	}
++	deadline := time.Now().Add(5 * time.Second)
++	for runtime.NumGoroutine() > base {
++		if time.Now().After(deadline) {
++			t.Fatalf("goroutine leak: %d > baseline %d", runtime.NumGoroutine(), base)
++		}
++		runtime.GC()
++		time.Sleep(10 * time.Millisecond)
++	}
++}
++
++// Even if a lower index fails, a higher-index success must not mask the
++// error, and vice versa: success results must not mask a later-arriving
++// lower-index failure.
++func TestErrorArrivingLate(t *testing.T) {
++	const n = 10
++	in := make([]int, n)
++	for i := range in {
++		in[i] = i
++	}
++	out, err := Map(context.Background(), in, 8, func(_ context.Context, x int) (int, error) {
++		if x == 1 {
++			time.Sleep(80 * time.Millisecond) // fail late, after others succeed
++			return 0, sentinel
++		}
++		return x * 10, nil
++	})
++	if out != nil {
++		t.Fatalf("out = %v, want nil", out)
++	}
++	var ie *IndexError
++	if !errors.As(err, &ie) || ie.Index != 1 || !errors.Is(ie.Err, sentinel) {
++		t.Fatalf("err = %v, want *IndexError{Index:1, Err:sentinel}", err)
++	}
++}
++
++func TestWorkersLessThanOne(t *testing.T) {
++	out, err := Map(context.Background(), []string{"a", "b"}, -3, func(_ context.Context, s string) (string, error) {
++		return fmt.Sprintf("%s!", s), nil
++	})
++	if err != nil || len(out) != 2 || out[0] != "a!" || out[1] != "b!" {
++		t.Fatalf("out = %q, err = %v", out, err)
++	}
++}

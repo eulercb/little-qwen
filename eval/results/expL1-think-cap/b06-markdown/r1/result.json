@@ -1,0 +1,38 @@
+{
+  "task_id": "b06-markdown",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "a01df662dc3a",
+  "success": false,
+  "score": 0,
+  "tests_passed": 0,
+  "tests_total": 1,
+  "outcome": {
+    "Status": "wall_clock",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 11,
+    "Compactions": 0,
+    "PromptTokens": 260350,
+    "PrefillTokens": 36222,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 27332,
+    "ReasoningTokens": 2959,
+    "ToolCalls": 9,
+    "ToolErrors": 1,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F4": 3
+    },
+    "WallSeconds": 3600.578807695,
+    "Err": ""
+  },
+  "started": "2026-10-23T20:26:33Z",
+  "hidden_output": "FAIL\texample.com/md/md [build failed]",
+  "work": "/tmp/qh-runs/expL1-think-cap/b06-markdown-r1"
+}

@@ -1,0 +1,1095 @@
+ md/md.go      | 864 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ md/md_test.go | 215 +++++++++++++++
+ 2 files changed, 1079 insertions(+)
+
+diff --git a/md/md.go b/md/md.go
+new file mode 100644
+index 0000000..e748905
+--- /dev/null
++++ b/md/md.go
+@@ -0,0 +1,864 @@
++// Package md implements a Markdown-subset to HTML converter.
++// The exact rules are specified in SPEC.md at the repository root.
++package md
++
++import (
++	"regexp"
++	"strings"
++)
++
++var (
++	hrRe  = regexp.MustCompile(`^(-{3,}|\*{3,}|_{3,})$`)
++	urlRe = regexp.MustCompile(`^[^\s<>"]+$`)
++)
++
++const (
++	escTag   = "\x00" // placeholder written before a backslash-escaped char
++	brkMark  = "\x01" // placeholder for a backslash hard break
++	linkOpen = "\x02" // placeholder for '[' inside link text
++	sentBase = byte(3) // base for span sentinels
++)
++
++// ToHTML converts a Markdown subset source string to HTML.
++func ToHTML(src string) string {
++	lines := strings.Split(src, "\n")
++	for i, l := range lines {
++		lines[i] = strings.TrimSuffix(l, "\r")
++	}
++	var b strings.Builder
++	renderBlocks(lines, &b)
++	return b.String()
++}
++
++// renderBlocks renders top-level blocks; each block element is followed by "\n".
++func renderBlocks(lines []string, b *strings.Builder) {
++	i := 0
++	n := len(lines)
++	for i < n {
++		line := lines[i]
++		switch {
++		case isBlank(line):
++			i++
++		case strings.HasPrefix(line, "```"):
++			info, content, j := readFence(lines, i)
++			b.WriteString("<pre><code")
++			if info != "" {
++				b.WriteString(` class="` + escapeText("language-" + info) + `"`)
++			}
++			b.WriteByte('>')
++			for _, c := range content {
++				b.WriteString(escapeText(c))
++				b.WriteByte('\n')
++			}
++			b.WriteString("</code></pre>\n")
++			i = j
++		default:
++			h := parseHeading(line)
++			if h != nil {
++				b.WriteString(h.tag)
++				b.WriteString(renderInline([]string{h.text}))
++				b.WriteString(h.close + "\n")
++				i++
++			} else if isHR(line) {
++				b.WriteString("<hr />\n")
++				i++
++			} else if strings.HasPrefix(line, ">") {
++				j := i
++				for j < n && strings.HasPrefix(lines[j], ">") {
++					j++
++				}
++				inner := make([]string, 0, j-i)
++				for k := i; k < j; k++ {
++					c := lines[k][1:]
++					if strings.HasPrefix(c, " ") {
++						c = c[1:]
++					}
++					inner = append(inner, c)
++				}
++				var ib strings.Builder
++				renderBlocks(inner, &ib)
++				b.WriteString("<blockquote>\n")
++				b.WriteString(ib.String())
++				b.WriteString("</blockquote>\n")
++				i = j
++			} else if itemAt0(line) != nil {
++				items, j := collectListItems(lines, i)
++				writeList(items, b)
++				i = j
++			} else {
++				j := i
++				for j < n && !isBlockStart(lines[j]) {
++					j++
++				}
++				parts := make([]string, 0, j-i)
++				for k := i; k < j; k++ {
++					parts = append(parts, strings.TrimLeft(lines[k], " "))
++				}
++				b.WriteString("<p>" + renderInline(parts) + "</p>\n")
++				i = j
++			}
++		}
++	}
++}
++
++func isBlank(s string) bool {
++	return strings.TrimSpace(s) == ""
++}
++
++// isBlockStart reports whether a line starts any non-paragraph block.
++func isBlockStart(s string) bool {
++	return isBlank(s) ||
++		strings.HasPrefix(s, "```") ||
++		parseHeading(s) != nil ||
++		isHR(s) ||
++		strings.HasPrefix(s, ">") ||
++		itemAt0(s) != nil
++}
++
++// heading is a parsed ATX heading.
++type heading struct {
++	tag   string
++	close string
++	text  string
++}
++
++var headTags = [7]string{"", "<h1>", "<h2>", "<h3>", "<h4>", "<h5>", "<h6>"}
++var headClose = [7]string{"", "</h1>", "</h2>", "</h3>", "</h4>", "</h5>", "</h6>"}
++
++func parseHeading(s string) *heading {
++	i := 0
++	for i < len(s) && s[i] == '#' {
++		i++
++	}
++	if i < 1 || i > 6 {
++		return nil
++	}
++	if i == len(s) { // "#" alone
++		return &heading{tag: headTags[i], close: headClose[i]}
++	}
++	if s[i] != ' ' { // "#foo" is not a heading
++		return nil
++	}
++	t := s[i+1:]
++	t = strings.TrimRight(t, " \t")
++	// Remove a trailing run of # preceded by a space.
++	if t != "" && t[len(t)-1] == '#' {
++		j := len(t) - 1
++		for j > 0 && t[j-1] == '#' {
++			j--
++		}
++		if j > 0 && t[j-1] == ' ' {
++			t = t[:j-1]
++		}
++	}
++	return &heading{tag: headTags[i], close: headClose[i], text: t}
++}
++
++func isHR(s string) bool {
++	s = strings.TrimRight(s, " ")
++	return hrRe.MatchString(s)
++}
++
++// readFence reads a fenced code block starting at lines[i].
++// It returns the info word, the raw content lines and the index after the block.
++func readFence(lines []string, i int) (info string, content []string, next int) {
++	rest := strings.TrimSpace(strings.TrimPrefix(lines[i], "```"))
++	if rest != "" {
++		info = rest
++	}
++	i++
++	for i < len(lines) {
++		if strings.TrimRight(lines[i], " ") == "```" {
++			return info, content, i + 1
++		}
++		content = append(content, lines[i])
++		i++
++	}
++	return info, content, i
++}
++
++// listItem is a parsed list item with optional nested items.
++type listItem struct {
++	ordered bool
++	number  int
++	text    []string // joined with "\n" before inline rendering
++	nested  []listItem
++}
++
++// itemMarker parses "- ", "* ", "+ " or "N. " at the start of s.
++// It returns ok, ordered, number and the text after the marker.
++func itemMarker(s string) (ok, ordered bool, num int, text string) {
++	switch {
++	case strings.HasPrefix(s, "- ") || strings.HasPrefix(s, "* ") || strings.HasPrefix(s, "+ "):
++		return true, false, 0, s[2:]
++	}
++	i := 0
++	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
++		i++
++	}
++	if i > 0 && i < len(s) && s[i] == '.' && i+1 < len(s) && s[i+1] == ' ' {
++		n := 0
++		for _, c := range s[:i] {
++			n = n*10 + int(c-'0')
++		}
++		return true, true, n, s[i+2:]
++	}
++	return false, false, 0, ""
++}
++
++// itemAt0 reports whether the line is a list item at indentation 0.
++func itemAt0(s string) *listItem {
++	ok, ord, num, text := itemMarker(s)
++	if !ok {
++		return nil
++	}
++	return &listItem{ordered: ord, number: num, text: []string{text}}
++}
++
++// leadingSpaces counts the leading spaces of s.
++func leadingSpaces(s string) int {
++	i := 0
++	for i < len(s) && s[i] == ' ' {
++		i++
++	}
++	return i
++}
++
++// collectListItems consumes consecutive top-level items and continuation
++// lines starting at i, returning the items and the index after the list.
++func collectListItems(lines []string, i int) ([]listItem, int) {
++	var items []listItem
++	n := len(lines)
++	for i < n {
++		line := lines[i]
++		if isBlank(line) {
++			break
++		}
++		if it := itemAt0(line); it != nil {
++			items = append(items, *it)
++			i++
++			continue
++		}
++		sp := leadingSpaces(line)
++		if sp < 2 {
++			break // ends the list run
++		}
++		cur := &items[len(items)-1]
++		s4 := line[min(sp, 4):]
++		if ok, ord, num, text := itemMarker(s4); ok {
++			cur.nested = append(cur.nested, listItem{ordered: ord, number: num, text: []string{text}})
++		} else {
++			cur.text = append(cur.text, strings.TrimLeft(line, " "))
++		}
++		i++
++	}
++	return items, i
++}
++
++func min(a, b int) int {
++	if a < b {
++		return a
++	}
++	return b
++}
++
++// writeList writes the items as one or more lists (kind changes split).
++func writeList(items []listItem, b *strings.Builder) {
++	start := 0
++	for k := 1; k <= len(items); k++ {
++		if k == len(items) || items[k].ordered != items[start].ordered {
++			writeOneList(items[start:k], b)
++			start = k
++		}
++	}
++}
++
++func writeOneList(items []listItem, b *strings.Builder) {
++	open := "<ul>"
++	if items[0].ordered {
++		open = "<ol"
++		if items[0].number != 1 {
++			open += ` start="` + itoa(items[0].number) + `"`
++		}
++		open += ">"
++	}
++	b.WriteString(open + "\n")
++	for i := range items {
++		writeItem(&items[i], b)
++	}
++	b.WriteString("</ul>")
++	if items[0].ordered {
++		b.WriteString("</ol>")
++	}
++	b.WriteByte('\n')
++}
++
++func writeItem(it *listItem, b *strings.Builder) {
++	b.WriteString("<li>" + renderInline(it.text))
++	if len(it.nested) > 0 {
++		b.WriteByte('\n')
++		var nb strings.Builder
++		writeList(it.nested, &nb)
++		// Nested lists inside an li must not carry the outer block newline.
++		b.WriteString(strings.TrimSuffix(nb.String(), "\n"))
++	}
++	b.WriteString("</li>\n")
++}
++
++func itoa(n int) string {
++	if n == 0 {
++		return "0"
++	}
++	var d []byte
++	for n > 0 {
++		d = append([]byte{byte('0' + n%10)}, d...)
++		n /= 10
++	}
++	return string(d)
++}
++
++// --- Inline rendering ---
++
++// renderInline renders the given lines as inline content. Lines are joined
++// with "\n"; hard breaks apply to all but the last line.
++func renderInline(lines []string) string {
++	var out strings.Builder
++	for idx, ln := range lines {
++		last := idx == len(lines)-1
++		out.WriteString(inlineLine(ln, last))
++		if !last {
++			out.WriteByte('\n')
++		}
++	}
++	return out.String()
++}
++
++// inlineLine processes escapes, then code/links, then emphasis, then
++// hard breaks and final escaping.
++func inlineLine(s string, last bool) string {
++	s = processEscapes(s)
++	s = processCodeAndLinks(s, true)
++	s = processEmphasis(s)
++	if !last {
++		if hb, ok := hardBreak(s); ok {
++			s = hb
++		}
++	}
++	return finishLine(s)
++}
++
++// hardBreak trims trailing spaces and appends "<br />" if the line ended in
++// two or more spaces. It returns the result and whether a break was added.
++func hardBreak(s string) (string, bool) {
++	t := strings.TrimRight(s, " ")
++	if len(t) < len(s) && len(s)-len(t) >= 2 {
++		return t + "<br />", true
++	}
++	return s, false
++}
++
++// processEscapes handles backslash escapes and backslash hard breaks.
++func processEscapes(s string) string {
++	var b strings.Builder
++	runes := []rune(s)
++	for i := 0; i < len(runes); i++ {
++		r := runes[i]
++		if r == '\\' {
++			if i+1 < len(runes) {
++				next := runes[i+1]
++				if strings.ContainsRune("\\`*_{}[]()#+-.!<>", next) {
++					b.WriteString(escTag)
++					b.WriteRune(next)
++					i++
++					continue
++				}
++			}
++			// Backslash at end of line: hard break marker (not last line).
++			b.WriteString(brkMark)
++			continue
++		}
++		b.WriteRune(r)
++	}
++	return b.String()
++}
++
++// processCodeAndLinks replaces code spans and links with sentinel bytes so
++// their contents are not further processed, then restores them escaped.
++func processCodeAndLinks(s string, allowLinks bool) string {
++	type span struct {
++		final string // final HTML for the span
++	}
++	var spans []span
++	var b strings.Builder
++	i := 0
++	for i < len(s) {
++		c := s[i]
++		prevEsc := i > 0 && s[i-1] == escTag
++		switch {
++		case c == '`':
++			j := i + 1
++			for j < len(s) && s[j] == '`' {
++				j++
++			}
++			n := j - i
++			k := j
++			found := -1
++			for k < len(s) {
++				if s[k] != '`' {
++					k++
++					continue
++				}
++				m := k
++				for m < len(s) && s[m] == '`' {
++					m++
++				}
++				if m-k == n {
++					found = k
++					break
++				}
++				k = m
++			}
++			if prevEsc || found < 0 {
++				// Escaped or no matching closer: literal text.
++				b.WriteString(s[i:j])
++				i = j
++				continue
++			}
++			content := s[j:found]
++			if len(content) >= 2 && content[0] == ' ' && content[len(content)-1] == ' ' &&
++				strings.TrimSpace(content) != "" {
++				content = content[1 : len(content)-1]
++			}
++			spans = append(spans, span{final: "<code>" + escapeText(content) + "</code>"})
++			b.WriteByte(sentBase + byte(len(spans)-1))
++			i = found + n
++		case c == '<':
++			if href, ok := autolinkURL(s[i:]); ok && !prevEsc {
++				a := `<a href="` + escapeAttr(href) + `">` + escapeText(href) + `</a>`
++				spans = append(spans, span{final: a})
++				b.WriteByte(sentBase + byte(len(spans)-1))
++				i += len(href) + 1
++			} else {
++				b.WriteByte('<')
++				i++
++			}
++		case c == '[' && allowLinks && !prevEsc:
++			if end, text, url, title, ok := parseLink(s[i:]); ok {
++				var a string
++				if title != "" {
++					a = `<a href="` + escapeAttr(url) + `" title="` + escapeAttr(title) + `">` + text + `</a>`
++				} else {
++					a = `<a href="` + escapeAttr(url) + `">` + text + `</a>`
++				}
++				spans = append(spans, span{final: a})
++				b.WriteByte(sentBase + byte(len(spans)-1))
++				i += end
++			} else {
++				b.WriteByte('[')
++				i++
++			}
++		default:
++			b.WriteByte(c)
++			i++
++		}
++	}
++	res := b.String()
++	var out strings.Builder
++	for i := 0; i < len(res); i++ {
++		if res[i] >= sentBase && int(res[i]-sentBase) < len(spans) {
++			out.WriteString(spans[int(res[i]-sentBase)].final)
++		} else {
++			out.WriteByte(res[i])
++		}
++	}
++	return out.String()
++}
++
++// autolinkURL checks for "<http://...>" / "<https://...>".
++func autolinkURL(s string) (string, bool) {
++	if !strings.HasPrefix(s, "<") {
++		return "", false
++	}
++	body := s[1:]
++	for _, p := range []string{"http://", "https://"} {
++		if strings.HasPrefix(body, p) {
++			rest := body[len(p):]
++			i := 0
++			for i < len(rest) && rest[i] != '>' && rest[i] != ' ' && rest[i] != '\t' &&
++				rest[i] != '\n' && rest[i] != '\r' && rest[i] != '<' {
++				i++
++			}
++			if i < len(rest) && rest[i] == '>' {
++				return p + rest[:i], true
++			}
++		}
++	}
++	return "", false
++}
++
++// parseLink parses "[text](url)" or "[text](url \"title\")" from s (s[0]=='[').
++// It returns the total consumed length, the rendered text, url, title and ok.
++func parseLink(s string) (consumed int, text, url, title string, ok bool) {
++	depth := 0
++	i := 0
++	for i < len(s) {
++		switch s[i] {
++		case '[':
++			depth++
++		case ']':
++			depth--
++			if depth == 0 {
++				goto paren
++			}
++		}
++		i++
++	}
++	return 0, "", "", "", false
++paren:
++	// s[i] == ']' closing the text.
++	if i+1 >= len(s) || s[i+1] != '(' {
++		return 0, "", "", "", false
++	}
++	i++ // consume '('
++	j := i
++	for j < len(s) && s[j] != ' ' && s[j] != ')' {
++		j++
++	}
++	u := s[i:j]
++	if u == "" || !urlRe.MatchString(u) {
++		return 0, "", "", "", false
++	}
++	i = j
++	if i < len(s) && s[i] == ' ' {
++		i++
++		if i < len(s) && s[i] == '"' {
++			i++
++			k := i
++			for k < len(s) && s[k] != '"' {
++				k++
++			}
++			if k < len(s) && k+1 < len(s) && s[k+1] == ')' {
++				title = s[i:k]
++				i = k + 2
++			} else {
++				return 0, "", "", "", false
++			}
++		} else {
++			return 0, "", "", "", false
++		}
++	}
++	if i >= len(s) || s[i] != ')' {
++		return 0, "", "", "", false
++	}
++	i++ // consume ')'
++	textRaw := s[1 : i-1-len(u)-len(title)]
++	text = renderNoLinks(textRaw)
++	consumed = i
++	return consumed, text, u, title, true
++}
++
++// renderNoLinks renders inline content but treats '[' literally so nested
++// links are not created.
++func renderNoLinks(s string) string {
++	var b strings.Builder
++	for i := 0; i < len(s); i++ {
++		if s[i] == '[' {
++			b.WriteByte(linkOpen)
++		} else {
++			b.WriteByte(s[i])
++		}
++	}
++	s2 := processEscapes(b.String())
++	s2 = processCodeAndLinks(s2, false)
++	s2 = processEmphasis(s2)
++	s2 = finishLine(s2)
++	var out strings.Builder
++	for i := 0; i < len(s2); i++ {
++		if s2[i] == linkOpen {
++			out.WriteByte('[')
++		} else {
++			out.WriteByte(s2[i])
++		}
++	}
++	return out.String()
++}
++
++// protectedRegion reports the exclusive end of the generated tag region
++// starting at i (where s[i] == '<'), or -1 if s[i] does not start one.
++func protectedRegion(s string, i int) int {
++	if i >= len(s) || s[i] != '<' {
++		return -1
++	}
++	if e := strings.Index(s[i:], "</code>"); strings.HasPrefix(s[i:], "<code>") && e >= 0 {
++		return i + e + len("</code>")
++	}
++	if strings.HasPrefix(s[i:], "</code>") {
++		return i + len("</code>")
++	}
++	if strings.HasPrefix(s[i:], "<a ") {
++		e := strings.IndexByte(s[i:], '>')
++		if e < 0 {
++			return -1
++		}
++		startEnd := i + e + 1
++		if c := strings.Index(s[startEnd:], "</a>"); c >= 0 {
++			return startEnd + c + len("</a>")
++		}
++		return len(s)
++	}
++	if strings.HasPrefix(s[i:], "</a>") {
++		return i + len("</a>")
++	}
++	for _, t := range []string{"<em>", "</em>", "<strong>", "</strong>", "<br />"} {
++		if strings.HasPrefix(s[i:], t) {
++			return i + len(t)
++		}
++	}
++	return -1
++}
++
++// protectedRanges computes the regions of s that are protected from
++// delimiter scanning (code spans and anchors, including their content).
++func protectedRanges(s string) [][2]int {
++	var prot [][2]int
++	k := 0
++	for k < len(s) {
++		if s[k] == '<' {
++			if e := protectedRegion(s, k); e > k {
++				prot = append(prot, [2]int{k, e})
++				k = e
++				continue
++			}
++		}
++		k++
++	}
++	return prot
++}
++
++// processEmphasis handles **/__ strong and */_ emphasis with nesting.
++func processEmphasis(s string) string {
++	type opener struct {
++		ch      byte
++		len     int
++		start   int // position of first char of this delimiter run
++		usedLen int // part of the run already consumed by matches
++	}
++	type pair struct {
++		openPos  int
++		closePos int
++		long     bool
++	}
++	prot := protectedRanges(s)
++	pi := 0
++	// Advance pi past ranges ending before pos.
++	advance := func(pos int) {
++		for pi < len(prot) && prot[pi][1] <= pos {
++			pi++
++		}
++	}
++	masked := func(i, j int) bool {
++		advance(i)
++		return pi < len(prot) && prot[pi][0] < j
++	}
++	var opens []opener
++	var pairs []pair
++	var b strings.Builder
++	for i := 0; i < len(s); i++ {
++		c := s[i]
++		if c == '*' || c == '_' {
++			j := i
++			for j < len(s) && s[j] == c {
++				j++
++			}
++			run := j - i
++			prev := byte(0)
++			if i > 0 {
++				prev = s[i-1]
++			}
++			next := byte(0)
++			if j < len(s) {
++				next = s[j]
++			}
++			// Opening must be followed by a non-space character; closing must
++			// be preceded by a non-space character.
++			canOpen := next != 0 && !unicodeSpace(next)
++			canClose := prev != 0 && !unicodeSpace(prev)
++			if c == '_' {
++				if isWordChar(prev) {
++					canOpen = false
++				}
++				if isWordChar(next) {
++					canClose = false
++				}
++			}
++			// Characters produced by backslash escapes never delimit.
++			if prev == escTag || next == escTag {
++				canOpen = false
++				canClose = false
++			}
++			b.WriteString(s[i:j])
++			if masked(i, j) {
++				i = j - 1
++				continue
++			}
++			if canOpen {
++				opens = append(opens, opener{ch: c, len: run, start: b.Len() - run})
++			}
++			if canClose {
++				cl := run
++				for cl > 0 {
++					matched := false
++					for p := len(opens) - 1; p >= 0; p-- {
++						o := &opens[p]
++						if o.ch != c || o.len <= o.usedLen {
++							continue
++						}
++						if !ruleOfThree(o.len, run) {
++							continue
++						}
++						use := min(o.len-o.usedLen, cl)
++						openPos := o.start + o.usedLen
++						o.usedLen += use
++						cl -= use
++						pairs = append(pairs, pair{openPos: openPos, closePos: b.Len() - cl, long: use >= 2})
++						matched = true
++						if cl == 0 {
++							break
++						}
++					}
++					if !matched {
++						break
++					}
++				}
++			}
++			i = j - 1
++			continue
++		}
++		b.WriteByte(c)
++	}
++	res := b.String()
++	if len(pairs) == 0 {
++		return res
++	}
++	type ev struct {
++		pos  int
++		open bool
++		long bool
++	}
++	events := make([]ev, 0, len(pairs)*2)
++	for _, p := range pairs {
++		events = append(events, ev{p.openPos, true, p.long})
++		events = append(events, ev{p.closePos, false, p.long})
++	}
++	sortEvents(events)
++	var out strings.Builder
++	i := 0
++	for _, e := range events {
++		if e.pos < i {
++			continue
++		}
++		out.WriteString(res[i:e.pos])
++		i = e.pos
++		if e.open {
++			if e.long {
++				out.WriteString("<strong>")
++			} else {
++				out.WriteString("<em>")
++			}
++		} else {
++			if e.long {
++				out.WriteString("</strong>")
++			} else {
++				out.WriteString("</em>")
++			}
++		}
++	}
++	out.WriteString(res[i:])
++	return out.String()
++}
++
++func sortEvents(e []struct {
++	pos  int
++	open bool
++	long bool
++}) {
++	// Insertion sort: ascending position; opens before closes at equal pos.
++	for i := 1; i < len(e); i++ {
++		for j := i; j > 0 && (e[j].pos < e[j-1].pos || (e[j].pos == e[j-1].pos && e[j].open && !e[j-1].open)); j-- {
++			e[j], e[j-1] = e[j-1], e[j]
++		}
++	}
++}
++
++func ruleOfThree(openLen, closeLen int) bool {
++	sum := openLen + closeLen
++	return sum%3 != 0 || openLen%3 == 0 || closeLen%3 == 0
++}
++
++func isWordChar(c byte) bool {
++	return c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
++}
++
++func unicodeSpace(c byte) bool {
++	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
++}
++
++// escapeText HTML-escapes literal text.
++func escapeText(s string) string {
++	var b strings.Builder
++	for i := 0; i < len(s); i++ {
++		switch s[i] {
++		case '&':
++			b.WriteString("&amp;")
++		case '<':
++			b.WriteString("&lt;")
++		case '>':
++			b.WriteString("&gt;")
++		case '"':
++			b.WriteString("&quot;")
++		default:
++			b.WriteByte(s[i])
++		}
++	}
++	return b.String()
++}
++
++// escapeAttr HTML-escapes attribute values.
++func escapeAttr(s string) string {
++	return escapeText(s)
++}
++
++// finishLine applies final HTML escaping to literal text, skipping generated
++// tags and protected regions, and resolves escape/break placeholders.
++func finishLine(s string) string {
++	var b strings.Builder
++	for i := 0; i < len(s); i++ {
++		c := s[i]
++		switch c {
++		case escTag:
++			// The escaped character follows and must be emitted verbatim.
++			if i+1 < len(s) {
++				b.WriteByte(s[i+1])
++				i++
++			}
++		case brkMark:
++			b.WriteString("<br />")
++		case '<':
++			if e := protectedRegion(s, i); e > i {
++				b.WriteString(s[i:e])
++				i = e - 1
++				continue
++			}
++			b.WriteString("&lt;")
++		case '&':
++			b.WriteString("&amp;")
++		case '"':
++			b.WriteString("&quot;")
++		case '>':
++			b.WriteString("&gt;")
++		default:
++			b.WriteByte(c)
++		}
++	}
++	return b.String()
++}
+diff --git a/md/md_test.go b/md/md_test.go
+new file mode 100644
+index 0000000..9f48369
+--- /dev/null
++++ b/md/md_test.go
+@@ -0,0 +1,215 @@
++package md
++
++import (
++	"reflect"
++	"testing"
++)
++
++func eq(t *testing.T, name, got, want string) {
++	t.Helper()
++	if got != want {
++		t.Errorf("%s:\ngot:  %q\nwant: %q", name, got, want)
++	}
++}
++
++func TestSpecExample(t *testing.T) {
++	in := "# Title #\n\nSome *emphasis* and **strong** text\nwith `code` and a [link](http://x.io \"T\").\n\n- one\n- two\n  - nested\n3. three\n"
++	want := "<h1>Title</h1>\n" +
++		"<p>Some <em>emphasis</em> and <strong>strong</strong> text\nwith <code>code</code> and a <a href=\"http://x.io\" title=\"T\">link</a>.</p>\n" +
++		"<ul>\n<li>one</li>\n<li>two\n<ul>\n<li>nested</li>\n</ul>\n</li>\n</ul>\n" +
++		"<ol start=\"3\">\n<li>three</li>\n</ol>\n"
++	eq(t, "spec example", ToHTML(in), want)
++}
++
++func TestHeadings(t *testing.T) {
++	cases := []struct{ in, want string }{
++		{"# ", "<h1></h1>\n"},
++		{"#", "<h1></h1>\n"},
++		{"# Title #", "<h1>Title</h1>\n"},
++		{"# Title  ##  ", "<h1>Title</h1>\n"},
++		{"# Title##", "<h1>Title##</h1>\n"},
++		{"## Two", "<h2>Two</h2>\n"},
++		{"###### Six", "<h6>Six</h6>\n"},
++		{"####### Seven", "<p>####### Seven</p>\n"},
++		{"#foo", "<p>#foo</p>\n"},
++		{"#*em*# ", "<h1>*em*#</h1>\n"},
++	}
++	for _, c := range cases {
++		eq(t, "heading "+c.in, ToHTML(c.in), c.want)
++	}
++}
++
++func TestHR(t *testing.T) {
++	cases := []struct{ in, want string }{
++		{"---", "<hr />\n"},
++		{"----", "<hr />\n"},
++		{"***", "<hr />\n"},
++		{"___", "<hr />\n"},
++		{"-", "<p>-</p>\n"},
++		{"**", "<p>**</p>\n"},
++		{"- - -", "<p>- - -</p>\n"},
++	}
++	for _, c := range cases {
++		eq(t, "hr "+c.in, ToHTML(c.in), c.want)
++	}
++}
++
++func TestFence(t *testing.T) {
++	cases := []struct{ in, want string }{
++		{"```\na < b\n```", "<pre><code>a &lt; b\n</code></pre>\n"},
++		{"```go\na := 1\n```", "<pre><code class=\"language-go\">a := 1\n</code></pre>\n"},
++		{"```\na\nb", "<pre><code>a\nb\n</code></pre>\n"},
++		{"```\n```", "<pre><code></code></pre>\n"},
++		{"```\nx\n```\nafter", "<pre><code>x\n</code></pre>\n<p>after</p>\n"},
++	}
++	for _, c := range cases {
++		eq(t, "fence", ToHTML(c.in), c.want)
++	}
++}
++
++func TestBlockquote(t *testing.T) {
++	cases := []struct{ in, want string }{
++		{"> hello", "<blockquote>\n<p>hello</p>\n</blockquote>\n"},
++		{"> hello\n> world", "<blockquote>\n<p>hello\nworld</p>\n</blockquote>\n"},
++		{"> a\n>\n> b", "<blockquote>\n<p>a</p>\n<p>b</p>\n</blockquote>\n"},
++		{"> - x\n> - y", "<blockquote>\n<ul>\n<li>x</li>\n<li>y</li>\n</ul>\n</blockquote>\n"},
++		{">> x", "<blockquote>\n<blockquote>\n<p>x</p>\n</blockquote>\n</blockquote>\n"},
++		{"> x", "<blockquote>\n<p>x</p>\n</blockquote>\n"},
++	}
++	for _, c := range cases {
++		eq(t, "blockquote "+c.in, ToHTML(c.in), c.want)
++	}
++}
++
++func TestLists(t *testing.T) {
++	cases := []struct{ in, want string }{
++		{"- a\n- b", "<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n"},
++		{"1. a\n2. b", "<ol>\n<li>a</li>\n<li>b</li>\n</ol>\n"},
++		{"3. a\n4. b", "<ol start=\"3\">\n<li>a</li>\n<li>b</li>\n</ol>\n"},
++		{"* a\n+ b", "<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n"},
++		{"- a\n1. b", "<ul>\n<li>a</li>\n</ul>\n<ol>\n<li>b</li>\n</ol>\n"},
++		{"1. a\n- b", "<ol>\n<li>a</li>\n</ol>\n<ul>\n<li>b</li>\n</ul>\n"},
++		{"- a\n  cont", "<ul>\n<li>a\ncont</li>\n</ul>\n"},
++		{"- a\n  - b\n  - c", "<ul>\n<li>a\n<ul>\n<li>b</li>\n<li>c</li>\n</ul>\n</li>\n</ul>\n"},
++		{"- a\n  - b\n  cont", "<ul>\n<li>a\n<ul>\n<li>b</li>\n</ul>\ncont</li>\n</ul>\n"},
++	}
++	for _, c := range cases {
++		eq(t, "list "+c.in, ToHTML(c.in), c.want)
++	}
++}
++
++func TestParagraph(t *testing.T) {
++	cases := []struct{ in, want string }{
++		{"a\nb", "<p>a\nb</p>\n"},
++		{"a\n\nb", "<p>a</p>\n<p>b</p>\n"},
++		{"a\n# h", "<p>a</p>\n<h1>h</h1>\n"},
++		{"a\n---", "<p>a</p>\n<hr />\n"},
++	}
++	for _, c := range cases {
++		eq(t, "para "+c.in, ToHTML(c.in), c.want)
++	}
++}
++
++func TestEmphasis(t *testing.T) {
++	cases := []struct{ in, want string }{
++		{"*a*", "<p><em>a</em></p>\n"},
++		{"**a**", "<p><strong>a</strong></p>\n"},
++		{"_a_", "<p><em>a</em></p>\n"},
++		{"__a__", "<p><strong>a</strong></p>\n"},
++		{"snake_case_name", "<p>snake_case_name</p>\n"},
++		{"a*b*c", "<p>a<em>b</em>c</p>\n"},
++		{"* a*", "<p>* a*</p>\n"},
++		{"*a *", "<p><em>a</em> *</p>\n"},
++		{"**a *b* c**", "<p><strong>a <em>b</em> c</strong></p>\n"},
++		{"*a **b** c*", "<p><em>a <strong>b</strong> c</em></p>\n"},
++		{"***a***", "<p><strong>a</strong></p>\n"},
++		{"_a_b_c_", "<p>_a_b_c_</p>\n"},
++	}
++	for _, c := range cases {
++		eq(t, "em "+c.in, ToHTML(c.in), c.want)
++	}
++}
++
++func TestCodeSpan(t *testing.T) {
++	cases := []struct{ in, want string }{
++		{"`a<b`", "<p><code>a&lt;b</code></p>\n"},
++		{"` a b `", "<p><code>a b</code></p>\n"},
++		{"``a`b``", "<p><code>a`b</code></p>\n"},
++		{"`unmatched", "<p>`unmatched</p>\n"},
++		{"`a`*b*`c`", "<p><code>a</code><em>b</em><code>c</code></p>\n"},
++	}
++	for _, c := range cases {
++		eq(t, "code "+c.in, ToHTML(c.in), c.want)
++	}
++}
++
++func TestLinks(t *testing.T) {
++	cases := []struct{ in, want string }{
++		{"[t](http://x)", "<p><a href=\"http://x\">t</a></p>\n"},
++		{"[t](http://x \"Ti\")", "<p><a href=\"http://x\" title=\"Ti\">t</a></p>\n"},
++		{"[t](http://x \"a b\")", "<p><a href=\"http://x\" title=\"a b\">t</a></p>\n"},
++		{"[t](bad url)", "<p>[t](bad url)</p>\n"},
++		{"[t]", "<p>[t]</p>\n"},
++		{"[t](http://x", "<p>[t](http://x</p>\n"},
++		{"[*e*](u)", "<p><a href=\"u\"><em>e</em></a></p>\n"},
++		{"[a b](u)", "<p><a href=\"u\">a b</a></p>\n"},
++	}
++	for _, c := range cases {
++		eq(t, "link "+c.in, ToHTML(c.in), c.want)
++	}
++}
++
++func TestAutolink(t *testing.T) {
++	cases := []struct{ in, want string }{
++		{"<http://x>", "<p><a href=\"http://x\">http://x</a></p>\n"},
++		{"<https://x.io/p?a=1>", "<p><a href=\"https://x.io/p?a=1\">https://x.io/p?a=1</a></p>\n"},
++		{"<http://a b>", "<p>&lt;http://a b&gt;</p>\n"},
++		{"<ftp://x>", "<p>&lt;ftp://x&gt;</p>\n"},
++	}
++	for _, c := range cases {
++		eq(t, "autolink "+c.in, ToHTML(c.in), c.want)
++	}
++}
++
++func TestEscapes(t *testing.T) {
++	cases := []struct{ in, want string }{
++		{`a & b`, "<p>a &amp; b</p>\n"},
++		{`a < b`, "<p>a &lt; b</p>\n"},
++		{`a > b`, "<p>a &gt; b</p>\n"},
++		{`a " b`, "<p>a &quot; b</p>\n"},
++		{`a \* b`, "<p>a * b</p>\n"},
++		{`a \& b`, "<p>a &amp; b</p>\n"},
++		{`a \ b`, "<p>a \\ b</p>\n"},
++		{`a \n b`, "<p>a \n b</p>\n"},
++	}
++	for _, c := range cases {
++		eq(t, "esc "+c.in, ToHTML(c.in), c.want)
++	}
++}
++
++func TestHardBreak(t *testing.T) {
++	cases := []struct{ in, want string }{
++		{"a  \nb", "<p>a<br />\nb</p>\n"},
++		{"a \nb", "<p>a\nb</p>\n"},
++		{"a\\ \nb", "<p>a<br />\nb</p>\n"},
++		{"a\\\nb", "<p>a<br />\nb</p>\n"},
++		{"a  ", "<p>a</p>\n"},
++		{"a\\\nb  \nc", "<p>a<br />\nb<br />\nc</p>\n"},
++	}
++	for _, c := range cases {
++		eq(t, "break "+c.in, ToHTML(c.in), c.want)
++	}
++}
++
++func TestCombined(t *testing.T) {
++	cases := []struct{ in, want string }{
++		{"# T\n\ntext  \nmore\n\n> q\n\n- i\n\n```\nx\n```\n\n---",
++			"<h1>T</h1>\n<p>text<br />\nmore</p>\n<blockquote>\n<p>q</p>\n</blockquote>\n<ul>\n<li>i</li>\n</ul>\n<pre><code>x\n</code></pre>\n<hr />\n"},
++		{"a\\\r\nb\r\n", "<p>a<br />\nb</p>\n"},
++	}
++	for _, c := range cases {
++		eq(t, "combined", ToHTML(c.in), c.want)
++	}
++}
++
++var _ = reflect.DeepEqual
