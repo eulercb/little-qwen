@@ -29,8 +29,8 @@ All runs are single repetitions unless stated, so per-task differences of a few 
 |---|---|
 | Tier A (12 small Go tasks, hidden tests) | **12/12** solved; single-stream mean **6.7 min**, 12 turns, 7.7K output tokens per task |
 | Held-out (4 tasks) | 2/4 fully correct, mean score **0.96** (two runs missed one spec clause each) |
-| Tier B (6 multi-step tasks) | **3/3 solved so far** (b01 expression language 46.7 min, b02 feature in existing codebase 19.9 min, b03 ledger debugging 4.7 min); b04–b06 not run yet (experiments paused) |
-| vs stock OpenCode (same model/server) | h01: both solve it; **qh 3.2 min vs OpenCode 9.2 min**; broader comparison queued |
+| Tier B (6 multi-step tasks) | **3/6 solved**. b01 46.7 min, b02 19.9 min, b03 4.7 min, b04 0.925. b05 and b06 failed on the 60-min limit, both because of runaway turns that spent all 16K output tokens on thinking (candidate L1 is being probed) |
+| vs OpenCode, pi and little-coder (same model/server) | On 7 Tier-A/held-out tasks: qh 0.976 in 57.3 min, little-coder 0.980 in 84.2 min, vanilla pi 0.996 in 54.9 min, so about tied. On h01, OpenCode took 9.2 min vs qh's 3.2. Tier-B comparisons are queued. See [docs/LITTLE_CODER.md](docs/LITTLE_CODER.md) |
 
 Infrastructure features verified with the real model: re-prefill events **0** across baseline runs (prefix stays
 stable); prefix warm-up makes a task's first turn hit ~1.9K cached tokens (8 s instead of 20–50 s); compaction
