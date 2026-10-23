@@ -10,6 +10,10 @@ mkdir -p /etc/docker
 if [ ! -f /etc/docker/daemon.json ]; then
   echo '{ "registry-mirrors": ["https://mirror.gcr.io"] }' > /etc/docker/daemon.json
 fi
+# A container restart leaves a stale pidfile whose pid may now belong to another process.
+for f in /var/run/docker.pid /var/run/docker/containerd/containerd.pid; do
+  if [ -f "$f" ] && [ "$(ps -p "$(cat "$f")" -o comm= 2>/dev/null)" != "$(basename "$f" .pid | sed 's/docker/dockerd/')" ]; then rm -f "$f"; fi
+done
 nohup dockerd > /var/log/dockerd.log 2>&1 &
 for _ in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 1; done
 docker info >/dev/null 2>&1 || { echo "dockerd failed to start; see /var/log/dockerd.log" >&2; exit 1; }

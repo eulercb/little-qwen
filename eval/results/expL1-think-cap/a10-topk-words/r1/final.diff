@@ -1,0 +1,225 @@
+ words/words.go | 216 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 216 insertions(+)
+
+diff --git a/words/words.go b/words/words.go
+new file mode 100644
+index 0000000..2ea036a
+--- /dev/null
++++ b/words/words.go
+@@ -0,0 +1,216 @@
++// Package words implements word-frequency utilities.
++package words
++
++import (
++	"bufio"
++	"io"
++	"sort"
++	"strings"
++	"unicode"
++	"unicode/utf8"
++)
++
++// WordCount is a word and its number of occurrences.
++type WordCount struct {
++	Word  string
++	Count int
++}
++
++// chunkSize is the number of bytes requested from the input per read.
++const chunkSize = 1 << 16
++
++// TopK streams the words found in r, ignoring any that appear in stop
++// (compared case-insensitively), and returns the k most frequent words,
++// ordered by count descending with ties broken by the word ascending
++// (byte order). If fewer than k distinct words occur, all of them are
++// returned. For k <= 0 an empty non-nil slice is returned. Any read
++// error from r is returned together with the words counted up to that
++// point.
++//
++// A word is a maximal run of Unicode letters or digits, optionally
++// containing internal apostrophes between letters (e.g. "don't",
++// "o'clock"); leading and trailing apostrophes are not part of the word.
++// Everything else separates words. Words are case-folded with
++// strings.ToLower. The input is processed in bounded-size chunks, so it
++// may be arbitrarily large and contain very long lines.
++func TopK(r io.Reader, k int, stop []string) ([]WordCount, error) {
++	stopSet := make(map[string]struct{}, len(stop))
++	for _, w := range stop {
++		stopSet[strings.ToLower(w)] = struct{}{}
++	}
++
++	counts := make(map[string]int)
++
++	var word []byte
++	inWord := false
++	lastApostrophe := false // word currently ends with a pending apostrophe
++
++	closeWord := func() {
++		if !inWord {
++			return
++		}
++		inWord = false
++		lastApostrophe = false
++		// A trailing apostrophe was never confirmed to sit between two
++		// letters, so it is not part of the word.
++		for len(word) > 0 && word[len(word)-1] == '\'' {
++			word = word[:len(word)-1]
++		}
++		if len(word) > 0 {
++			w := strings.ToLower(string(word))
++			word = word[:0]
++			if _, ok := stopSet[w]; !ok {
++				counts[w]++
++			}
++		} else {
++			word = word[:0]
++		}
++	}
++
++	// process feeds one decoded rune into the state machine.
++	process := func(r rune, size int, src []byte) {
++		switch {
++		case unicode.IsLetter(r):
++			lastApostrophe = false
++			if !inWord {
++				inWord = true
++				word = word[:0]
++			}
++			if size <= 1 {
++				word = append(word, src[0])
++			} else {
++				word = append(word, src[:size]...)
++			}
++		case unicode.IsDigit(r):
++			if lastApostrophe {
++				// An apostrophe before a digit is not "between
++				// letters": the word ends before it.
++				word = word[:len(word)-1]
++				closeWord()
++			}
++			if !inWord {
++				inWord = true
++				word = word[:0]
++			}
++			if size <= 1 {
++				word = append(word, src[0])
++			} else {
++				word = append(word, src[:size]...)
++			}
++		case r == '\'':
++			if inWord && !lastApostrophe && len(word) > 0 &&
++				unicode.IsLetter(prevRune(word)) {
++				// Internal apostrophe between letters; it stays part
++				// of the word only if confirmed by a following letter.
++				word = append(word, '\'')
++				lastApostrophe = true
++			} else {
++				closeWord()
++			}
++		default:
++			// Any other rune (punctuation, whitespace, invalid
++			// UTF-8) separates words.
++			closeWord()
++		}
++	}
++
++	// finish assembles the result, closing any open word first.
++	finish := func(err error) ([]WordCount, error) {
++		closeWord()
++		res := make([]WordCount, 0, len(counts))
++		for w, c := range counts {
++			res = append(res, WordCount{Word: w, Count: c})
++		}
++		sort.Slice(res, func(i, j int) bool {
++			if res[i].Count != res[j].Count {
++				return res[i].Count > res[j].Count
++			}
++			return res[i].Word < res[j].Word
++		})
++		if k < 0 {
++			res = res[:0]
++		} else if len(res) > k {
++			res = res[:k]
++		}
++		return res, err
++	}
++
++	br := bufio.NewReaderSize(r, 1<<20)
++	rd := make([]byte, chunkSize)
++	// tail holds the start of a multi-byte rune that was split at a
++	// chunk boundary (at most 3 bytes); it is prepended to the next
++	// chunk before decoding.
++	var tail []byte
++	for {
++		n, err := br.Read(rd)
++		if n > 0 {
++			buf := tail
++			tail = nil
++			buf = append(buf, rd[:n]...)
++			// If the buffer ends inside a valid multi-byte rune the
++			// trailing bytes cannot be decoded yet. A lead byte of a
++			// rune occupying the final bytes is at most three back.
++			proc := len(buf)
++			for off := 0; off < 3 && off < len(buf); off++ {
++				c := buf[len(buf)-1-off]
++				if c < 0x80 {
++					break // ASCII byte: the rune is complete
++				}
++				if c < 0xC2 {
++					if c >= 0x80 {
++						continue // continuation byte; keep looking back
++					}
++					break // 0xC0/0xC1: invalid lead, complete
++				}
++				need := 2
++				if c >= 0xE0 {
++					if c >= 0xF5 {
++						break // 0xF5-0xFF: invalid lead, complete
++					}
++					need = 3
++					if c >= 0xF0 {
++						need = 4
++					}
++				}
++				if off+1 < need {
++					proc = len(buf) - 1 - off
++					break
++				}
++				break // the rune is complete
++			}
++			i := 0
++			for i < proc {
++				if buf[i] < 0x80 {
++					process(rune(buf[i]), 1, buf[i:])
++					i++
++					continue
++				}
++				rr, size := utf8.DecodeRune(buf[i:])
++				process(rr, size, buf[i:i+size])
++				i += size
++			}
++			if proc < len(buf) {
++				tail = make([]byte, len(buf)-proc)
++				copy(tail, buf[proc:])
++			}
++		}
++		if err == io.EOF {
++			// A dangling, never-completed sequence is invalid UTF-8
++			// and therefore only separates words.
++			for len(tail) > 0 {
++				process(utf8.RuneError, 1, tail[:1])
++				tail = tail[1:]
++			}
++			return finish(nil)
++		}
++		if err != nil {
++			return finish(err)
++		}
++	}
++}
++
++// prevRune decodes the final rune of b. b must be non-empty.
++func prevRune(b []byte) rune {
++	r, _ := utf8.DecodeLastRune(b)
++	return r
++}

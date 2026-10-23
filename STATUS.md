@@ -154,4 +154,8 @@ Then follow "Decisions waiting on those results" below as items finish.
   - little-coder: 0.980 in 84.2 min (h03 hit the 45-min cap).
   - vanilla pi: 0.996 in 54.9 min.
   - About tied. Tier-B comparisons were queued to test whether qh's design pays off on long tasks.
+- 2026-10-23 ~01:25 — the container restarted mid-L1-probe; a10 was done, and the b01 partial run was discarded.
+  - Restarted with resume.sh.
+  - docker-up.sh now removes stale pidfiles left by a restart (dockerd refused to start because the pidfile's pid
+    now belonged to another process).
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
