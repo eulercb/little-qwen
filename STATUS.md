@@ -37,6 +37,7 @@ Then follow "Decisions waiting on those results" below as items finish.
   2. (done) pi on Tier B: mean 0.828, the same as qh + L1 (0.825); b06 failed on a 16K thinking truncation.
   3. little-coder on Tier B.
   3b. L2 probe (`harness/cand/l2-test-after-write`) on b06, b01, b05.
+  3c. little-coder Tier-B b04–b06 again (outage re-run).
   4. Base rep 2 on h02/h04.
   5. C1 INV probe (`e2-review`).
   6. C1 DOM probe (`c1-dom`).
@@ -174,4 +175,11 @@ Then follow "Decisions waiting on those results" below as items finish.
   discarded). Resumed on tunnel auctions-dot-journalist-region.
 - 2026-10-27 04:10 — the container restarted again during little-coder Tier-B b01 (partial run discarded).
   Resumed with resume.sh.
+- 2026-10-27 05:45–06:00 — tunnel outage.
+  - little-coder Tier-B b04–b06 "finished" in 0–9 min with Cloudflare error pages as output. Those results were
+    deleted and re-queued.
+  - Fix: external-agent runs now check for outages (a Cloudflare page in the output, or a failing /health) and
+    record status error "endpoint unavailable". That makes qh eval and qh tbench stop early, and the queue keep
+    the item.
+  - little-coder Tier-B valid so far: b01 timeout (60 min, 0), b02 1.00 / 25.7, b03 1.00 / 8.7.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.

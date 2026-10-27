@@ -88,6 +88,10 @@ func cmdTBench(ctx context.Context, args []string) error {
 				continue
 			}
 			lg("DONE reward=%.2f status=%s turns=%d wall=%.1fmin %s", r.Score, r.Outcome.Status, r.Outcome.Turns, r.Outcome.WallSeconds/60, r.Outcome.Err)
+			if strings.Contains(r.Outcome.Err, "endpoint unavailable") {
+				// Stop like qh eval does; the queue keeps the item and the re-run skips finished tasks.
+				return fmt.Errorf("endpoint unavailable; tbench stopped early")
+			}
 		}
 	}
 	res, err := eval.LoadResults(*out)

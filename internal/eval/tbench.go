@@ -232,6 +232,10 @@ func RunTB(ctx context.Context, c *llm.Client, h *harness.Harness, t TBTask, rep
 		} else if code != 0 {
 			res.Outcome.Status = fmt.Sprintf("exit_%d", code)
 		}
+		if endpointDown(ctx, out) {
+			cancel()
+			return fail("agent", fmt.Errorf("endpoint unavailable (external agent hit an outage)"), "")
+		}
 	} else {
 		tr, err := trace.Open(outDir)
 		if err != nil {

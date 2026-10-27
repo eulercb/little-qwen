@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,6 +53,11 @@ func RunExternal(ctx context.Context, agentCmd string, t TaskSpec, rep int, outD
 	} else if code != 0 {
 		o.Status = fmt.Sprintf("exit_%d", code)
 	}
+	if endpointDown(ctx, out) {
+		// The agent died on a tunnel outage (it cannot tell us itself): mark the
+		// run as an endpoint error so qh eval stops and a resume re-runs it.
+		o.Status, o.Err = "error", "endpoint unavailable (external agent hit an outage)"
+	}
 	if t.Check != "" {
 		_, c, _ := tools.Shell(ctx, work, RunEnv(work), t.Check, 10*time.Minute)
 		o.CheckPassed = c == 0
@@ -61,4 +67,31 @@ func RunExternal(ctx context.Context, agentCmd string, t TaskSpec, rep int, outD
 	scoreHidden(ctx, t, work, res)
 	b, _ := json.MarshalIndent(res, "", "  ")
 	return res, os.WriteFile(filepath.Join(outDir, "result.json"), b, 0o644)
+}
+
+// endpointDown reports whether an external run was hit by an endpoint outage:
+// a Cloudflare error page in the agent's output, or a failing /health now.
+func endpointDown(ctx context.Context, agentOut string) bool {
+	if strings.Contains(agentOut, "cf-error-details") || strings.Contains(agentOut, "trycloudflare.com | 5") {
+		return true
+	}
+	ep := os.Getenv("QH_ENDPOINT")
+	if ep == "" {
+		ep = os.Getenv("REMOTE_LLM_ENDPOINT")
+	}
+	if ep == "" {
+		return false
+	}
+	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, "GET", strings.TrimRight(ep, "/")+"/health", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return true
+	}
+	resp.Body.Close()
+	return resp.StatusCode != 200
 }
