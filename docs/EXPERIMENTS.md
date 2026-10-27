@@ -126,7 +126,7 @@ Template:
   for every turn and keep the reasoning in context. Time savings must come from elsewhere (cache discipline,
   fewer re-prefills, fewer wasted turns), not from cutting thinking.
 
-## L1: think_cap_continue, little-coder's thinking budget adapted   (status: PROBE QUEUED)
+## L1: think_cap_continue, little-coder's thinking budget adapted   (status: ADOPTED for it1, n=1)
 - Source: little-coder's thinking-budget extension. When reasoning exceeds the budget, it keeps the partial
   reasoning as context and retries with thinking off. See docs/LITTLE_CODER.md.
 - Evidence (trace scan of 1429 qh turns):
@@ -150,3 +150,31 @@ Template:
   - b04: 1.00 in 51.6 min (base 0.925).
   - Still to run: b05, b06, h03. The verdict hinges on b05 and b06, where runaway thinking caused the baseline
     failures.
+- Final probe results (2026-10-23), L1 vs it0-baseline:
+
+  | task | L1 | baseline |
+  |---|---|---|
+  | b05 | **1.00 in 33.0 min** | failed, wall clock 60 |
+  | b04 | 1.00 in 51.6 min | 0.925 |
+  | h03 | 1.00 in 9.8 min | 1.00 in 16.3 min |
+  | a10 | 1.00 in 33.4 min | 1.00 in 42.9 min at 2× load |
+  | b01 | 0.95, wall clock | 1.00 in 46.7 min |
+  | b06 | 0, wall clock | 0, wall clock |
+
+  - Tier-B mean on b01, b04, b05, b06: 0.48 → 0.74.
+  - The cap fired 1–3× per task. Every act turn made a tool call, with no lost turns.
+  - Verdict: adopt into it1. It is the only lever so far that addresses the dominant Tier-B failure. Confirm at
+    n≥2 in the it1 run.
+- b06 shows the remaining failure mode (it becomes the L2 candidate below):
+  - Each forced act turn rewrote the whole ~830-line md.go (write_file of ~7K tokens, 4–6 min) after re-deriving
+    the design.
+  - Nothing was compiled or tested until turn 11, at minute 60.
+
+## L2 candidate (from b06 under L1): late testing and whole-file rewrites of large own files   (status: PROPOSED)
+- Evidence: expL1-think-cap/b06, turns 3–11. Three ~800-line writes, with the first `go test` at minute 60.
+- Ideas, cheapest first:
+  - (a) A hook: after a write_file that creates or overwrites a file over ~300 lines, when no build or test has
+    run since, append "compile and run the tests now before reasoning further" to the tool result.
+  - (b) little-coder's write-guard, limited to files over ~300 lines: the overwrite is refused with an edit_file
+    recipe.
+- Probe (a) on b06, b01 and b05, on top of L1.

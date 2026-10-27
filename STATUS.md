@@ -9,19 +9,14 @@ and compensates for its weaknesses, then improve it with the Harness² method (P
 evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is the roadmap).
 Results summary for readers: README.md "Results so far". Full experiment records: docs/EXPERIMENTS.md.
 
-## Running state (2026-10-23 19:55 UTC): queue RUNNING on tunnel nursing-seats-tab-pioneer
+## Running state (2026-10-27 00:25 UTC): queue RUNNING on tunnel auctions-dot-journalist-region
 
 If this session is gone, the queue died with it: re-run resume.sh with the current tunnel.
 History: paused 2026-10-23 03:31 on request.
 
 The queue was stopped mid-way through the L1 probe. The interrupted b05 run was discarded.
 On resume, the queue continues with the L1 probe's remaining tasks (b05, b06, h03); `qh eval` skips finished runs.
-L1 so far, against it0-baseline:
-- a10: 1.00 in 33.4 min. The cap fired once. a10's wall time varies 13–60 min across runs.
-- b01: 0.95, wall clock 60.3 min (base: solved in 46.7). The cap fired on turn 2 at 471 s, and the act turn wrote
-  code 69 s later. The time was lost later, while debugging.
-- b04: 1.00 in 51.6 min (base 0.925).
-- Verdict pending: b05 and b06 are the tasks where runaway thinking caused the baseline failures.
+L1 is done and adopted (see the log and docs/EXPERIMENTS.md).
 
 ### Resume in one command
 ```bash
@@ -38,7 +33,7 @@ Then follow "Decisions waiting on those results" below as items finish.
   (Cloudflare 530 "Origin DNS error"); paused again 14:25. Runs that failed only because of the outage (b04, b05)
   were discarded. All finished results are committed and pushed.
 - Remaining queue (`eval/queue.txt`, in order; `eval/queue.done` lists what finished):
-  1. L1 think-cap probe (b01, b04, b05, b06, h03, a10); a10, b01 and b04 are done.
+  1. (done) L1 think-cap probe.
   2. pi on Tier B.
   3. little-coder on Tier B.
   4. Base rep 2 on h02/h04.
@@ -171,4 +166,9 @@ Then follow "Decisions waiting on those results" below as items finish.
 - 2026-10-23 03:31 — PAUSED on request during the L1 probe (b05 run discarded). Resume with eval/runner/resume.sh.
 - 2026-10-23 19:55 — resumed on tunnel nursing-seats-tab-pioneer. Its first /health returned a Cloudflare 502;
   it was up 20 s later.
+- 2026-10-23 21:36 — L1 probe done and ADOPTED for it1 (b05 fail → 1.00 in 33 min; Tier-B mean 0.48 → 0.74).
+  - b06 still fails: late testing plus whole-file rewrites. Candidate L2 proposed (docs/EXPERIMENTS.md).
+  - pi Tier-B started.
+- 2026-10-27 00:20 — the container had restarted, so the queue was dead (pi Tier-B b01 was in progress and was
+  discarded). Resumed on tunnel auctions-dot-journalist-region.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
