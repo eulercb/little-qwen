@@ -17,3 +17,4 @@
 2026-10-23T21:36:25Z rc=0 ./bin/qh eval --harness harness/cand/l1-think-cap --out eval/results/expL1-think-cap --only b01-expr-lang,b04-kv-server,b05-port-cron,b06-markdown,h03-worker-pool,a10-topk-words --reps 1 --parallel 1 > eval/results/expL1-think-cap.log 2>&1
 2026-10-27T03:25:25Z rc=0 ./bin/qh eval --agent eval/runner/pi_agent.sh --agent-timeout-min 60 --out eval/results/pi-baseline --only tierB --reps 1 --parallel 1 > eval/results/pi-baseline-B.log 2>&1
 2026-10-27T05:58:24Z rc=0 ./bin/qh eval --agent "eval/runner/pi_agent.sh little" --agent-timeout-min 60 --out eval/results/littlecoder-baseline --only tierB --reps 1 --parallel 1 > eval/results/littlecoder-baseline-B.log 2>&1
+2026-10-27T08:02:03Z rc=0 ./bin/qh eval --harness harness/cand/l2-test-after-write --out eval/results/expL2-test-after-write --only b06-markdown,b01-expr-lang,b05-port-cron --reps 1 --parallel 1 > eval/results/expL2-test-after-write.log 2>&1

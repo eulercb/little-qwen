@@ -1,0 +1,38 @@
+{
+  "task_id": "b06-markdown",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "3580e80c7ee2",
+  "success": false,
+  "score": 0.9615384615384616,
+  "tests_passed": 25,
+  "tests_total": 26,
+  "outcome": {
+    "Status": "wall_clock",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 47,
+    "Compactions": 0,
+    "PromptTokens": 1842732,
+    "PrefillTokens": 68428,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 39055,
+    "ReasoningTokens": 20028,
+    "ToolCalls": 66,
+    "ToolErrors": 2,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F4": 2
+    },
+    "WallSeconds": 3718.233795335,
+    "Err": ""
+  },
+  "started": "2026-10-27T07:00:04Z",
+  "hidden_output": "=== RUN   TestSpecExample\n--- PASS: TestSpecExample (0.00s)\n=== RUN   TestHeading\n--- PASS: TestHeading (0.00s)\n=== RUN   TestHR\n--- PASS: TestHR (0.00s)\n=== RUN   TestParagraph\n--- PASS: TestParagraph (0.00s)\n=== RUN   TestCodeBlock\n--- PASS: TestCodeBlock (0.00s)\n=== RUN   TestBlockquote\n--- PASS: TestBlockquote (0.00s)\n=== RUN   TestLists\n--- PASS: TestLists (0.00s)\n=== RUN   TestHardBreak\n--- PASS: TestHardBreak (0.00s)\n=== RUN   TestInlineCode\n--- PASS: TestInlineCode (0.00s)\n=== RUN   TestEmph\n--- PASS: TestEmph (0.00s)\n=== RUN   TestLinks\n--- PASS: TestLinks (0.00s)\n=== RUN   TestEscapes\n--- PASS: TestEscapes (0.00s)\n=== RUN   TestCRLF\n--- PASS: TestCRLF (0.00s)\n=== RUN   TestExtra\n--- PASS: TestExtra (0.00s)\n=== RUN   TestBlockTransitions\n--- PASS: TestBlockTransitions (0.00s)\n=== RUN   TestHiddenCode\n--- PASS: TestHiddenCode (0.00s)\n=== RUN   TestHiddenCodeSpans\n--- PASS: TestHiddenCodeSpans (0.00s)\n=== RUN   TestHiddenEmphasis\n    zz_hidden_test.go:35: ToHTML(\"*a\\nb*\")\n         got \"\u003cp\u003e*a\\nb*\u003c/p\u003e\\n\"\n        want \"\u003cp\u003e\u003cem\u003ea\\nb\u003c/em\u003e\u003c/p\u003e\\n\"\n--- FAIL: TestHiddenEmphasis (0.00s)\n=== RUN   TestHiddenEscapes\n--- PASS: TestHiddenEscapes (0.00s)\n=== RUN   TestHiddenHeadings\n--- PASS: TestHiddenHeadings (0.00s)\n=== RUN   TestHiddenLinks\n--- PASS: TestHiddenLinks (0.00s)\n=== RUN   TestHiddenLists\n--- PASS: TestHiddenLists (0.00s)\n=== RUN   TestHiddenParagraphs\n--- PASS: TestHiddenParagraphs (0.00s)\n=== RUN   TestHiddenQuotes\n--- PASS: TestHiddenQuotes (0.00s)\n=== RUN   TestHiddenRules\n--- PASS: TestHiddenRules (0.00s)\n=== RUN   TestHiddenSpecExample\n--- PASS: TestHiddenSpecExample (0.00s)\nFAIL\nFAIL\texample.com/md/md\t0.003s",
+  "work": "/tmp/qh-runs/expL2-test-after-write/b06-markdown-r1"
+}

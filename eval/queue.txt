@@ -1,5 +1,4 @@
 # One command per line, run sequentially by eval/runner/queue.sh (see STATUS.md).
-./bin/qh eval --harness harness/cand/l2-test-after-write --out eval/results/expL2-test-after-write --only b06-markdown,b01-expr-lang,b05-port-cron --reps 1 --parallel 1 > eval/results/expL2-test-after-write.log 2>&1
 ./bin/qh eval --agent "eval/runner/pi_agent.sh little" --agent-timeout-min 60 --out eval/results/littlecoder-baseline --only b04-kv-server,b05-port-cron,b06-markdown --reps 1 --parallel 1 >> eval/results/littlecoder-baseline-B.log 2>&1
 ./bin/qh eval --out eval/results/it0-baseline --only h02-config-merge,h04-mini-template --reps 2 --parallel 1 > eval/results/it0-baseline-H2.log 2>&1
 ./bin/qh eval --harness harness/cand/e2-review --out eval/results/exp2-review --only h02-config-merge,h04-mini-template,b01-expr-lang,b06-markdown --reps 2 --parallel 1 > eval/results/exp2-review.log 2>&1
