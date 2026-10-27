@@ -1,0 +1,29 @@
+(node:1901) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1909) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All done. Final acceptance check passed: `go vet ./... && go test ./...` exits 0, `gofmt` clean, and an end-to-end smoke run of the built binary behaves as specified.
+
+## Changes
+
+**`internal/model/task.go`**
+- `Task` gains `Tags []string` (`json:"tags,omitempty"`) and `Due *time.Time` (`json:"due,omitempty"`).
+- New exported `ErrBadTag`; `Validate()` normalises tags (trim → lower → dedupe → sort) via a new `NormalizeTags` helper, then rejects any tag not matching `^[a-z0-9][a-z0-9-]*$`.
+
+**`internal/store/store.go`**
+- `Version` bumped to 2. Version-1 files load unchanged (missing `tags`/`due` unmarshal to zero values); `Save` now writes `"version": 2` (verified by a test that hand-writes a v1 file).
+
+**`internal/query/query.go`**
+- `Options` gains `Tags`, `Overdue`, and `Now`. `Apply` filters: all requested tags must be present (case-insensitive); `Overdue` keeps only tasks with a due date strictly before today (UTC midnight of `Now`) and not done — so `--all --overdue` still excludes done tasks; new `--sort due` orders ascending with undated tasks last, ties broken by ID.
+
+**`internal/cli/`**
+- `add`: repeatable `--tag` and `--due YYYY-MM-DD` (stored as UTC midnight); bad dates/tags → usage error (exit 2).
+- `edit`: `--tag` (add), `--untag` (case-insensitive remove; missing tag is fine), `--due YYYY-MM-DD` / `--due none`; `ErrBadTag` mapped to usage error like the existing ones.
+- `list`: `--tag` (repeatable), `--overdue`, `--sort due`; combines with `--all` and the existing sorts.
+- New `tags` command: counts tags of open tasks, one `<tag> <count>` per line, sorted; missing-command usage message now lists `tags`.
+- `FormatTask` appends ` (due YYYY-MM-DD)` then ` [tag1,tag2]` — the example line renders exactly as specified.
+- Due dates parse with a round-trip check so non-canonical values like `2026-13-01` are rejected as usage errors.
+
+**`README.md`** updated with the new flags, the `tags` command, and the schema-version note.
+
+**Tests added** in all four packages: tag normalisation/`ErrBadTag`, v1→v2 store upgrade round trip, tag/overdue/due-sort filtering (including ties and the done-task rule), plus CLI-level tests covering add/edit/list/tags output, exit codes, the version-2 file format, and the updated usage message. All pre-existing tests still pass.

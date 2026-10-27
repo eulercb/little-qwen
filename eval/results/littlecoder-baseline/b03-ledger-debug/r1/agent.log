@@ -1,0 +1,17 @@
+(node:3381) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3389) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+`go test ./...` exits 0 — both tests pass, and `go vet` is clean.
+
+## Bugs fixed in `ledger/ledger.go`
+
+1. **No ordering** — `Replay` applied events in file order. The log is unsorted, so I now sort (stably) by timestamp, ties broken by `seq`, per the spec.
+
+2. **No dedup** — at-least-once delivery meant 180 duplicate event IDs were applied multiple times. Added a `seen` set so only the first occurrence of each ID counts (duplicates in the log are byte-identical, so file-order vs. sorted-order first is immaterial).
+
+3. **Truncation instead of banker's rounding** — `toUSD` did `int64(float64(amount) * rate)` (truncation toward zero). Spec requires rounding to the nearest cent, ties to even. Added `roundToEven` (symmetric for negatives, `floor(x)`, bump only when the fraction is `> 0.5` or exactly `0.5` with an odd floor) and use it per event.
+
+The reversal logic itself (unknown targets ignored, double reversals ignored, using the original event's stored amount/account) was already correct once ordering and rounding were fixed — a reversal with an earlier timestamp than its original correctly lands after the original in sort order and applies the exact undo.
+
+Verification method: before committing to a rounding scheme, I cross-checked three candidate interpretations (float ties-to-even, exact-decimal, `math.Round`) against `testdata/expected_balances.json` — the spec's banker's rounding on the float product matches all 40 accounts exactly (truncation left 36 off by cents); the fix was then applied in-place in the package and confirmed by the real test run.

@@ -1,0 +1,61 @@
+ ledger/ledger.go | 33 +++++++++++++++++++++++++++++++--
+ 1 file changed, 31 insertions(+), 2 deletions(-)
+
+diff --git a/ledger/ledger.go b/ledger/ledger.go
+index 2c4c98f..b2a3b4b 100644
+--- a/ledger/ledger.go
++++ b/ledger/ledger.go
+@@ -5,6 +5,8 @@ import (
+ 	"encoding/json"
+ 	"fmt"
+ 	"io"
++	"math"
++	"sort"
+ 	"time"
+ )
+ 
+@@ -49,15 +51,42 @@ func toUSD(amount int64, currency string) (int64, error) {
+ 	if !ok {
+ 		return 0, fmt.Errorf("unknown currency %q", currency)
+ 	}
+-	return int64(float64(amount) * rate), nil
++	return roundToEven(float64(amount) * rate), nil
++}
++
++// roundToEven rounds x to the nearest integer, with ties to even.
++func roundToEven(x float64) int64 {
++	if x < 0 {
++		return -roundToEven(-x)
++	}
++	f := math.Floor(x)
++	d := x - f
++	if d > 0.5 || (d == 0.5 && int64(f)%2 == 1) {
++		f++
++	}
++	return int64(f)
+ }
+ 
+ // Replay applies the events and returns balances in USD cents.
+ func Replay(events []Event) (map[string]int64, error) {
++	sorted := make([]Event, len(events))
++	copy(sorted, events)
++	sort.SliceStable(sorted, func(i, j int) bool {
++		if !sorted[i].TS.Equal(sorted[j].TS) {
++			return sorted[i].TS.Before(sorted[j].TS)
++		}
++		return sorted[i].Seq < sorted[j].Seq
++	})
+ 	bal := map[string]int64{}
+ 	applied := map[string]Event{}
+ 	reversed := map[string]bool{}
+-	for _, e := range events {
++	seen := map[string]bool{}
++	for _, e := range sorted {
++		if seen[e.ID] {
++			continue
++		}
++		seen[e.ID] = true
++
+ 		switch e.Type {
+ 		case "deposit", "withdrawal", "transfer":
+ 			usd, err := toUSD(e.Amount, e.Currency)
