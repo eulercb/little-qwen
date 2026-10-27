@@ -1,0 +1,18 @@
+(node:1066) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Done. `go vet ./... && go test ./...` exits 0 (verified).
+
+## What was built
+
+Package `expr` in `expr/` (module `example.com/expr`), implemented incrementally per the spec:
+
+| File | Contents |
+|---|---|
+| `expr/lexer.go` | Token stream with byte offsets: numbers (`123`, `1.5`, `.5`, `1.`, `1e3`, `2.5E-2` incl. signed exponents), identifiers, all 17 operators/punctuation (two-char matched first); `unexpected character 'X'` errors |
+| `expr/ast.go` | Node types (`num`, `var`, `unary`, `binary`, `ternary`, `call`), each recording source position |
+| `expr/parser.go` | Recursive descent with the exact precedence ladder: ternary (right-assoc) → `\|\|` → `&&` → equality → comparison → additive → multiplicative → unary → `^` (right-assoc, exponent may be unary) → primary. Handles calls, parens, `true`/`false`; emits `unexpected token`/`unexpected end of input`/`expected ")"`/`expected ":"` at the right positions |
+| `expr/eval.go` | float64 evaluator: `math.Mod`/`math.Pow`, 1/0 booleans, short-circuiting `&&`/`\|\|`/`?:`, builtins (`abs`, `sqrt`, `round`, `clamp`, variadic `min`/`max`), runtime errors at operator/identifier/name positions |
+| `expr/api.go` | `Error`, `Program`, `Compile` (also validates function calls/arity at compile time), `Eval`, `Vars()` (sorted, de-duped, copied), package-level `Eval` |
+| `expr/*_test.go` | ~150 cases: token stream, number forms, all spec examples (`-2^2=-4`, `2^-1=0.5`, `2^3^2=512`, ternary right-associativity), precedence, truthiness, short-circuit safety, function semantics (incl. `round(-2.5)=-3`, `math.Mod` signs), non-finite results, every compile/runtime error message and position, `Vars` behavior (bare `abs` *is* a variable) |
+
+Notable bugs the tests caught along the way: a missing `:` in the lexer's operator set (broke all ternaries), a field/method name clash in the AST, and several of my own off-by-one position expectations (`"(1 2)"` → `2` is at byte 3, not 2).

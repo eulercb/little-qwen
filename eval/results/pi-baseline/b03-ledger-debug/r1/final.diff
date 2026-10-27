@@ -1,0 +1,78 @@
+ ledger/ledger.go | 45 ++++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 42 insertions(+), 3 deletions(-)
+
+diff --git a/ledger/ledger.go b/ledger/ledger.go
+index 2c4c98f..40c37f0 100644
+--- a/ledger/ledger.go
++++ b/ledger/ledger.go
+@@ -5,6 +5,8 @@ import (
+ 	"encoding/json"
+ 	"fmt"
+ 	"io"
++	"math"
++	"sort"
+ 	"time"
+ )
+ 
+@@ -43,21 +45,58 @@ func ReadEvents(r io.Reader) ([]Event, error) {
+ 	return out, sc.Err()
+ }
+ 
+-// toUSD converts an amount in minor units to USD cents.
++// toUSD converts an amount in minor units to USD cents, rounded to the
++// nearest cent with ties to even (banker's rounding).
++// The rates have at most 4 decimal places, so exact decimal arithmetic is
++// used: usd = amount * rateNumerator / 10000.
+ func toUSD(amount int64, currency string) (int64, error) {
+ 	rate, ok := Rates[currency]
+ 	if !ok {
+ 		return 0, fmt.Errorf("unknown currency %q", currency)
+ 	}
+-	return int64(float64(amount) * rate), nil
++	num := amount * int64(math.Round(rate*10000))
++	q, r := num/10000, num%10000
++	if r < 0 {
++		q, r = q-1, r+10000
++	}
++	switch {
++	case r < 5000:
++		return q, nil
++	case r > 5000:
++		return q + 1, nil
++	default: // exact tie: round to the even integer
++		if q%2 == 0 {
++			return q, nil
++		}
++		return q + 1, nil
++	}
+ }
+ 
+ // Replay applies the events and returns balances in USD cents.
++//
++// Duplicate deliveries (same id) are ignored after the first occurrence.
++// Events are applied in timestamp order; equal timestamps break ties by seq.
+ func Replay(events []Event) (map[string]int64, error) {
++	seen := make(map[string]bool, len(events))
++	deduped := make([]Event, 0, len(events))
++	for _, e := range events {
++		if seen[e.ID] {
++			continue
++		}
++		seen[e.ID] = true
++		deduped = append(deduped, e)
++	}
++	sort.Slice(deduped, func(i, j int) bool {
++		if !deduped[i].TS.Equal(deduped[j].TS) {
++			return deduped[i].TS.Before(deduped[j].TS)
++		}
++		return deduped[i].Seq < deduped[j].Seq
++	})
++
+ 	bal := map[string]int64{}
+ 	applied := map[string]Event{}
+ 	reversed := map[string]bool{}
+-	for _, e := range events {
++	for _, e := range deduped {
+ 		switch e.Type {
+ 		case "deposit", "withdrawal", "transfer":
+ 			usd, err := toUSD(e.Amount, e.Currency)

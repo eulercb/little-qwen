@@ -1,0 +1,1365 @@
+ expr/api.go         |  58 +++++++++++
+ expr/api_test.go    |  97 ++++++++++++++++++
+ expr/ast.go         |  52 ++++++++++
+ expr/error.go       |  11 +++
+ expr/errors_test.go | 122 +++++++++++++++++++++++
+ expr/eval.go        | 253 +++++++++++++++++++++++++++++++++++++++++++++++
+ expr/eval_test.go   | 222 ++++++++++++++++++++++++++++++++++++++++++
+ expr/lexer.go       | 109 +++++++++++++++++++++
+ expr/lexer_test.go  |  93 ++++++++++++++++++
+ expr/parser.go      | 276 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 10 files changed, 1293 insertions(+)
+
+diff --git a/expr/api.go b/expr/api.go
+new file mode 100644
+index 0000000..6005ad7
+--- /dev/null
++++ b/expr/api.go
+@@ -0,0 +1,58 @@
++package expr
++
++import "math"
++
++// Program is a compiled expression, ready to be evaluated many times.
++type Program struct {
++	root node
++	vars []string
++}
++
++// Compile parses src and validates its function calls. It returns *Error
++// for lexical and syntax errors.
++func Compile(src string) (*Program, error) {
++	toks, err := lex(src)
++	if err != nil {
++		return nil, err
++	}
++	p := &parser{toks: toks, src: src}
++	root, err := p.parse()
++	if err != nil {
++		return nil, err
++	}
++	vars, err := validate(root)
++	if err != nil {
++		return nil, err
++	}
++	return &Program{root: root, vars: vars}, nil
++}
++
++// Eval evaluates the program against vars. It returns *Error for runtime
++// errors (unknown variable, division by zero, non-finite result).
++func (p *Program) Eval(vars map[string]float64) (float64, error) {
++	v, err := eval(p.root, vars)
++	if err != nil {
++		return 0, err
++	}
++	if math.IsNaN(v) || math.IsInf(v, 0) {
++		return 0, &Error{Pos: 0, Msg: "result is not finite"}
++	}
++	return v, nil
++}
++
++// Vars returns the sorted, de-duplicated names of variables referenced by
++// the program. Function names are not variables.
++func (p *Program) Vars() []string {
++	out := make([]string, len(p.vars))
++	copy(out, p.vars)
++	return out
++}
++
++// Eval compiles src and evaluates it against vars in one step.
++func Eval(src string, vars map[string]float64) (float64, error) {
++	p, err := Compile(src)
++	if err != nil {
++		return 0, err
++	}
++	return p.Eval(vars)
++}
+diff --git a/expr/api_test.go b/expr/api_test.go
+new file mode 100644
+index 0000000..c962d07
+--- /dev/null
++++ b/expr/api_test.go
+@@ -0,0 +1,97 @@
++package expr
++
++import (
++	"testing"
++)
++
++func TestProgramReuse(t *testing.T) {
++	p, err := Compile("x * 2 + 1")
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, tc := range []struct {
++		x    float64
++		want float64
++	}{
++		{0, 1},
++		{1, 3},
++		{-2, -3},
++	} {
++		got, err := p.Eval(map[string]float64{"x": tc.x})
++		if err != nil {
++			t.Fatalf("x=%v: %v", tc.x, err)
++		}
++		if got != tc.want {
++			t.Errorf("x=%v: got %v, want %v", tc.x, got, tc.want)
++		}
++	}
++}
++
++func TestVars(t *testing.T) {
++	cases := []struct {
++		src  string
++		want []string
++	}{
++		{"1 + 2", []string{}},
++		{"x", []string{"x"}},
++		{"x + x * x", []string{"x"}},
++		{"b + a * b", []string{"a", "b"}},
++		{"z1 + a_b + zz", []string{"a_b", "z1", "zz"}},
++		// function names are not variables; a bare builtin name is
++		// a variable reference
++		{"abs(1)", []string{}},
++		{"abs(1) + abs", []string{"abs"}},
++		{"min(x, y) * 2", []string{"x", "y"}},
++		// variables inside short-circuited / unchosen branches still count
++		{"c ? a : b", []string{"a", "b", "c"}},
++		{"!f", []string{"f"}},
++		{"x ^ -y", []string{"x", "y"}},
++		{"(x)", []string{"x"}},
++		{"x || y && z", []string{"x", "y", "z"}},
++	}
++	for _, c := range cases {
++		p, err := Compile(c.src)
++		if err != nil {
++			t.Fatalf("%q: %v", c.src, err)
++		}
++		got := p.Vars()
++		if len(got) != len(c.want) {
++			t.Errorf("%q: Vars() = %v, want %v", c.src, got, c.want)
++			continue
++		}
++		for i := range got {
++			if got[i] != c.want[i] {
++				t.Errorf("%q: Vars() = %v, want %v", c.src, got, c.want)
++				break
++			}
++		}
++	}
++}
++
++func TestVarsCopy(t *testing.T) {
++	p, err := Compile("x + y")
++	if err != nil {
++		t.Fatal(err)
++	}
++	v := p.Vars()
++	v[0] = "mutated"
++	if got := p.Vars(); got[0] != "x" {
++		t.Errorf("Vars() returned internal slice: %v", got)
++	}
++}
++
++func TestEvalAPI(t *testing.T) {
++	got, err := Eval("2 + 2", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if got != 4 {
++		t.Fatalf("Eval(2+2) = %v, want 4", got)
++	}
++	// Compile errors propagate from Eval.
++	_, err = Eval("1 +", nil)
++	checkError(t, err, 3, "unexpected end of input")
++	// Runtime errors propagate from Eval.
++	_, err = Eval("1 / 0", nil)
++	checkError(t, err, 2, "division by zero")
++}
+diff --git a/expr/ast.go b/expr/ast.go
+new file mode 100644
+index 0000000..547d85c
+--- /dev/null
++++ b/expr/ast.go
+@@ -0,0 +1,52 @@
++package expr
++
++// node is an abstract syntax tree node. Every node records the 0-based byte
++// offset in the source at which it begins, for error reporting.
++type node interface {
++	at() int
++}
++
++type numNode struct {
++	pos int
++	val float64
++}
++
++func (n *numNode) at() int { return n.pos }
++
++type varNode struct {
++	pos  int
++	name string
++}
++
++func (n *varNode) at() int { return n.pos }
++
++type unaryNode struct {
++	pos int
++	op  string // "-", "+", "!"
++	x   node
++}
++
++func (n *unaryNode) at() int { return n.pos }
++
++type binaryNode struct {
++	pos  int
++	op   string
++	l, r node
++}
++
++func (n *binaryNode) at() int { return n.pos }
++
++type ternaryNode struct {
++	pos     int
++	c, a, b node
++}
++
++func (n *ternaryNode) at() int { return n.pos }
++
++type callNode struct {
++	pos  int
++	name string
++	args []node
++}
++
++func (n *callNode) at() int { return n.pos }
+diff --git a/expr/error.go b/expr/error.go
+new file mode 100644
+index 0000000..691d22b
+--- /dev/null
++++ b/expr/error.go
+@@ -0,0 +1,11 @@
++package expr
++
++import "fmt"
++
++// Error is returned for both compile-time and runtime problems.
++type Error struct {
++	Pos int // 0-based byte offset in the source where the problem is
++	Msg string
++}
++
++func (e *Error) Error() string { return fmt.Sprintf("%d: %s", e.Pos, e.Msg) }
+diff --git a/expr/errors_test.go b/expr/errors_test.go
+new file mode 100644
+index 0000000..9926ac5
+--- /dev/null
++++ b/expr/errors_test.go
+@@ -0,0 +1,122 @@
++package expr
++
++import (
++	"fmt"
++	"testing"
++)
++
++func checkError(t *testing.T, err error, wantPos int, wantMsg string) {
++	t.Helper()
++	e, ok := err.(*Error)
++	if !ok {
++		t.Fatalf("error type %T (%v), want *Error", err, err)
++	}
++	if e.Pos != wantPos || e.Msg != wantMsg {
++		t.Fatalf("got pos %d %q, want pos %d %q", e.Pos, e.Msg, wantPos, wantMsg)
++	}
++	if got, want := e.Error(), fmt.Sprintf("%d: %s", wantPos, wantMsg); got != want {
++		t.Fatalf("Error() = %q, want %q", got, want)
++	}
++}
++
++func TestCompileErrors(t *testing.T) {
++	cases := []struct {
++		src string
++		pos int
++		msg string
++	}{
++		{"", 0, "unexpected end of input"},
++		{"   \n\t ", 6, "unexpected end of input"},
++		{"1 +", len("1 +"), "unexpected end of input"},
++		{"1 2", 2, `unexpected token "2"`},
++		{"1 2 3", 2, `unexpected token "2"`},
++		{"(1", len("(1"), `expected ")"`},
++		{"(1 2)", 3, `expected ")"`},
++		{"(1 + 2", len("(1 + 2"), `expected ")"`},
++		{"1 ? 2", len("1 ? 2"), `expected ":"`},
++		{"1 ? 2 3", 6, `expected ":"`},
++		{"1 ? 2 :", len("1 ? 2 :"), "unexpected end of input"},
++		{"1 @ 2", 2, "unexpected character '@'"},
++		{"1 = 2", 2, "unexpected character '='"},
++		{"1 & 2", 2, "unexpected character '&'"},
++		{")", 0, `unexpected token ")"`},
++		{"(1))", 3, `unexpected token ")"`},
++		{"1 + ", len("1 + "), "unexpected end of input"},
++	}
++	for _, c := range cases {
++		_, err := Compile(c.src)
++		checkError(t, err, c.pos, c.msg)
++	}
++}
++
++func TestFunctionCompileErrors(t *testing.T) {
++	cases := []struct {
++		src string
++		pos int
++		msg string
++	}{
++		{"abs(1, 2)", 0, `function "abs" expects 1 arguments, got 2`},
++		{"abs()", 0, `function "abs" expects 1 arguments, got 0`},
++		{"abs(1, 2, 3)", 0, `function "abs" expects 1 arguments, got 3`},
++		{"sqrt()", 0, `function "sqrt" expects 1 arguments, got 0`},
++		{"round(1, 2)", 0, `function "round" expects 1 arguments, got 2`},
++		{"clamp(1, 2)", 0, `function "clamp" expects 3 arguments, got 2`},
++		{"clamp(1)", 0, `function "clamp" expects 3 arguments, got 1`},
++		{"min()", 0, `function "min" expects at least 1 argument, got 0`},
++		{"max()", 0, `function "max" expects at least 1 argument, got 0`},
++		{"1 + min()", 4, `function "min" expects at least 1 argument, got 0`},
++		{"foo(1)", 0, `unknown function "foo"`},
++		{"2 * foo(1)", 4, `unknown function "foo"`},
++		// min/max with >= 1 args are fine
++	}
++	for _, c := range cases {
++		_, err := Compile(c.src)
++		checkError(t, err, c.pos, c.msg)
++	}
++	// Valid variadic calls must compile.
++	if _, err := Compile("min(1, 2, 3)"); err != nil {
++		t.Errorf("min(1, 2, 3): %v", err)
++	}
++	if _, err := Compile("max(1)"); err != nil {
++		t.Errorf("max(1): %v", err)
++	}
++	// Function names without a call are variables, not compile errors.
++	if _, err := Compile("abs"); err != nil {
++		t.Errorf("bare abs: %v", err)
++	}
++}
++
++func TestRuntimeErrors(t *testing.T) {
++	cases := []struct {
++		src  string
++		vars map[string]float64
++		pos  int
++		msg  string
++	}{
++		{"x", nil, 0, `unknown variable "x"`},
++		{"y + x", map[string]float64{"y": 1}, 4, `unknown variable "x"`},
++		{"1 / 0", nil, 2, "division by zero"},
++		{"1 / 0 * 2", nil, 2, "division by zero"},
++		{"1 % 0", nil, 2, "division by zero"},
++		{"1 / (2 - 2)", nil, 2, "division by zero"},
++		{"x / 0", map[string]float64{"x": 1}, 2, "division by zero"},
++		{"sqrt(-1)", nil, 0, "sqrt of negative number"},
++		{"1 + sqrt(x)", map[string]float64{"x": -1}, 4, "sqrt of negative number"},
++		{"1e308 * 10", nil, 0, "result is not finite"},
++	}
++	for _, c := range cases {
++		_, err := Eval(c.src, c.vars)
++		checkError(t, err, c.pos, c.msg)
++	}
++}
++
++func TestErrorFormat(t *testing.T) {
++	e := &Error{Pos: 7, Msg: "something"}
++	if e.Error() != "7: something" {
++		t.Fatalf("Error() = %q, want %q", e.Error(), "7: something")
++	}
++	e0 := &Error{Pos: 0, Msg: "result is not finite"}
++	if e0.Error() != "0: result is not finite" {
++		t.Fatalf("Error() = %q", e0.Error())
++	}
++}
+diff --git a/expr/eval.go b/expr/eval.go
+new file mode 100644
+index 0000000..aedc7eb
+--- /dev/null
++++ b/expr/eval.go
+@@ -0,0 +1,253 @@
++package expr
++
++import (
++	"fmt"
++	"math"
++)
++
++// builtin describes a built-in function. arity is the exact number of
++// arguments, or -1 for "at least one".
++type builtin struct {
++	arity int
++}
++
++var builtins = map[string]builtin{
++	"abs":   {arity: 1},
++	"sqrt":  {arity: 1},
++	"round": {arity: 1},
++	"clamp": {arity: 3},
++	"min":   {arity: -1},
++	"max":   {arity: -1},
++}
++
++// walk walks every node of the tree, calling f for each.
++func walk(n node, f func(node)) {
++	f(n)
++	switch v := n.(type) {
++	case *unaryNode:
++		walk(v.x, f)
++	case *binaryNode:
++		walk(v.l, f)
++		walk(v.r, f)
++	case *ternaryNode:
++		walk(v.c, f)
++		walk(v.a, f)
++		walk(v.b, f)
++	case *callNode:
++		for _, a := range v.args {
++			walk(a, f)
++		}
++	}
++}
++
++// validate checks all function calls and returns the sorted, de-duplicated
++// list of variable names referenced by n.
++func validate(n node) ([]string, *Error) {
++	names := map[string]bool{}
++	err := (*Error)(nil)
++	walk(n, func(x node) {
++		if err != nil {
++			return
++		}
++		switch v := x.(type) {
++		case *varNode:
++			names[v.name] = true
++		case *callNode:
++			spec, ok := builtins[v.name]
++			if !ok {
++				err = &Error{Pos: v.pos, Msg: fmt.Sprintf("unknown function %q", v.name)}
++				return
++			}
++			if spec.arity == -1 {
++				if len(v.args) == 0 {
++					err = &Error{Pos: v.pos, Msg: fmt.Sprintf("function %q expects at least 1 argument, got 0", v.name)}
++				}
++			} else if len(v.args) != spec.arity {
++				err = &Error{Pos: v.pos, Msg: fmt.Sprintf("function %q expects %d arguments, got %d", v.name, spec.arity, len(v.args))}
++			}
++		}
++	})
++	if err != nil {
++		return nil, err
++	}
++	out := make([]string, 0, len(names))
++	for name := range names {
++		out = append(out, name)
++	}
++	sortStrings(out)
++	return out, nil
++}
++
++func sortStrings(s []string) {
++	for i := 1; i < len(s); i++ {
++		for j := i; j > 0 && s[j-1] > s[j]; j-- {
++			s[j-1], s[j] = s[j], s[j-1]
++		}
++	}
++}
++
++func isTrue(x float64) bool { return x != 0 }
++
++// eval evaluates any node against vars.
++func eval(n node, vars map[string]float64) (float64, *Error) {
++	switch v := n.(type) {
++	case *numNode:
++		return v.val, nil
++
++	case *varNode:
++		x, ok := vars[v.name]
++		if !ok {
++			return 0, &Error{Pos: v.pos, Msg: fmt.Sprintf("unknown variable %q", v.name)}
++		}
++		return x, nil
++
++	case *unaryNode:
++		x, err := eval(v.x, vars)
++		if err != nil {
++			return 0, err
++		}
++		switch v.op {
++		case "-":
++			return -x, nil
++		case "+":
++			return x, nil
++		case "!":
++			if x == 0 {
++				return 1, nil
++			}
++			return 0, nil
++		}
++
++	case *binaryNode:
++		switch v.op {
++		case "&&":
++			l, err := eval(v.l, vars)
++			if err != nil {
++				return 0, err
++			}
++			if !isTrue(l) {
++				return 0, nil // short-circuit
++			}
++			r, err := eval(v.r, vars)
++			if err != nil {
++				return 0, err
++			}
++			return boolToNum(isTrue(r)), nil
++		case "||":
++			l, err := eval(v.l, vars)
++			if err != nil {
++				return 0, err
++			}
++			if isTrue(l) {
++				return 1, nil // short-circuit
++			}
++			r, err := eval(v.r, vars)
++			if err != nil {
++				return 0, err
++			}
++			return boolToNum(isTrue(r)), nil
++		}
++		l, err := eval(v.l, vars)
++		if err != nil {
++			return 0, err
++		}
++		r, err := eval(v.r, vars)
++		if err != nil {
++			return 0, err
++		}
++		switch v.op {
++		case "+":
++			return l + r, nil
++		case "-":
++			return l - r, nil
++		case "*":
++			return l * r, nil
++		case "/":
++			if r == 0 {
++				return 0, &Error{Pos: v.pos, Msg: "division by zero"}
++			}
++			return l / r, nil
++		case "%":
++			if r == 0 {
++				return 0, &Error{Pos: v.pos, Msg: "division by zero"}
++			}
++			return math.Mod(l, r), nil
++		case "^":
++			return math.Pow(l, r), nil
++		case "==":
++			return boolToNum(l == r), nil
++		case "!=":
++			return boolToNum(l != r), nil
++		case "<":
++			return boolToNum(l < r), nil
++		case "<=":
++			return boolToNum(l <= r), nil
++		case ">":
++			return boolToNum(l > r), nil
++		case ">=":
++			return boolToNum(l >= r), nil
++		}
++
++	case *ternaryNode:
++		c, err := eval(v.c, vars)
++		if err != nil {
++			return 0, err
++		}
++		if isTrue(c) {
++			return eval(v.a, vars) // short-circuit
++		}
++		return eval(v.b, vars)
++
++	case *callNode:
++		vals := make([]float64, len(v.args))
++		for i, a := range v.args {
++			x, err := eval(a, vars)
++			if err != nil {
++				return 0, err
++			}
++			vals[i] = x
++		}
++		return callBuiltin(v, vals)
++	}
++	return 0, &Error{Pos: n.at(), Msg: "internal error: unknown node"}
++}
++
++func boolToNum(b bool) float64 {
++	if b {
++		return 1
++	}
++	return 0
++}
++
++func callBuiltin(v *callNode, args []float64) (float64, *Error) {
++	switch v.name {
++	case "abs":
++		return math.Abs(args[0]), nil
++	case "sqrt":
++		if args[0] < 0 {
++			return 0, &Error{Pos: v.pos, Msg: "sqrt of negative number"}
++		}
++		return math.Sqrt(args[0]), nil
++	case "round":
++		return math.Round(args[0]), nil
++	case "min":
++		m := args[0]
++		for _, x := range args[1:] {
++			if x < m {
++				m = x
++			}
++		}
++		return m, nil
++	case "max":
++		m := args[0]
++		for _, x := range args[1:] {
++			if x > m {
++				m = x
++			}
++		}
++		return m, nil
++	case "clamp":
++		return math.Min(math.Max(args[0], args[1]), args[2]), nil
++	}
++	return 0, &Error{Pos: v.pos, Msg: "internal error: unknown function"}
++}
+diff --git a/expr/eval_test.go b/expr/eval_test.go
+new file mode 100644
+index 0000000..1fdb7ad
+--- /dev/null
++++ b/expr/eval_test.go
+@@ -0,0 +1,222 @@
++package expr
++
++import (
++	"testing"
++)
++
++func mustEval(t *testing.T, src string, vars map[string]float64) float64 {
++	t.Helper()
++	v, err := Eval(src, vars)
++	if err != nil {
++		t.Fatalf("Eval(%q, %v): %v", src, vars, err)
++	}
++	return v
++}
++
++func TestArithmetic(t *testing.T) {
++	cases := []struct {
++		src  string
++		vars map[string]float64
++		want float64
++	}{
++		{"1", nil, 1},
++		{"1 + 2", nil, 3},
++		{"10 - 4 - 3", nil, 3}, // left-assoc
++		{"2 * 3 * 4", nil, 24},
++		{"1 + 2 * 3", nil, 7},
++		{"(1 + 2) * 3", nil, 9},
++		{"10 / 4", nil, 2.5},
++		{"100 / 10 / 2", nil, 5}, // left-assoc
++		{"7 % 3", nil, 1},
++		{"-7 % 3", nil, -1}, // math.Mod keeps sign of dividend
++		{"7 % -3", nil, 1},
++		{"2 * -3", nil, -6},
++		{"-2 * -3", nil, 6},
++		{"x + 1", map[string]float64{"x": 41}, 42},
++		{"-(1 + 2)", nil, -3},
++	}
++	for _, c := range cases {
++		if got := mustEval(t, c.src, c.vars); got != c.want {
++			t.Errorf("%q = %v, want %v", c.src, got, c.want)
++		}
++	}
++}
++
++func TestPower(t *testing.T) {
++	cases := []struct {
++		src  string
++		vars map[string]float64
++		want float64
++	}{
++		{"2 ^ 10", nil, 1024},
++		{"2 ^ 3 ^ 2", nil, 512}, // right-associative: 2^(3^2)
++		{"-2 ^ 2", nil, -4},     // power binds tighter than unary on the left
++		{"-2 ^ -2", nil, -0.25},
++		{"2 ^ -1", nil, 0.5}, // right operand may be unary
++		{"2 ^ -2", nil, 0.25},
++		{"(-2) ^ 2", nil, 4},
++		{"2 ^ 3 * 2", nil, 16}, // ^ tighter than *
++		{"2 * 3 ^ 2", nil, 18},
++		{"1 ^ 0", nil, 1},
++		{"x ^ y", map[string]float64{"x": 4, "y": 0.5}, 2},
++	}
++	for _, c := range cases {
++		if got := mustEval(t, c.src, c.vars); got != c.want {
++			t.Errorf("%q = %v, want %v", c.src, got, c.want)
++		}
++	}
++}
++
++func TestPrecedence(t *testing.T) {
++	cases := []struct {
++		src  string
++		vars map[string]float64
++		want float64
++	}{
++		// comparisons
++		{"1 < 2", nil, 1},
++		{"2 < 1", nil, 0},
++		{"1 <= 1", nil, 1},
++		{"2 > 1", nil, 1},
++		{"1 >= 2", nil, 0},
++		// equality
++		{"1 == 1", nil, 1},
++		{"1 != 1", nil, 0},
++		{"0.5 == 1 / 2", nil, 1},
++		// comparison tighter than additive on its operands, looser than additive
++		{"1 + 1 == 2", nil, 1},
++		{"1 < 2 + 1", nil, 1},
++		{"1 + 1 < 3", nil, 1},
++		// and/or looser than comparisons
++		{"1 < 2 && 2 < 3", nil, 1},
++		{"1 == 2 || 2 == 2", nil, 1},
++		{"1 < 2 || 0", nil, 1},
++		{"0 < 1 && 1", nil, 1},
++	}
++	for _, c := range cases {
++		if got := mustEval(t, c.src, c.vars); got != c.want {
++			t.Errorf("%q = %v, want %v", c.src, got, c.want)
++		}
++	}
++}
++
++func TestBooleans(t *testing.T) {
++	cases := []struct {
++		src  string
++		vars map[string]float64
++		want float64
++	}{
++		{"true", nil, 1},
++		{"false", nil, 0},
++		{"!0", nil, 1},
++		{"!1", nil, 0},
++		{"!0.5", nil, 0},
++		{"!!1", nil, 1},
++		{"5 && 3", nil, 1},
++		{"0 && 3", nil, 0},
++		{"0 && 0", nil, 0},
++		{"5 || 0", nil, 1},
++		{"0 || 3", nil, 1},
++		{"0 || 0", nil, 0},
++		{"2 && 0", nil, 0},
++	}
++	for _, c := range cases {
++		if got := mustEval(t, c.src, c.vars); got != c.want {
++			t.Errorf("%q = %v, want %v", c.src, got, c.want)
++		}
++	}
++}
++
++func TestShortCircuit(t *testing.T) {
++	// Un-evaluated operands must not produce runtime errors.
++	if v := mustEval(t, `0 && x / 0`, nil); v != 0 {
++		t.Errorf(`0 && x/0 = %v, want 0`, v)
++	}
++	if v := mustEval(t, `1 || x / 0`, nil); v != 1 {
++		t.Errorf(`1 || x/0 = %v, want 1`, v)
++	}
++	if v := mustEval(t, `0 ? x / 0 : 7`, nil); v != 7 {
++		t.Errorf(`0 ? x/0 : 7 = %v, want 7`, v)
++	}
++	if v := mustEval(t, `1 ? 7 : x / 0`, nil); v != 7 {
++		t.Errorf(`1 ? 7 : x/0 = %v, want 7`, v)
++	}
++	if v := mustEval(t, `0 || (0 && x)`, nil); v != 0 {
++		t.Errorf(`0 || (0 && x) = %v, want 0`, v)
++	}
++}
++
++func TestTernary(t *testing.T) {
++	vars := map[string]float64{"a": 1, "b": 2, "c": 3, "d": 4, "e": 5}
++	cases := []struct {
++		src  string
++		vars map[string]float64
++		want float64
++	}{
++		{"1 ? 2 : 3", nil, 2},
++		{"0 ? 2 : 3", nil, 3},
++		{"5 ? 2 : 3", nil, 2}, // any non-zero is truthy
++		// right-associative: a ? b : c ? d : e  ==  a ? b : (c ? d : e)
++		{"a ? b : c ? d : e", vars, 2},
++		{"a ? b : c ? d : e", map[string]float64{"a": 0, "b": 2, "c": 1, "d": 4, "e": 5}, 4},
++		{"a ? b : c ? d : e", map[string]float64{"a": 0, "b": 2, "c": 0, "d": 4, "e": 5}, 5},
++		{"x ? 1 + 2 : 0", map[string]float64{"x": 1}, 3},
++	}
++	for _, c := range cases {
++		if got := mustEval(t, c.src, c.vars); got != c.want {
++			t.Errorf("%q = %v, want %v", c.src, got, c.want)
++		}
++	}
++}
++
++func TestFunctions(t *testing.T) {
++	cases := []struct {
++		src  string
++		vars map[string]float64
++		want float64
++	}{
++		{"abs(3)", nil, 3},
++		{"abs(-3)", nil, 3},
++		{"abs(0)", nil, 0},
++		{"abs(x)", map[string]float64{"x": -1.5}, 1.5},
++		{"sqrt(9)", nil, 3},
++		{"sqrt(0)", nil, 0},
++		{"sqrt(1.44)", nil, 1.2},
++		{"min(3, 1, 2)", nil, 1},
++		{"max(3, 1, 2)", nil, 3},
++		{"min(5)", nil, 5},
++		{"max(5)", nil, 5},
++		{"min(1, 2)", nil, 1},
++		{"round(2.5)", nil, 3},
++		{"round(2.4)", nil, 2},
++		{"round(-2.5)", nil, -3}, // rounds away from zero
++		{"clamp(5, 0, 3)", nil, 3},
++		{"clamp(-1, 0, 3)", nil, 0},
++		{"clamp(2, 0, 3)", nil, 2},
++		{"min(abs(x), 2)", map[string]float64{"x": -5}, 2},
++		{"max(x, y, z)", map[string]float64{"x": 1, "y": 9, "z": 4}, 9},
++	}
++	for _, c := range cases {
++		if got := mustEval(t, c.src, c.vars); got != c.want {
++			t.Errorf("%q = %v, want %v", c.src, got, c.want)
++		}
++	}
++}
++
++func TestNonFiniteResult(t *testing.T) {
++	for _, src := range []string{"1e308 * 10", "1e308 * 10 * 0", "1 / 1e-309", "1e308 ^ 2"} {
++		_, err := Eval(src, nil)
++		if err == nil {
++			t.Errorf("%q: expected non-finite error, got none", src)
++			continue
++		}
++		e, ok := err.(*Error)
++		if !ok || e.Pos != 0 || e.Msg != "result is not finite" {
++			t.Errorf("%q: got %v (%T), want pos 0 \"result is not finite\"", src, err, err)
++		}
++	}
++	// finite result: no error
++	if v := mustEval(t, `1e308 / 1e308`, nil); v != 1 {
++		t.Errorf("1e308/1e308 = %v, want 1", v)
++	}
++}
+diff --git a/expr/lexer.go b/expr/lexer.go
+new file mode 100644
+index 0000000..7df8520
+--- /dev/null
++++ b/expr/lexer.go
+@@ -0,0 +1,109 @@
++package expr
++
++import (
++	"strconv"
++	"strings"
++)
++
++type tokenKind int
++
++const (
++	tokEOF tokenKind = iota
++	tokNum
++	tokIdent
++	tokOp
++)
++
++// token is a lexical token with its 0-based byte offset in the source.
++type token struct {
++	kind tokenKind
++	text string
++	pos  int
++	val  float64 // set for tokNum
++}
++
++func isDigit(c byte) bool { return c >= '0' && c <= '9' }
++
++func isIdentStart(c byte) bool {
++	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_'
++}
++
++func isIdentChar(c byte) bool { return isIdentStart(c) || isDigit(c) }
++
++var twoCharOps = []string{"<=", ">=", "==", "!=", "&&", "||"}
++
++var oneCharOps = []string{"+", "-", "*", "/", "%", "^", "(", ")", ",", "?", ":", "<", ">", "!"}
++
++// matchOp reports the length (1 or 2) of the operator starting at i, or 0.
++func matchOp(src string, i int) int {
++	if i+1 < len(src) {
++		for _, op := range twoCharOps {
++			if strings.HasPrefix(src[i:], op) {
++				return 2
++			}
++		}
++	}
++	for _, op := range oneCharOps {
++		if i < len(src) && src[i] == op[0] {
++			return 1
++		}
++	}
++	return 0
++}
++
++// lex scans src into a token stream, terminated by a tokEOF at len(src).
++func lex(src string) ([]token, *Error) {
++	var toks []token
++	i := 0
++	for i < len(src) {
++		c := src[i]
++		switch {
++		case c == ' ' || c == '\t' || c == '\n':
++			i++
++		case isDigit(c) || (c == '.' && i+1 < len(src) && isDigit(src[i+1])):
++			start := i
++			for i < len(src) && isDigit(src[i]) {
++				i++
++			}
++			if i < len(src) && src[i] == '.' {
++				i++
++				for i < len(src) && isDigit(src[i]) {
++					i++
++				}
++			}
++			// Exponent: e/E followed by an optional sign and one or more digits.
++			if i < len(src) && (src[i] == 'e' || src[i] == 'E') {
++				j := i + 1
++				if j < len(src) && (src[j] == '+' || src[j] == '-') {
++					j++
++				}
++				if j < len(src) && isDigit(src[j]) {
++					for j < len(src) && isDigit(src[j]) {
++						j++
++					}
++					i = j
++				}
++			}
++			v, err := strconv.ParseFloat(src[start:i], 64)
++			if err != nil {
++				return nil, &Error{Pos: start, Msg: "invalid number"}
++			}
++			toks = append(toks, token{kind: tokNum, text: src[start:i], pos: start, val: v})
++		case isIdentStart(c):
++			start := i
++			for i < len(src) && isIdentChar(src[i]) {
++				i++
++			}
++			toks = append(toks, token{kind: tokIdent, text: src[start:i], pos: start})
++		default:
++			n := matchOp(src, i)
++			if n == 0 {
++				return nil, &Error{Pos: i, Msg: "unexpected character '" + string(c) + "'"}
++			}
++			toks = append(toks, token{kind: tokOp, text: src[i : i+n], pos: i})
++			i += n
++		}
++	}
++	toks = append(toks, token{kind: tokEOF, text: "", pos: len(src)})
++	return toks, nil
++}
+diff --git a/expr/lexer_test.go b/expr/lexer_test.go
+new file mode 100644
+index 0000000..a0807f3
+--- /dev/null
++++ b/expr/lexer_test.go
+@@ -0,0 +1,93 @@
++package expr
++
++import (
++	"testing"
++)
++
++func TestLex(t *testing.T) {
++	toks, err := lex(`2.5E-2 + _x1 - (1/2)%3^2 && !true`)
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := []struct {
++		kind tokenKind
++		text string
++		pos  int
++		val  float64
++	}{
++		{tokNum, "2.5E-2", 0, 0.025},
++		{tokOp, "+", 7, 0},
++		{tokIdent, "_x1", 9, 0},
++		{tokOp, "-", 13, 0},
++		{tokOp, "(", 15, 0},
++		{tokNum, "1", 16, 1},
++		{tokOp, "/", 17, 0},
++		{tokNum, "2", 18, 2},
++		{tokOp, ")", 19, 0},
++		{tokOp, "%", 20, 0},
++		{tokNum, "3", 21, 3},
++		{tokOp, "^", 22, 0},
++		{tokNum, "2", 23, 2},
++		{tokOp, "&&", 25, 0},
++		{tokOp, "!", 28, 0},
++		{tokIdent, "true", 29, 0},
++		{tokEOF, "", 33, 0},
++	}
++	if len(toks) != len(want) {
++		t.Fatalf("got %d tokens, want %d: %#v", len(toks), len(want), toks)
++	}
++	for i, w := range want {
++		g := toks[i]
++		if g.kind != w.kind || g.text != w.text || g.pos != w.pos || g.val != w.val {
++			t.Errorf("token %d: got %#v, want %#v", i, g, w)
++		}
++	}
++}
++
++func TestLexNumberForms(t *testing.T) {
++	cases := map[string]float64{
++		"123":    123,
++		"1.5":    1.5,
++		".5":     0.5,
++		"1.":     1,
++		"1e3":    1000,
++		"1E3":    1000,
++		"1e+3":   1000,
++		"2.5E-2": 0.025,
++		"0.":     0,
++	}
++	for src, want := range cases {
++		v, err := Eval(src, nil)
++		if err != nil {
++			t.Errorf("%q: %v", src, err)
++			continue
++		}
++		if v != want {
++			t.Errorf("%q = %v, want %v", src, v, want)
++		}
++	}
++}
++
++func TestLexBadCharacters(t *testing.T) {
++	wantMsgs := map[string]struct {
++		msg string
++		pos int
++	}{
++		"1 @ 2": {"unexpected character '@'", 2},
++		"1 = 2": {"unexpected character '='", 2},
++		"1 & 2": {"unexpected character '&'", 2},
++		"1 ] 2": {"unexpected character ']'", 2},
++		"1 $ 2": {"unexpected character '$'", 2},
++	}
++	for src, want := range wantMsgs {
++		_, err := Compile(src)
++		e, ok := err.(*Error)
++		if !ok {
++			t.Errorf("%q: error type %T, want *Error", src, err)
++			continue
++		}
++		if e.Msg != want.msg || e.Pos != want.pos {
++			t.Errorf("%q: got %q, want %q (pos %d)", src, e.Error(), want.msg, want.pos)
++		}
++	}
++}
+diff --git a/expr/parser.go b/expr/parser.go
+new file mode 100644
+index 0000000..85b294e
+--- /dev/null
++++ b/expr/parser.go
+@@ -0,0 +1,276 @@
++package expr
++
++import "fmt"
++
++// parser is a recursive-descent parser over the token stream.
++type parser struct {
++	toks []token
++	src  string
++	i    int
++}
++
++func (p *parser) peek() token { return p.toks[p.i] }
++
++func (p *parser) next() token {
++	t := p.toks[p.i]
++	if p.i < len(p.toks)-1 {
++		p.i++
++	}
++	return t
++}
++
++func (p *parser) accept(text string) bool {
++	t := p.peek()
++	if t.kind == tokOp && t.text == text {
++		p.next()
++		return true
++	}
++	return false
++}
++
++func (p *parser) failUnexpected() *Error {
++	t := p.peek()
++	if t.kind == tokEOF {
++		return &Error{Pos: len(p.src), Msg: "unexpected end of input"}
++	}
++	return &Error{Pos: t.pos, Msg: fmt.Sprintf("unexpected token %q", t.text)}
++}
++
++func (p *parser) failExpected(what string) *Error {
++	t := p.peek()
++	pos := len(p.src)
++	if t.kind != tokEOF {
++		pos = t.pos
++	}
++	return &Error{Pos: pos, Msg: "expected " + what}
++}
++
++// parse parses a complete input: exactly one expression.
++func (p *parser) parse() (node, *Error) {
++	e, err := p.parseTernary()
++	if err != nil {
++		return nil, err
++	}
++	if p.peek().kind == tokEOF {
++		return e, nil
++	}
++	return nil, p.failUnexpected()
++}
++
++// Ternary: c ? a : b, right-associative.
++func (p *parser) parseTernary() (node, *Error) {
++	c, err := p.parseOr()
++	if err != nil {
++		return nil, err
++	}
++	if p.accept("?") {
++		a, err := p.parseOr()
++		if err != nil {
++			return nil, err
++		}
++		if !p.accept(":") {
++			return nil, p.failExpected(`":"`)
++		}
++		b, err := p.parseTernary() // right-associative
++		if err != nil {
++			return nil, err
++		}
++		return &ternaryNode{c: c, a: a, b: b}, nil
++	}
++	return c, nil
++}
++
++func (p *parser) parseOr() (node, *Error) {
++	l, err := p.parseAnd()
++	if err != nil {
++		return nil, err
++	}
++	for p.peek().kind == tokOp && p.peek().text == "||" {
++		op := p.next()
++		r, err := p.parseAnd()
++		if err != nil {
++			return nil, err
++		}
++		l = &binaryNode{pos: op.pos, op: "||", l: l, r: r}
++	}
++	return l, nil
++}
++
++func (p *parser) parseAnd() (node, *Error) {
++	l, err := p.parseEquality()
++	if err != nil {
++		return nil, err
++	}
++	for p.peek().kind == tokOp && p.peek().text == "&&" {
++		op := p.next()
++		r, err := p.parseEquality()
++		if err != nil {
++			return nil, err
++		}
++		l = &binaryNode{pos: op.pos, op: "&&", l: l, r: r}
++	}
++	return l, nil
++}
++
++func (p *parser) parseEquality() (node, *Error) {
++	l, err := p.parseComparison()
++	if err != nil {
++		return nil, err
++	}
++	for p.peek().kind == tokOp && (p.peek().text == "==" || p.peek().text == "!=") {
++		op := p.next()
++		r, err := p.parseComparison()
++		if err != nil {
++			return nil, err
++		}
++		l = &binaryNode{pos: op.pos, op: op.text, l: l, r: r}
++	}
++	return l, nil
++}
++
++func (p *parser) parseComparison() (node, *Error) {
++	l, err := p.parseAdditive()
++	if err != nil {
++		return nil, err
++	}
++	for p.peek().kind == tokOp {
++		t := p.peek().text
++		if t != "<" && t != "<=" && t != ">" && t != ">=" {
++			break
++		}
++		op := p.next()
++		r, err := p.parseAdditive()
++		if err != nil {
++			return nil, err
++		}
++		l = &binaryNode{pos: op.pos, op: t, l: l, r: r}
++	}
++	return l, nil
++}
++
++func (p *parser) parseAdditive() (node, *Error) {
++	l, err := p.parseMultiplicative()
++	if err != nil {
++		return nil, err
++	}
++	for p.peek().kind == tokOp && (p.peek().text == "+" || p.peek().text == "-") {
++		op := p.next()
++		r, err := p.parseMultiplicative()
++		if err != nil {
++			return nil, err
++		}
++		l = &binaryNode{pos: op.pos, op: op.text, l: l, r: r}
++	}
++	return l, nil
++}
++
++func (p *parser) parseMultiplicative() (node, *Error) {
++	l, err := p.parseUnary()
++	if err != nil {
++		return nil, err
++	}
++	for p.peek().kind == tokOp {
++		t := p.peek().text
++		if t != "*" && t != "/" && t != "%" {
++			break
++		}
++		op := p.next()
++		r, err := p.parseUnary()
++		if err != nil {
++			return nil, err
++		}
++		l = &binaryNode{pos: op.pos, op: t, l: l, r: r}
++	}
++	return l, nil
++}
++
++// Unary prefix. When an operator is present its operand is another unary
++// expression (allowing "--2"); otherwise it is a power, so that power binds
++// tighter than unary on the left: -2^2 = -(2^2) = -4.
++func (p *parser) parseUnary() (node, *Error) {
++	if p.peek().kind == tokOp {
++		t := p.peek().text
++		if t == "-" || t == "+" || t == "!" {
++			op := p.next()
++			x, err := p.parseUnary()
++			if err != nil {
++				return nil, err
++			}
++			return &unaryNode{pos: op.pos, op: t, x: x}, nil
++		}
++	}
++	return p.parsePower()
++}
++
++// Power is right-associative and its exponent may be a unary expression,
++// so 2^-1 = 0.5 and 2^3^2 = 2^(3^2) = 512.
++func (p *parser) parsePower() (node, *Error) {
++	base, err := p.parsePrimary()
++	if err != nil {
++		return nil, err
++	}
++	if p.peek().kind == tokOp && p.peek().text == "^" {
++		op := p.next()
++		exp, err := p.parseUnary()
++		if err != nil {
++			return nil, err
++		}
++		return &binaryNode{pos: op.pos, op: "^", l: base, r: exp}, nil
++	}
++	return base, nil
++}
++
++func (p *parser) parsePrimary() (node, *Error) {
++	t := p.peek()
++	switch t.kind {
++	case tokEOF:
++		return nil, p.failUnexpected()
++	case tokNum:
++		p.next()
++		return &numNode{pos: t.pos, val: t.val}, nil
++	case tokIdent:
++		p.next()
++		if t.text == "true" {
++			return &numNode{pos: t.pos, val: 1}, nil
++		}
++		if t.text == "false" {
++			return &numNode{pos: t.pos, val: 0}, nil
++		}
++		if p.peek().kind == tokOp && p.peek().text == "(" {
++			p.next() // "("
++			var args []node
++			if !p.accept(")") {
++				for {
++					a, err := p.parseTernary()
++					if err != nil {
++						return nil, err
++					}
++					args = append(args, a)
++					if p.accept(",") {
++						continue
++					}
++					if !p.accept(")") {
++						return nil, p.failExpected(`")"`)
++					}
++					break
++				}
++			}
++			return &callNode{pos: t.pos, name: t.text, args: args}, nil
++		}
++		return &varNode{pos: t.pos, name: t.text}, nil
++	case tokOp:
++		if t.text == "(" {
++			p.next()
++			e, err := p.parseTernary()
++			if err != nil {
++				return nil, err
++			}
++			if !p.accept(")") {
++				return nil, p.failExpected(`")"`)
++			}
++			return e, nil
++		}
++		return nil, p.failUnexpected()
++	}
++	return nil, p.failUnexpected()
++}

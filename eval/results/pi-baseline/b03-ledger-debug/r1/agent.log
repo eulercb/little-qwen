@@ -1,0 +1,13 @@
+(node:5468) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All tests pass (`go test ./...` exits 0), and only `ledger/ledger.go` was modified — `testdata/` is untouched.
+
+## Bugs found and fixed in `ledger/ledger.go`
+
+1. **Truncation instead of banker's rounding** (`toUSD`): it did `int64(float64(amount) * rate)`, which truncates toward zero. The spec requires rounding to the nearest cent with ties-to-even. I replaced it with exact decimal arithmetic: rates have ≤4 decimal places, so `amount * round(rate*10000)` is divided by 10000, with the remainder rounded to nearest, breaking exact ties (remainder 5000) to the even integer. (I verified on the data that no ties actually occur and that float vs. exact-decimal classification agree, but the exact implementation is spec-faithful and avoids float error.)
+
+2. **No ordering** (`Replay`): events were applied in file order, but the log is unsorted and must be applied in timestamp order with seq as tie-breaker. This matters especially for reversals, which can appear in the file before their original as long as their timestamp is later. Added a sort by `(ts, seq)` using `time.Equal`/`Before`.
+
+3. **No duplicate suppression** (`Replay`): the log is at-least-once delivered — I found 170 repeated lines (identical content) — and the old code re-applied every occurrence, double-counting 170 events. Now events are deduplicated by id, keeping only the first occurrence (before sorting, per "first occurrence in the log").
+
+The reversal logic itself (undo via negative sign, ignoring reversals of unknown/already-reversed events) was already correct once ordering and dedup were in place.

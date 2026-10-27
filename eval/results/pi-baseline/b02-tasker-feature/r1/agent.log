@@ -1,0 +1,30 @@
+(node:3842) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All done — `go vet ./... && go test ./...` exits 0, gofmt clean, all existing tests still pass.
+
+## Changes
+
+**`internal/model/task.go`**
+- `Task` gains `Tags []string` (`json:"tags,omitempty"`) and `Due *time.Time` (`json:"due,omitempty"`).
+- `Validate()` normalises tags in place (trim, lower-case, de-dup, sort) and rejects any tag not matching `^[a-z0-9][a-z0-9-]*$` with the new `model.ErrBadTag`; it also snaps `Due` to UTC midnight.
+- New helper `NormalizeTag` shared with the query layer.
+
+**`internal/store/store.go`**
+- `Version` bumped 1 → 2; version-1 files (missing `tags`/`due` keys) unmarshal fine and are always re-saved as v2.
+
+**`internal/query/query.go`**
+- `Options` gains `Tags []string`, `Overdue bool`, `Today time.Time` (set by the CLI from `Env.Now`).
+- `--tag` semantics: keep only tasks having ALL wanted tags (normalised before compare).
+- `Overdue`: due date strictly before today (UTC date) and never done, even with `IncludeDone`.
+- `SortBy "due"`: ascending, no-due last, ties by ID.
+
+**`internal/cli/cli.go` / `format.go`**
+- `add`: repeatable `--tag` and `--due YYYY-MM-DD`; bad date/tag → exit 2.
+- `edit`: `--tag`, `--untag` (no-op if absent), `--due` / `--due none`; `ErrBadTag` mapped to a usage error like the other validation errors.
+- `list`: `--tag` (repeatable), `--overdue`, `--sort due`; combines with `--all`/`--sort id|priority`.
+- New `tags` command: `<tag> <count>` per line over open tasks, sorted; usage message updated to mention `tags`.
+- `FormatTask` appends ` (due YYYY-MM-DD)` then `[tag1,tag2]`.
+
+**`README.md`** — updated with the new flags and the `tags` command.
+
+**New tests**: `model/tags_test.go` (normalisation, bad tags, due-midnight), `store/version_test.go` (v1 load, v2 round-trip, newer-version rejection), `query/tags_test.go` (tag/overdue/sort-due), `cli/tags_test.go` (add/edit/list flags, usage exit codes, `tags` output, usage message).

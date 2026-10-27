@@ -1,0 +1,21 @@
+(node:6240) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Done. `go vet ./... && go test -race ./...` exits 0 with all three packages passing and everything gofmt-clean.
+
+## Summary
+
+**`store/store.go`** (+ tests)
+- `Store` with injectable `Clock`, `sync.Mutex`-guarded map of `{value, deadline}` entries; expiry is `now >= deadline`, enforced lazily in every read path so expired keys behave like missing keys in `Get/Del/Exists/Expire/Persist/TTL/Incr/Keys/Len/Save`.
+- `Set` replaces value **and** TTL; `Incr` preserves TTL and returns `ErrNotInteger`; `TTL` returns `time.Duration(-2)`/`-1`/remaining.
+- Hand-rolled glob matcher (`*`, `?`, `[abc]`, `[a-z]`, `[^a]`/`[!a]`, `\x`) with star-backtracking — `*` matches `/` too.
+- `Save`/`Load`: versioned JSON snapshot, entries sorted by key, `exp` in unix-ms; `Load` rejects other versions, drops expired-at-load entries, replaces all contents.
+
+**`proto/proto.go`** (+ tests)
+- `Exec` tokenizes on spaces/tabs with double-quoted tokens (escapes `\" \\ \n \t`, unterminated/junk-after-quote → syntax error); case-insensitive dispatch for all 12 commands.
+- Response formatting per spec: `+`, `$` with quoting when the value contains space/tab/`"`/`\`/newline or is empty, `:n`, `*n` arrays, `$nil`; TTL rounded up; error strings for unknown command (as sent), wrong arg count (lower-cased), and non-integers.
+
+**`server/server.go`** (+ tests)
+- `Serve(ctx, l, s)`: one goroutine per client, tracked in a map with `*sync.Once` closes and a `WaitGroup`. On ctx cancel a helper goroutine closes the listener (unblocking `Accept`), then open connections are closed and `Serve` waits and returns `nil`; other accept errors return after cleanup.
+- Per-connection: `\r`-stripped lines, `bufio` 1 MiB buffer, lines >64 KiB → `-ERR line too long\n` + close, `QUIT` → `+BYE\n` + close, responses written and flushed in order.
+
+Notable catches along the way: a glob star-backtracking bug, a shutdown deadlock in `Serve` (nothing unblocked `Accept` on cancel), `sync.Once` copy-by-value vet errors, and a few test-expectation mistakes (e.g. `file.txt` is 8 bytes, and `SET <key>` alone really is a wrong-arg-count error).
