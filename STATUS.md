@@ -34,7 +34,7 @@ Then follow "Decisions waiting on those results" below as items finish.
   were discarded. All finished results are committed and pushed.
 - Remaining queue (`eval/queue.txt`, in order; `eval/queue.done` lists what finished):
   1. (done) L1 think-cap probe.
-  2. pi on Tier B.
+  2. (done) pi on Tier B: mean 0.828, the same as qh + L1 (0.825); b06 failed on a 16K thinking truncation.
   3. little-coder on Tier B.
   3b. L2 probe (`harness/cand/l2-test-after-write`) on b06, b01, b05.
   4. Base rep 2 on h02/h04.
