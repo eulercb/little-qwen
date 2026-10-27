@@ -21,11 +21,6 @@ Headline so far:
 - The adopted L1 (thinking cap that keeps the reasoning, from little-coder) and L2 (build/test nudge after
   large untested writes) give b01 1.00 / 29 min, b05 1.00 / 30 min, and b06 0.96. b06 was 0 for every harness.
 - Both are composed into harness/it1, which needs its full Tier-B + held-out run (queued) to confirm at n=1+.
-History: paused 2026-10-23 03:31 on request.
-
-The queue was stopped mid-way through the L1 probe. The interrupted b05 run was discarded.
-On resume, the queue continues with the L1 probe's remaining tasks (b05, b06, h03); `qh eval` skips finished runs.
-L1 is done and adopted (see the log and docs/EXPERIMENTS.md).
 
 ### Resume in one command
 ```bash
