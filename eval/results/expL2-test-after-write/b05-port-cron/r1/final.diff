@@ -1,0 +1,649 @@
+ cron/cron.go      | 354 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ cron/cron_test.go | 279 ++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 633 insertions(+)
+
+diff --git a/cron/cron.go b/cron/cron.go
+new file mode 100644
+index 0000000..1e8a9e6
+--- /dev/null
++++ b/cron/cron.go
+@@ -0,0 +1,354 @@
++// Package cron implements a cron-expression library ported from the
++// Python reference implementation in reference/cron.py.
++//
++// Syntax: five space-separated fields: minute hour day-of-month month day-of-week
++//   minute 0-59, hour 0-23, day-of-month 1-31, month 1-12 (or JAN-DEC),
++//   day-of-week 0-6 (or SUN-SAT; 7 is also Sunday)
++// Each field is a comma-separated list of items. An item is:
++//   *            every value
++//   N            a single value
++//   N-M          an inclusive range (N <= M required)
++//   */S  N-M/S   a step over the full range or over a range (S >= 1)
++//   N/S          from N to the field maximum with step S
++// Names (JAN..DEC, SUN..SAT) are case-insensitive and may be used wherever a number may.
++// Macros: @yearly (= "0 0 1 1 *"), @monthly ("0 0 1 * *"), @weekly ("0 0 * * 0"),
++// @daily ("0 0 * * *"), @hourly ("0 * * * *").
++// Day matching follows Vixie cron: if both day-of-month and day-of-week are restricted
++// (neither field is "*"), a day matches when EITHER matches; otherwise both must match.
++package cron
++
++import (
++	"fmt"
++	"strings"
++	"time"
++)
++
++// CronError is returned for invalid expressions and unsatisfiable schedules.
++type CronError struct {
++	msg string
++}
++
++func (e *CronError) Error() string { return e.msg }
++
++func cronErr(format string, args ...any) error {
++	return &CronError{msg: fmt.Sprintf(format, args...)}
++}
++
++var fieldSpecs = [5][3]string{
++	{"minute", "0", "59"},
++	{"hour", "0", "23"},
++	{"day-of-month", "1", "31"},
++	{"month", "1", "12"},
++	{"day-of-week", "0", "6"},
++}
++
++var months = []string{"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"}
++var days = []string{"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"}
++
++var macros = map[string]string{
++	"@yearly":    "0 0 1 1 *",
++	"@annually":  "0 0 1 1 *",
++	"@monthly":   "0 0 1 * *",
++	"@weekly":    "0 0 * * 0",
++	"@daily":     "0 0 * * *",
++	"@midnight":  "0 0 * * *",
++	"@hourly":    "0 * * * *",
++}
++
++// Schedule holds a parsed cron expression.
++type Schedule struct {
++	expr     string
++	minute   map[int]bool
++	hour     map[int]bool
++	dom      map[int]bool
++	month    map[int]bool
++	dow      map[int]bool
++	domStar  bool
++	dowStar  bool
++}
++
++// Parse parses expr into a Schedule, mirroring parse() in the reference.
++func Parse(expr string) (*Schedule, error) {
++	original := expr
++	expr = strings.TrimSpace(expr)
++	if strings.HasPrefix(expr, "@") {
++		m, ok := macros[strings.ToLower(expr)]
++		if !ok {
++			return nil, cronErr("unknown macro '%s'", expr)
++		}
++		expr = m
++	}
++	parts := strings.Fields(expr)
++	if len(parts) != 5 {
++		return nil, cronErr("expected 5 fields, got %d", len(parts))
++	}
++	fields := make([]map[int]bool, 5)
++	for i, p := range parts {
++		f, err := parseField(p, i)
++		if err != nil {
++			return nil, err
++		}
++		fields[i] = f
++	}
++	s := &Schedule{
++		expr:    strings.TrimSpace(original),
++		minute:  fields[0],
++		hour:    fields[1],
++		dom:     fields[2],
++		month:   fields[3],
++		dow:     fields[4],
++		domStar: parts[2] == "*",
++		dowStar: parts[4] == "*",
++	}
++	return s, nil
++}
++
++func parseValue(tok string, idx int) (int, error) {
++	name := fieldSpecs[idx][0]
++	t := strings.ToUpper(tok)
++	if idx == 3 {
++		for i, m := range months {
++			if t == m {
++				return i + 1, nil
++			}
++		}
++	}
++	if idx == 4 {
++		for i, d := range days {
++			if t == d {
++				return i, nil
++			}
++		}
++	}
++	if !isDigits(tok) {
++		return 0, cronErr("%s: invalid value '%s'", name, tok)
++	}
++	v, _ := atoiDecimal(tok)
++	if idx == 4 && v == 7 {
++		v = 0
++	}
++	lo, _ := atoiDecimal(fieldSpecs[idx][1])
++	hi, _ := atoiDecimal(fieldSpecs[idx][2])
++	if v < lo || v > hi {
++		return 0, cronErr("%s: value %d out of range %s-%s", name, v, fieldSpecs[idx][1], fieldSpecs[idx][2])
++	}
++	return v, nil
++}
++
++func parseField(text string, idx int) (map[int]bool, error) {
++	spec := fieldSpecs[idx]
++	name, loS, hiS := spec[0], spec[1], spec[2]
++	lo, _ := atoiDecimal(loS)
++	hi, _ := atoiDecimal(hiS)
++	if text == "" {
++		return nil, cronErr("%s: empty field", name)
++	}
++	values := make(map[int]bool)
++	for _, item := range strings.Split(text, ",") {
++		if item == "" {
++			return nil, cronErr("%s: empty item", name)
++		}
++		step := 1
++		var base string
++		if strings.Contains(item, "/") {
++			b, s, _ := strings.Cut(item, "/")
++			base = b
++			if !isDigits(s) || atoiDecimalOrZero(s) < 1 {
++				return nil, cronErr("%s: invalid step '%s'", name, s)
++			}
++			step = atoiDecimalOrZero(s)
++		} else {
++			base = item
++		}
++		var start, end int
++		switch {
++		case base == "*":
++			start, end = lo, hi
++		case strings.Contains(base, "-"):
++			a, b, _ := strings.Cut(base, "-")
++			va, err := parseValue(a, idx)
++			if err != nil {
++				return nil, err
++			}
++			vb, err := parseValue(b, idx)
++			if err != nil {
++				return nil, err
++			}
++			start, end = va, vb
++			if start > end {
++				return nil, cronErr("%s: range %d-%d is reversed", name, start, end)
++			}
++		default:
++			v, err := parseValue(base, idx)
++			if err != nil {
++				return nil, err
++			}
++			start = v
++			if strings.Contains(item, "/") {
++				end = hi
++			} else {
++				end = v
++			}
++		}
++		for v := start; v <= end; v += step {
++			values[v] = true
++		}
++	}
++	return values, nil
++}
++
++func isDigits(s string) bool {
++	if s == "" {
++		return false
++	}
++	for i := 0; i < len(s); i++ {
++		if s[i] < '0' || s[i] > '9' {
++			return false
++		}
++	}
++	return true
++}
++
++func atoiDecimalOrZero(s string) int {
++	n := 0
++	for i := 0; i < len(s); i++ {
++		n = n*10 + int(s[i]-'0')
++	}
++	return n
++}
++
++func atoiDecimal(s string) (int, error) {
++	if !isDigits(s) {
++		return 0, fmt.Errorf("not digits: %q", s)
++	}
++	return atoiDecimalOrZero(s), nil
++}
++
++func dayOK(s *Schedule, t time.Time) bool {
++	dow := int(t.Weekday()) // Sunday=0, matching (python weekday()+1)%7
++	inDom := s.dom[t.Day()]
++	inDow := s.dow[dow]
++	if !s.domStar && !s.dowStar {
++		return inDom || inDow
++	}
++	return inDom && inDow
++}
++
++// Next returns the first time strictly after `after` that matches the
++// schedule, in `after`'s location, mirroring next_run().
++func (s *Schedule) Next(after time.Time) (time.Time, error) {
++	loc := after.Location()
++	t := time.Date(after.Year(), after.Month(), after.Day(), after.Hour(), after.Minute(), 0, 0, loc).Add(time.Minute)
++	limit := after.Add(366 * 5 * 24 * time.Hour)
++	for !t.After(limit) {
++		if !s.month[int(t.Month())] {
++			y, m := t.Year(), int(t.Month())
++			if m == 12 {
++				y, m = y+1, 1
++			} else {
++				m++
++			}
++			t = time.Date(y, time.Month(m), 1, 0, 0, 0, 0, loc)
++			continue
++		}
++		if !dayOK(s, t) {
++			t = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, 1)
++			continue
++		}
++		if !s.hour[t.Hour()] {
++			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), 0, 0, 0, loc).Add(time.Hour)
++			continue
++		}
++		if !s.minute[t.Minute()] {
++			t = t.Add(time.Minute)
++			continue
++		}
++		return t, nil
++	}
++	return time.Time{}, cronErr("no match within 5 years for '%s'", s.expr)
++}
++
++func formatField(values map[int]bool, idx int) string {
++	lo, _ := atoiDecimal(fieldSpecs[idx][1])
++	hi, _ := atoiDecimal(fieldSpecs[idx][2])
++	full := true
++	if len(values) == hi-lo+1 {
++		for v := lo; v <= hi; v++ {
++			if !values[v] {
++				full = false
++				break
++			}
++		}
++	} else {
++		full = false
++	}
++	if full {
++		return "*"
++	}
++	vs := make([]int, 0, len(values))
++	for v := range values {
++		vs = append(vs, v)
++	}
++	sortInts(vs)
++	var out []string
++	i := 0
++	for i < len(vs) {
++		j := i
++		for j+1 < len(vs) && vs[j+1] == vs[j]+1 {
++			j++
++		}
++		if j-i < 2 {
++			out = append(out, itoa(vs[i]))
++		} else {
++			out = append(out, itoa(vs[i])+"-"+itoa(vs[j]))
++		}
++		if 0 < j-i && j-i < 2 {
++			for _, v := range vs[i+1 : j+1] {
++				out = append(out, itoa(v))
++			}
++		}
++		i = j + 1
++	}
++	return strings.Join(out, ",")
++}
++
++func sortInts(vs []int) {
++	for i := 1; i < len(vs); i++ {
++		for j := i; j > 0 && vs[j] < vs[j-1]; j-- {
++			vs[j], vs[j-1] = vs[j-1], vs[j]
++		}
++	}
++}
++
++func itoa(v int) string {
++	if v == 0 {
++		return "0"
++	}
++	neg := v < 0
++	if neg {
++		v = -v
++	}
++	var b [20]byte
++	i := len(b)
++	for v > 0 {
++		i--
++		b[i] = byte('0' + v%10)
++		v /= 10
++	}
++	if neg {
++		i--
++		b[i] = '-'
++	}
++	return string(b[i:])
++}
++
++// String renders the schedule, mirroring describe().
++func (s *Schedule) String() string {
++	return strings.Join([]string{
++		formatField(s.minute, 0),
++		formatField(s.hour, 1),
++		formatField(s.dom, 2),
++		formatField(s.month, 3),
++		formatField(s.dow, 4),
++	}, " ")
++}
+diff --git a/cron/cron_test.go b/cron/cron_test.go
+new file mode 100644
+index 0000000..b9254a6
+--- /dev/null
++++ b/cron/cron_test.go
+@@ -0,0 +1,279 @@
++package cron
++
++import (
++	"os"
++	"os/exec"
++	"strings"
++	"testing"
++	"time"
++)
++
++var locUTC = time.UTC
++var locPlus530 = time.FixedZone("+0530", 5*3600+30*60)
++var locMinus800 = time.FixedZone("-0800", -8*3600)
++
++const isoLayout = time.RFC3339
++
++func mustTime(t *testing.T, s string) time.Time {
++	t.Helper()
++	tt, err := time.Parse(isoLayout, s)
++	if err != nil {
++		t.Fatalf("bad test time %q: %v", s, err)
++	}
++	return tt
++}
++
++func TestParseErrors(t *testing.T) {
++	cases := []struct{ expr, want string }{
++		{"", "expected 5 fields, got 0"},
++		{"   ", "expected 5 fields, got 0"},
++		{"1 2 3", "expected 5 fields, got 3"},
++		{"1 2 3 4 5 6", "expected 5 fields, got 6"},
++		{"* * * *", "expected 5 fields, got 4"},
++		{"60 * * * *", "minute: value 60 out of range 0-59"},
++		{"* 24 * * *", "hour: value 24 out of range 0-23"},
++		{"* * 0 * *", "day-of-month: value 0 out of range 1-31"},
++		{"* * 32 * *", "day-of-month: value 32 out of range 1-31"},
++		{"* * * 13 *", "month: value 13 out of range 1-12"},
++		{"* * * 0 *", "month: value 0 out of range 1-12"},
++		{"* * * * 8", "day-of-week: value 8 out of range 0-6"},
++		{"*/0 * * * *", "minute: invalid step '0'"},
++		{"*/  * * * *", "minute: invalid step ''"},
++		{"*-* * * * *", "minute: invalid value '*'"},
++		{"5-1 * * * *", "minute: range 5-1 is reversed"},
++		{"a * * * *", "minute: invalid value 'a'"},
++		{"1,,2 * * * *", "minute: empty item"},
++		{"1, * * * *", "minute: empty item"},
++		{"* * * xyz *", "month: invalid value 'xyz'"},
++		{"@every", "unknown macro '@every'"},
++		{"5- * * * *", "minute: invalid value ''"},
++		{"-5 * * * *", "minute: invalid value ''"},
++	}
++	for _, c := range cases {
++		s, err := Parse(c.expr)
++		if err == nil {
++			t.Errorf("Parse(%q) = %q, want error %q", c.expr, s, c.want)
++			continue
++		}
++		if err.Error() != c.want {
++			t.Errorf("Parse(%q) error = %q, want %q", c.expr, err, c.want)
++		}
++	}
++}
++
++func TestParseString(t *testing.T) {
++	cases := []struct{ expr, want string }{
++		{"* * * * *", "* * * * *"},
++		{"0 0 1 1 0", "0 0 1 1 0"},
++		{"*/15 0,12 * * mon-fri", "0,15,30,45 0,12 * * 1-5"},
++		{"1-10/2 * * * *", "1,3,5,7,9 * * * *"},
++		{"5-9 * * * *", "5-9 * * * *"},
++		{"5 * * * *", "5 * * * *"},
++		{"30 4 1,15 * 3", "30 4 1,15 * 3"},
++		{"0-30/10 0 * * 0-6", "0,10,20,30 0 * * *"},
++		{"0 12 * jan-mar *", "0 12 * 1-3 *"},
++		{"15,45 8-18/3 10-20/5 2,4 1-5", "15,45 8,11,14,17 10,15,20 2,4 1-5"},
++		{"@YEARLY", "0 0 1 1 *"},
++		{"@midnight", "0 0 * * *"},
++		{"0 0 1 1 7", "0 0 1 1 0"},
++		{"  0 0 * * *  ", "0 0 * * *"},
++	}
++	for _, c := range cases {
++		s, err := Parse(c.expr)
++		if err != nil {
++			t.Errorf("Parse(%q) error: %v", c.expr, err)
++			continue
++		}
++		if got := s.String(); got != c.want {
++			t.Errorf("Parse(%q).String() = %q, want %q", c.expr, got, c.want)
++		}
++	}
++}
++
++func TestNext(t *testing.T) {
++	cases := []struct {
++		expr string
++		after string
++		want  string
++	}{
++		{"0 0 * * *", "2024-01-15T08:05:00Z", "2024-01-16T00:00:00Z"},
++		{"*/15 * * * *", "2024-01-15T08:01:00Z", "2024-01-15T08:15:00Z"},
++		{"*/15 * * * *", "2024-01-15T08:15:00Z", "2024-01-15T08:30:00Z"},
++		{"@hourly", "2024-01-15T08:00:00Z", "2024-01-15T09:00:00Z"},
++		{"0 9 * * 1-5", "2024-01-12T10:00:00Z", "2024-01-15T09:00:00Z"},
++		{"0 0 1 1 *", "2024-01-01T00:00:00Z", "2025-01-01T00:00:00Z"},
++		{"0 0 13 * 5", "2024-06-15T00:00:00Z", "2024-06-21T00:00:00Z"},
++		{"30 23 * * *", "2024-03-01T22:00:00+05:30", "2024-03-01T23:30:00+05:30"},
++		{"0 0 28 2 *", "2021-03-01T00:00:00-08:00", "2022-02-28T00:00:00-08:00"},
++		{"0 0 1 1 0", "2024-07-15T12:34:56Z", "2025-01-01T00:00:00Z"},
++		{"@daily", "2024-02-29T23:59:00Z", "2024-03-01T00:00:00Z"},
++	}
++	for _, c := range cases {
++		s, err := Parse(c.expr)
++		if err != nil {
++			t.Fatalf("Parse(%q): %v", c.expr, err)
++		}
++		after := mustTime(t, c.after)
++		got, err := s.Next(after)
++		if err != nil {
++			t.Errorf("Next(%q, %s) error: %v", c.expr, c.after, err)
++			continue
++		}
++		want := mustTime(t, c.want)
++		if !got.Equal(want) {
++			t.Errorf("Next(%q, %s) = %s, want %s", c.expr, c.after, got, want)
++		}
++		if got.Location() != after.Location() {
++			t.Errorf("Next(%q, %s) location = %v, want %v", c.expr, c.after, got.Location(), after.Location())
++		}
++	}
++}
++
++func TestNextNoMatch(t *testing.T) {
++	s, err := Parse("5 4 31 2 *")
++	if err != nil {
++		t.Fatalf("Parse: %v", err)
++	}
++	_, err = s.Next(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
++	if err == nil {
++		t.Fatal("want error, got none")
++	}
++	if got, want := err.Error(), "no match within 5 years for '5 4 31 2 *'"; got != want {
++		t.Errorf("error = %q, want %q", got, want)
++	}
++}
++
++// TestAgainstPython runs the reference implementation and checks that the Go
++// port produces identical describe() output and next-run results, including
++// error messages. Skipped if python3 is unavailable.
++func TestAgainstPython(t *testing.T) {
++	py, err := exec.LookPath("python3")
++	if err != nil {
++		t.Skip("python3 not available")
++	}
++	exprs := []string{
++		"* * * * *", "0 0 * * *", "@daily", "@hourly", "@weekly", "@monthly", "@yearly", "@annually", "@midnight",
++		"*/15 * * * *", "*/5 * * * *", "0-30/10 * * * *", "5-9 * * * *", "5/2 * * * *", "59 * * * *",
++		"0,15,30,45 * * * *", "0 0 1 1 0", "59 23 31 12 6", "1-10/2 0,12 * * mon-fri",
++		"0 12 * jan-mar *", "0 9 * * mon,wed,fri", "15,45 8-18/3 10-20/5 2,4 1-5",
++		"0 0 13 * 5", "0 0 13,14 * *", "30 4 1,15 * 3", "0 0 31 2 *",
++		"0 0 * * 7", "0 0 * * sun", "5 4 * * SAT", "0-59/7 0-23/4 1-31/10 1-12/3 0-6/2",
++		"* * 1 2 *", "* * * feb *", "*/2 * * jan,dec *",
++	}
++	zoneOffsets := []string{"", "+05:30", "-08:00", "+00:00"}
++	baseTimes := []string{
++		"2024-01-15T08:05:00", "2024-01-15T08:15:00", "2024-01-15T08:01:00",
++		"2024-06-15T00:00:00", "2024-02-29T23:59:00", "2021-03-01T00:00:00",
++		"2020-12-31T23:59:00", "2024-07-15T12:34:56", "2023-02-27T23:59:00",
++	}
++	var in strings.Builder
++	for _, e := range exprs {
++		for _, z := range zoneOffsets {
++			for _, bt := range baseTimes {
++				in.WriteString(e)
++				in.WriteString("|")
++				in.WriteString(bt)
++				in.WriteString(z)
++				in.WriteString("\n")
++			}
++		}
++	}
++
++	src, err := os.ReadFile("../reference/cron.py")
++	if err != nil {
++		t.Fatalf("read reference: %v", err)
++	}
++	dir := t.TempDir()
++	refPath := dir + string(os.PathSeparator) + "cron.py"
++	// Reference exposes parse/describe/next_run with module-level names.
++	if err := os.WriteFile(refPath, src, 0o644); err != nil {
++		t.Fatalf("write temp reference: %v", err)
++	}
++	script := `import sys, datetime
++sys.path.insert(0, sys.argv[1])
++import cron
++def iso(d):
++    return d.isoformat()
++for line in sys.stdin:
++    line = line.strip()
++    if not line:
++        continue
++    e, base = line.split("|", 1)
++    try:
++        s = cron.parse(e)
++    except cron.CronError as ex:
++        print("P|" + e + "||" + str(ex))
++        continue
++    print("D|" + e + "||" + cron.describe(s))
++    t = datetime.datetime.fromisoformat(base)
++    if t.tzinfo is None:
++        t = t.replace(tzinfo=datetime.timezone.utc)
++    for _ in range(3):
++        after = t
++        try:
++            t = cron.next_run(s, t)
++        except cron.CronError as ex:
++            print("E|" + e + "|" + iso(after) + "|" + str(ex))
++            break
++        print("N|" + e + "|" + iso(after) + "|" + iso(t))
++`
++	scriptPath := dir + string(os.PathSeparator) + "driv.py"
++	if err := os.WriteFile(scriptPath, []byte(script), 0o644); err != nil {
++		t.Fatalf("write driver: %v", err)
++	}
++	cmd := exec.Command(py, scriptPath, dir)
++	cmd.Stdin = strings.NewReader(in.String())
++	out, err := cmd.CombinedOutput()
++	if err != nil {
++		t.Fatalf("python3: %v\n%s", err, out)
++	}
++
++	for _, line := range strings.Split(string(out), "\n") {
++		if line == "" {
++			continue
++		}
++		parts := strings.SplitN(line, "|", 4)
++		if len(parts) != 4 {
++			t.Fatalf("bad python output line %q", line)
++		}
++		tag, expr, afterS, rest := parts[0], parts[1], parts[2], parts[3]
++		s, perr := Parse(expr)
++		switch tag {
++		case "P":
++			if perr == nil || perr.Error() != rest {
++				t.Errorf("Parse(%q) = %v, want python error %q", expr, perr, rest)
++			}
++		case "D":
++			if perr != nil {
++				t.Errorf("Parse(%q) = %v, python parsed fine", expr, perr)
++				continue
++			}
++			if got := s.String(); got != rest {
++				t.Errorf("Parse(%q).String() = %q, python says %q", expr, got, rest)
++			}
++		case "E", "N":
++			if perr != nil {
++				continue
++			}
++			after, err := time.Parse(isoLayout, afterS)
++			if err != nil {
++				t.Fatalf("bad after time %q from python: %v", afterS, err)
++			}
++			got, err := s.Next(after)
++			if tag == "E" {
++				if err == nil || err.Error() != rest {
++					t.Errorf("Next(%q, %s) = %v, want python error %q", expr, after, err, rest)
++				}
++				continue
++			}
++			if err != nil {
++				t.Errorf("Next(%q, %s) = %v, python says %s", expr, after, err, rest)
++				continue
++			}
++			want, _ := time.Parse(isoLayout, rest)
++			if !got.Equal(want) {
++				t.Errorf("Next(%q, %s) = %s, python says %s", expr, after, got, rest)
++			}
++		}
++	}
++}

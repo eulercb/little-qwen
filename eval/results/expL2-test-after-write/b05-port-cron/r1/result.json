@@ -1,0 +1,37 @@
+{
+  "task_id": "b05-port-cron",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "3580e80c7ee2",
+  "success": true,
+  "score": 1,
+  "tests_passed": 8,
+  "tests_total": 8,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Ported reference/cron.py to Go as package `cron` in cron/cron.go, implementing Parse, Schedule.Next, and Schedule.String with behavior identical to the Python reference: same syntax rules (fields, ranges, steps, names, macros, dow 7→0), byte-identical CronError messages (single-quoted reprs), Vixie cron day matching, the 5-year no-match error, and describe() run-folding (\"a-b\" for runs ≥3, \"a,b\" for pairs). Wrote cron/cron_test.go with unit tests for errors, String(), Next() (incl. DST-free fixed zones, strict-after semantics, and no-match) plus a differential test TestAgainstPython that shells out to python3 on the reference and compares describe() output, three successive next-run results, and every error message across 39 expressions × 4 fixed UTC offsets × 9 base times (skipped gracefully if python3 is absent). Verified `go vet ./... \u0026\u0026 go test -count=1 ./...` exits 0, with the differential test executing and passing.",
+    "Turns": 18,
+    "Compactions": 0,
+    "PromptTokens": 487015,
+    "PrefillTokens": 32327,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 20101,
+    "ReasoningTokens": 8106,
+    "ToolCalls": 22,
+    "ToolErrors": 2,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F4": 1
+    },
+    "WallSeconds": 1817.376291149,
+    "Err": ""
+  },
+  "started": "2026-10-27T06:29:46Z",
+  "hidden_output": "=== RUN   TestParseErrors\n--- PASS: TestParseErrors (0.00s)\n=== RUN   TestParseString\n--- PASS: TestParseString (0.00s)\n=== RUN   TestNext\n--- PASS: TestNext (0.00s)\n=== RUN   TestNextNoMatch\n--- PASS: TestNextNoMatch (0.00s)\n=== RUN   TestAgainstPython\n--- PASS: TestAgainstPython (0.35s)\n=== RUN   TestHiddenParseErrors\n--- PASS: TestHiddenParseErrors (0.00s)\n=== RUN   TestHiddenDescribe\n--- PASS: TestHiddenDescribe (0.00s)\n=== RUN   TestHiddenNext\n--- PASS: TestHiddenNext (0.00s)\nPASS\nok  \texample.com/cron/cron\t0.361s",
+  "work": "/tmp/qh-runs/expL2-test-after-write/b05-port-cron-r1"
+}
