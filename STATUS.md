@@ -172,4 +172,6 @@ Then follow "Decisions waiting on those results" below as items finish.
   - pi Tier-B started.
 - 2026-10-27 00:20 — the container had restarted, so the queue was dead (pi Tier-B b01 was in progress and was
   discarded). Resumed on tunnel auctions-dot-journalist-region.
+- 2026-10-27 04:10 — the container restarted again during little-coder Tier-B b01 (partial run discarded).
+  Resumed with resume.sh.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
