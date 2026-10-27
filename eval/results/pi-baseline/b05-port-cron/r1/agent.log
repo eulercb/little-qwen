@@ -1,0 +1,27 @@
+(node:11326) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Done. The port is complete and the acceptance check (`go vet ./... && go test ./...`) passes.
+
+## What was built
+
+**`cron/cron.go`** — Go package `cron` with the exact required API:
+- `type Schedule struct` (unexported fields: expr, five value-sets, dom/dow star flags)
+- `Parse(expr string) (*Schedule, error)`
+- `(s *Schedule) Next(after time.Time) (time.Time, error)`
+- `(s *Schedule) String() string`
+
+Faithful port details:
+- **Parse**: `TrimSpace` + macro lookup (case-insensitive, all 7 macros including `@annually`/`@midnight`), 5-field split, per-field `*` / `N` / `N-M` / `*/S` / `N-M/S` / `N/S` items with comma lists, JAN–DEC/SUN–SAT names, dow `7→0`, and the `*/S` partition-at-first-`/` semantics (e.g. `5/2/3` → `invalid step '2/3'`).
+- **Error messages** match `CronError` text exactly, including Python `repr()` quoting (single quotes, double quotes when the string contains a `'` but no `"`, `\xNN`/escape handling) — e.g. `minute: invalid value '1.5'`, `unknown macro '@Yearlyx'`, `no match within 5 years for '0 0 30 2 *'`.
+- **Arbitrary-precision ints** via `math/big` to match Python: `100000000000000000000 * * * *` → `minute: value … out of range 0-59`; a huge step like `5/99999999999999999999` behaves like Python's `range` (selects only the start value); leading zeros normalize (`007` → `7`).
+- **Next**: first match strictly after `after`, in `after`'s location, with the reference's jump strategy (next month / next day / next hour / next minute), the 366×5-day limit, and Vixie's OR rule when both dom and dow are restricted (so `0 0 31 4 1` fires on Mondays in April).
+- **String()**: canonical `describe()` form — `*` when full, consecutive runs ≥3 as `a-b`, pairs as `a,b`.
+
+**`cron/cron_test.go`** — tests:
+- `TestParseErrors`: 21 exact error-message cases (all verified against the reference)
+- `TestString`: 24 canonicalization cases, incl. macros, names, `7→0`, huge steps
+- `TestNext`: 26 hardcoded expected runtimes (from the reference) across multiple fixed offsets, incl. leap years and the no-match error
+- `TestNextProperties`: strictly-after, zero seconds, location preservation
+- `TestAgainstReference`: differential test — runs the Python reference via `python3` on 200 seeded random expressions/times and compares `String()`, `Next()`, and error text (skips gracefully if `python3`/reference aren't present)
+
+Verification: besides the in-test differential run, I also ran a one-off 5000-case randomized differential comparison (10,000 result lines covering parse errors, describe, and next-runs with five timezone offsets) against the reference — **0 mismatches**.

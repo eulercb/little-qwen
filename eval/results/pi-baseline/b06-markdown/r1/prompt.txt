@@ -1,0 +1,3 @@
+Implement a Markdown-subset to HTML converter as package `md` (directory `md/`): `func ToHTML(src string) string`. The exact rules and output format are in `SPEC.md` at the repository root — follow them precisely (output is compared byte-for-byte). Standard library only. Build it incrementally (blocks first, then inline formatting) and test each rule with your own tests.
+
+Acceptance check: `go vet ./... && go test ./...` must exit 0. Run it yourself before you finish.
