@@ -170,7 +170,7 @@ Template:
     the design.
   - Nothing was compiled or tested until turn 11, at minute 60.
 
-## L2 candidate (from b06 under L1): late testing and whole-file rewrites of large own files   (status: PROPOSED)
+## L2: test_after_write_lines (from b06 under L1): late testing and whole-file rewrites of large own files   (status: ADOPTED for it1, n=1)
 - Evidence: expL1-think-cap/b06, turns 3–11. Three ~800-line writes, with the first `go test` at minute 60.
 - Ideas, cheapest first:
   - (a) A hook: after a write_file that creates or overwrites a file over ~300 lines, when no build or test has
@@ -182,3 +182,20 @@ Template:
   run that produced a test signal and nudges once per untested stretch.
 - Candidate `harness/cand/l2-test-after-write` is L1 + 300. Probe `eval/results/expL2-test-after-write` is queued
   after the little-coder Tier-B item.
+- Probe results (2026-10-27), L1 + L2 vs L1 only vs baseline:
+
+  | task | L1 + L2 | L1 only | baseline |
+  |---|---|---|---|
+  | b01 | **1.00 in 29.3 min** | 0.95, wall clock | 1.00 in 46.7 |
+  | b05 | **1.00 in 30.3 min** | 1.00 in 33.0 | failed |
+  | b06 | **0.96 (25/26), wall clock** | 0 | 0 |
+
+  - b06 is the first non-zero result from any harness (pi, little-coder and qh all scored 0). It built at
+    minute 16, tests first ran at minute 21, and it ran out of time on one emphasis edge case.
+  - Verdict: adopt.
+
+## it1 composition (2026-10-27)
+- `harness/it1` = base + `fuzzy_edit` (EXP-1) + L1 (`think_budget_tokens` 8000, `think_cap_continue`) + L2
+  (`test_after_write_lines` 300).
+- Queued: `eval/results/it1` on Tier B and h01–h04, after the little-coder outage re-run.
+- C1 (review/DOM) probes are still queued against base; fold them in later if they win.

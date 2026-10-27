@@ -29,7 +29,7 @@ All runs are single repetitions unless stated, so per-task differences of a few 
 |---|---|
 | Tier A (12 small Go tasks, hidden tests) | **12/12** solved; single-stream mean **6.7 min**, 12 turns, 7.7K output tokens per task |
 | Held-out (4 tasks) | 2/4 fully correct, mean score **0.96** (two runs missed one spec clause each) |
-| Tier B (6 multi-step tasks) | **3/6 solved**. b01 46.7 min, b02 19.9 min, b03 4.7 min, b04 0.925. b05 and b06 failed on the 60-min limit, both because of runaway turns that spent all 16K output tokens on thinking. With L1 (an 8K thinking cap that keeps the reasoning, from little-coder), b05 was solved in 33 min, and the Tier-B mean on b01, b04, b05, b06 rose from 0.48 to 0.74 |
+| Tier B (6 multi-step tasks) | **3/6 solved**. b01 46.7 min, b02 19.9 min, b03 4.7 min, b04 0.925. b05 and b06 failed on the 60-min limit, both because of runaway turns that spent all 16K output tokens on thinking. With L1 (an 8K thinking cap that keeps the reasoning, from little-coder), b05 was solved in 33 min, and the Tier-B mean on b01, b04, b05, b06 rose from 0.48 to 0.74. Adding L2 (a nudge to build and test after large untested writes) gave b01 1.00 in 29 min, b05 1.00 in 30 min, and b06 0.96, the first non-zero b06 result from any harness, pi and little-coder included. Both are composed into `harness/it1` |
 | vs OpenCode, pi and little-coder (same model/server) | On 7 Tier-A/held-out tasks: qh 0.976 in 57.3 min, little-coder 0.980 in 84.2 min, vanilla pi 0.996 in 54.9 min, so about tied. On h01, OpenCode took 9.2 min vs qh's 3.2. Tier-B comparisons are queued. See [docs/LITTLE_CODER.md](docs/LITTLE_CODER.md) |
 
 Infrastructure features verified with the real model: re-prefill events **0** across baseline runs (prefix stays

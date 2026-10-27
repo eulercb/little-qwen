@@ -1,0 +1,29 @@
+{
+  "reasoning_effort": "medium",
+  "planner_effort": "medium",
+  "max_tokens": 16000,
+  "max_turns": 80,
+  "max_wall_minutes": 60,
+  "compact_at_tokens": 88000,
+  "tool_cap_tokens": 4000,
+  "max_finish_attempts": 4,
+  "max_nudges": 3,
+  "subagent_max_turns": 20,
+  "subagent_tools": [
+    "read_file",
+    "grep",
+    "list_dir",
+    "run",
+    "finish"
+  ],
+  "loop_repeat": 3,
+  "loop_no_progress": 14,
+  "verify_writes": true,
+  "check_on_finish": true,
+  "compact_summary_max_tokens": 3000,
+  "error_hints": [],
+  "think_budget_tokens": 8000,
+  "think_cap_continue": true,
+  "test_after_write_lines": 300,
+  "fuzzy_edit": true
+}
