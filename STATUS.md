@@ -36,6 +36,7 @@ Then follow "Decisions waiting on those results" below as items finish.
   1. (done) L1 think-cap probe.
   2. pi on Tier B.
   3. little-coder on Tier B.
+  3b. L2 probe (`harness/cand/l2-test-after-write`) on b06, b01, b05.
   4. Base rep 2 on h02/h04.
   5. C1 INV probe (`e2-review`).
   6. C1 DOM probe (`c1-dom`).

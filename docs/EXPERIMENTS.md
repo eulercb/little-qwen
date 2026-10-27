@@ -178,3 +178,7 @@ Template:
   - (b) little-coder's write-guard, limited to files over ~300 lines: the overwrite is refused with an edit_file
     recipe.
 - Probe (a) on b06, b01 and b05, on top of L1.
+- Implemented (a) as `test_after_write_lines`, the line threshold. It counts write_file lines since the last
+  run that produced a test signal and nudges once per untested stretch.
+- Candidate `harness/cand/l2-test-after-write` is L1 + 300. Probe `eval/results/expL2-test-after-write` is queued
+  after the little-coder Tier-B item.

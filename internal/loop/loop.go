@@ -80,6 +80,8 @@ type Agent struct {
 	allowed     map[string]bool // nil = all tools allowed
 	overBudget  bool            // previous turn hit the thinking budget
 	noThinkNext bool            // run the next request with thinking off (think_cap_continue)
+	untested    int             // lines written by write_file since the last build/test run
+	testNudged  bool            // test_after_write_lines nudge already given for this untested stretch
 	lastTurnBad bool            // previous turn had a tool error, failed test/check or no tool call
 	prevProm    int             // prompt tokens of the previous request (for cache-loss accounting)
 }
@@ -414,6 +416,7 @@ func (a *Agent) handleCall(ctx context.Context, turn, idx int, tc llm.ToolCall) 
 		if a.cfg.VerifyWrites && res.OK && (name == "write_file" || name == "edit_file") {
 			res.Output += a.verifyWrite(ctx, res.Changed)
 		}
+		res.Output += a.testAfterWrite(name, args, res)
 	}
 	if !res.OK && res.ErrorClass != "" {
 		a.out.ToolErrors++
@@ -444,6 +447,29 @@ func (a *Agent) handleCall(ctx context.Context, turn, idx int, tc llm.ToolCall) 
 		DurMS: time.Since(t0).Milliseconds()})
 	a.logf("  %s %s -> %s", name, trunc(oneLine(rawArgs), 120), trunc(oneLine(firstLine(capped)), 120))
 	return capped, finished
+}
+
+// testAfterWrite is a hook (L2): after large untested writes, ask for a build
+// and test run before more reasoning. b06 under L1 wrote ~800-line files three
+// times and first ran the tests at minute 60.
+func (a *Agent) testAfterWrite(name string, args tools.Args, res tools.Result) string {
+	if a.cfg.TestAfterWriteLines <= 0 {
+		return ""
+	}
+	if res.TestSignal != "" {
+		a.untested, a.testNudged = 0, false
+		return ""
+	}
+	if name != "write_file" || !res.OK {
+		return ""
+	}
+	content, _ := args.Str("content")
+	a.untested += strings.Count(content, "\n") + 1
+	if a.untested < a.cfg.TestAfterWriteLines || a.testNudged {
+		return ""
+	}
+	a.testNudged = true
+	return fmt.Sprintf("\nNOTE (harness): about %d lines written since the last build/test run. Build and run the tests now, before reasoning further; then fix failures with edit_file instead of rewriting whole files.", a.untested)
 }
 
 // verifyWrite is a "plugin" hook: check a write immediately after it happens.

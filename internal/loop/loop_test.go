@@ -202,6 +202,27 @@ func TestThinkCapContinueKeepsReasoning(t *testing.T) {
 	}
 }
 
+func TestTestAfterWriteNudgesOnce(t *testing.T) {
+	big := strings.Repeat("x\n", 30)
+	a, fs, _ := setup(t, []scripted{
+		{calls: []llm.ToolCall{call("c1", "write_file", map[string]any{"path": "a.txt", "content": big})}, prompt: 100},
+		{calls: []llm.ToolCall{call("c2", "write_file", map[string]any{"path": "b.txt", "content": big})}, prompt: 200},
+		{calls: []llm.ToolCall{call("c3", "write_file", map[string]any{"path": "hello.txt", "content": big})}, prompt: 300},
+		{calls: []llm.ToolCall{call("c4", "finish", map[string]any{"summary": "ok"})}, prompt: 400},
+	}, func(c *harness.Config) { c.TestAfterWriteLines = 50 })
+	a.Run(context.Background())
+	nudges := 0
+	last := fs.requests[len(fs.requests)-1]
+	for _, m := range last {
+		if m.Role == "tool" && strings.Contains(m.Text(), "lines written since the last build/test") {
+			nudges++
+		}
+	}
+	if nudges != 1 {
+		t.Fatalf("want exactly one nudge, got %d", nudges)
+	}
+}
+
 func TestLoopCompactsAndKeepsEffort(t *testing.T) {
 	a, fs, work := setup(t, []scripted{
 		{calls: []llm.ToolCall{call("c1", "list_dir", map[string]any{"path": "."})}, prompt: 9500},
