@@ -44,7 +44,7 @@ Then follow "Decisions waiting on those results" below as items finish.
   3. little-coder on Tier B.
   3b. (done) L2 probe: b01 1.00 / 29.3, b05 1.00 / 30.3, b06 0.96. ADOPTED.
   3c. little-coder Tier-B b04–b06 again (outage re-run).
-  3d. it1 (base + fuzzy_edit + L1 + L2) on Tier B + h01–h04 (`eval/results/it1`).
+  3d. (done) it1: Tier B 0.818, held-out 1.00.
   4. Base rep 2 on h02/h04.
   5. C1 INV probe (`e2-review`).
   6. C1 DOM probe (`c1-dom`).
@@ -195,4 +195,7 @@ Then follow "Decisions waiting on those results" below as items finish.
 - 2026-10-28 — resumed on tunnel msg-opportunities-campbell-suddenly.
 - 2026-10-28 04:11 — little-coder Tier-B done: mean 0.650 (b01 0, b02 1, b03 1, b04 0.90, b05 1, b06 0; four
   tasks hit the 60-min limit). Compare pi 0.828 and qh base 0.654. it1 run started.
+- 2026-10-28 08:46 — it1 done.
+  - Tier-B mean 0.818. b06 was cut mid-edit with a broken build; L3 "restore last green" proposed.
+  - Held-out 4/4 at 1.00.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.

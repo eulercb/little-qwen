@@ -200,7 +200,7 @@ Template:
 - Queued: `eval/results/it1` on Tier B and h01–h04, after the little-coder outage re-run.
 - C1 (review/DOM) probes are still queued against base; fold them in later if they win.
 
-## it1 run (2026-10-28), Tier B (h01–h04 in progress)
+## it1 run (2026-10-28), Tier B and held-out
 - Results:
   - b01 1.00 / 34.9 min.
   - b02 1.00 / 18.3.
@@ -209,6 +209,8 @@ Template:
   - b05 1.00 / 53.4.
   - b06 0, wall clock.
 - Tier-B mean 0.818, against base 0.654, pi 0.828 and little-coder 0.650.
+- Held-out: h01 1.00 / 2.2, h02 1.00 / 4.1, h03 1.00 / 19.1, h04 1.00 / 17.0, a mean of 1.00 (base 0.96).
+  h02 and h04 (the C1 cluster) were fully right this time, n=1.
 - b06 failed differently from the base: the L2 nudge fired, and the build passed at turns 7, 14 and 16.
   - The run was then cut at minute 60 right after an edit that broke the build, so the hidden test reports
     "[build failed]" and the score is 0.
