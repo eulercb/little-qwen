@@ -45,7 +45,7 @@ Then follow "Decisions waiting on those results" below as items finish.
   3b. (done) L2 probe: b01 1.00 / 29.3, b05 1.00 / 30.3, b06 0.96. ADOPTED.
   3c. little-coder Tier-B b04–b06 again (outage re-run).
   3d. (done) it1: Tier B 0.818, held-out 1.00.
-  4. Base rep 2 on h02/h04 (running).
+  4. (done) Base rep 2 on h02/h04: both 1.00, so C1 is noise and its probes were retired.
   4b. it2 (it1 + L3 restore_green) on Tier B (`eval/results/it2`).
   4. Base rep 2 on h02/h04.
   5. C1 INV probe (`e2-review`).
@@ -200,4 +200,6 @@ Then follow "Decisions waiting on those results" below as items finish.
 - 2026-10-28 08:46 — it1 done.
   - Tier-B mean 0.818. b06 was cut mid-edit with a broken build; L3 "restore last green" proposed.
   - Held-out 4/4 at 1.00.
+- 2026-10-28 09:04 — base rep 2: h02 and h04 both 1.00, so C1 is retired as noise (probes removed from the queue).
+  it2 Tier-B started.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.

@@ -230,3 +230,9 @@ Template:
   - Offline test `TestRestoreGreenOnBudgetCut`, which fails with the knob off.
 - `harness/it2` = it1 + `restore_green`. Queued on Tier B as `eval/results/it2`. This also serves as a second
   sample of the it1 gains, since L3 changes nothing before the cut.
+
+## C1 (h02/h04 spec misses): RETIRED, not reproducible (2026-10-28)
+- The base rep-2 runs scored h02 1.00 (5.3 min) and h04 1.00 (11.9 min); rep 1 scored 0.92 and 0.92.
+  it1 scored 1.00 on both too.
+- The misses were run-to-run variance, not a systematic weakness. The queued INV/DOM probes (e2-review, c1-dom)
+  were removed from the queue (kept as comments) to save ~6–8 h of endpoint time.

@@ -1,8 +1,10 @@
 # One command per line, run sequentially by eval/runner/queue.sh (see STATUS.md).
 ./bin/qh eval --harness harness/it2 --out eval/results/it2 --only tierB --reps 1 --parallel 1 > eval/results/it2.log 2>&1
-./bin/qh eval --harness harness/cand/e2-review --out eval/results/exp2-review --only h02-config-merge,h04-mini-template,b01-expr-lang,b06-markdown --reps 2 --parallel 1 > eval/results/exp2-review.log 2>&1
-./bin/qh eval --harness harness/cand/c1-dom --out eval/results/exp2-dom --only h02-config-merge,h04-mini-template,b01-expr-lang,b06-markdown --reps 2 --parallel 1 > eval/results/exp2-dom.log 2>&1
 OPENCODE_BIN=${OPENCODE_BIN:-opencode} ./bin/qh eval --agent eval/runner/opencode_agent.sh --agent-timeout-min 45 --out eval/results/opencode-baseline --only h02-config-merge,h03-worker-pool,h04-mini-template,a05-ini-bugfix,a09-csv-report,a12-jsonpath --reps 1 --parallel 1 > eval/results/opencode-baseline-2.log 2>&1
 ./bin/qh eval --out eval/results/it0-baseline --only d01-caca-palavras --reps 1 --parallel 1 > eval/results/it0-baseline-D.log 2>&1
 ./bin/qh tbench --only @eval/tbench/subset.txt --out eval/results/tbC-base --reps 1 > eval/results/tbC-base.log 2>&1
 ./bin/qh tbench --agent eval/runner/lc_tb_agent.py --only @eval/tbench/subset.txt --out eval/results/tbC-littlecoder --reps 1 > eval/results/tbC-littlecoder.log 2>&1
+
+# Retired 2026-10-28 (C1 not reproducible; see docs/EXPERIMENTS.md):
+# ./bin/qh eval --harness harness/cand/e2-review --out eval/results/exp2-review --only h02-config-merge,h04-mini-template,b01-expr-lang,b06-markdown --reps 2 --parallel 1 > eval/results/exp2-review.log 2>&1
+# ./bin/qh eval --harness harness/cand/c1-dom --out eval/results/exp2-dom --only h02-config-merge,h04-mini-template,b01-expr-lang,b06-markdown --reps 2 --parallel 1 > eval/results/exp2-dom.log 2>&1
