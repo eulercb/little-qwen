@@ -24,17 +24,6 @@ Headline:
 - Implemented: L3 (restore the last green tree on a budget cut), in it2 and awaiting its run.
 - Retired: C1 (noise).
 
-Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. It continues with the little-coder
-Tier-B re-run of b04–b06 (the interrupted b04 run was discarded), then it1 on Tier B + h01–h04, then the rest of
-eval/queue.txt.
-
-Headline so far:
-- On 7 Tier-A/held-out tasks, qh, pi and little-coder are about tied.
-- On Tier B, the qh baseline scores 0.654 and pi 0.828.
-- The adopted L1 (thinking cap that keeps the reasoning, from little-coder) and L2 (build/test nudge after
-  large untested writes) give b01 1.00 / 29 min, b05 1.00 / 30 min, and b06 0.96. b06 was 0 for every harness.
-- Both are composed into harness/it1, which needs its full Tier-B + held-out run (queued) to confirm at n=1+.
-
 ### Resume in one command
 ```bash
 eval/runner/resume.sh https://<new-tunnel>.trycloudflare.com      # add --no-opencode to skip the comparator install
