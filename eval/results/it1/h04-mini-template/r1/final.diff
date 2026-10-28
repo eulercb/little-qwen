@@ -1,0 +1,503 @@
+ tmpl/tmpl.go      | 281 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ tmpl/tmpl_test.go | 206 +++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 487 insertions(+)
+
+diff --git a/tmpl/tmpl.go b/tmpl/tmpl.go
+new file mode 100644
+index 0000000..cbe9a88
+--- /dev/null
++++ b/tmpl/tmpl.go
+@@ -0,0 +1,281 @@
++// Package tmpl is a tiny text template engine.
++//
++// Text outside {{ ... }} tags is copied verbatim. {{ name | filter | ... }}
++// tags look up nested values from data and apply string filters.
++package tmpl
++
++import (
++	"errors"
++	"fmt"
++	"strconv"
++	"strings"
++)
++
++// Render renders src using data. The returned string is empty when an error
++// occurs.
++func Render(src string, data map[string]any) (string, error) {
++	var b strings.Builder
++	i := 0
++	for i < len(src) {
++		if !strings.HasPrefix(src[i:], "{{") {
++			b.WriteByte(src[i])
++			i++
++			continue
++		}
++		// {{{{ outputs a literal {{ and is not the start of a tag.
++		if strings.HasPrefix(src[i:], "{{{{") {
++			b.WriteString("{{")
++			i += 4
++			continue
++		}
++		rest := src[i+2:]
++		j := strings.Index(rest, "}}")
++		if j < 0 {
++			return "", fmt.Errorf("unterminated tag %q", rest)
++		}
++		val, err := renderTag(rest[:j], data)
++		if err != nil {
++			return "", err
++		}
++		b.WriteString(val)
++		i += 2 + j + 2
++	}
++	return b.String(), nil
++}
++
++// renderTag renders the text between the braces of one tag.
++func renderTag(inner string, data map[string]any) (string, error) {
++	if strings.TrimSpace(inner) == "" {
++		return "", fmt.Errorf("empty tag %q", inner)
++	}
++	pos := 0
++	full, segs, pos, err := parseName(inner, pos)
++	if err != nil {
++		return "", err
++	}
++	value, err := lookup(data, full, segs)
++	if err != nil {
++		return "", err
++	}
++	val := format(value)
++	for {
++		skipWS(inner, &pos)
++		if pos >= len(inner) {
++			break
++		}
++		if inner[pos] != '|' {
++			return "", fmt.Errorf("bad tag %q: unexpected content after name %q", inner, full)
++		}
++		pos++
++		val, pos, err = applyFilter(inner, pos, val)
++		if err != nil {
++			return "", err
++		}
++	}
++	return val, nil
++}
++
++// parseName reads an identifier followed by any .field segments.
++func parseName(s string, pos int) (full string, segs []string, next int, err error) {
++	skipWS(s, &pos)
++	if pos >= len(s) || !isIdentStart(s[pos]) {
++		return "", nil, pos, fmt.Errorf("bad name in tag %q", s)
++	}
++	start := pos
++	for pos < len(s) && isIdentRune(s[pos]) {
++		pos++
++	}
++	full = s[start:pos]
++	segs = []string{full}
++	for pos < len(s) && s[pos] == '.' {
++		pos++
++		if pos >= len(s) || !isIdentStart(s[pos]) {
++			return full, segs, pos, fmt.Errorf("bad name in tag %q", s)
++		}
++		start = pos
++		for pos < len(s) && isIdentRune(s[pos]) {
++			pos++
++		}
++		segs = append(segs, s[start:pos])
++	}
++	return full, segs, pos, nil
++}
++
++// lookup resolves a possibly dotted name against nested map[string]any values.
++// A missing name yields nil (formatted as the empty string); indexing a
++// non-map value yields an error naming the full path.
++func lookup(data map[string]any, full string, segs []string) (any, error) {
++	cur := any(data)
++	for i, seg := range segs {
++		m, ok := cur.(map[string]any)
++		if !ok {
++			if i == 0 {
++				return nil, nil // missing name
++			}
++			return nil, fmt.Errorf("cannot index %q: not a map", strings.Join(segs[:i+1], "."))
++		}
++		v, present := m[seg]
++		if !present || v == nil {
++			return nil, nil
++		}
++		cur = v
++	}
++	return cur, nil
++}
++
++// format renders a looked-up value as a string.
++func format(v any) string {
++	switch v := v.(type) {
++	case nil:
++		return ""
++	case string:
++		return v
++	case bool:
++		return strconv.FormatBool(v)
++	default:
++		return fmt.Sprint(v)
++	}
++}
++
++// applyFilter parses and applies one "filter[:arg]" starting just after the '|'.
++func applyFilter(s string, pos int, val string) (string, int, error) {
++	skipWS(s, &pos)
++	if pos >= len(s) || !isIdentStart(s[pos]) {
++		return val, pos, fmt.Errorf("bad tag %q: missing filter name", s)
++	}
++	start := pos
++	for pos < len(s) && isIdentRune(s[pos]) {
++		pos++
++	}
++	name := s[start:pos]
++	skipWS(s, &pos)
++	hasArg := false
++	var arg string
++	if pos < len(s) && s[pos] == ':' {
++		pos++
++		skipWS(s, &pos)
++		if pos >= len(s) || s[pos] != '"' {
++			return val, pos, fmt.Errorf("filter %q requires an argument", name)
++		}
++		var err error
++		arg, pos, err = parseQuoted(s, pos)
++		if err != nil {
++			return val, pos, fmt.Errorf("filter %q: %v", name, err)
++		}
++		hasArg = true
++	}
++	skipWS(s, &pos)
++	switch name {
++	case "upper":
++		if hasArg {
++			return val, pos, fmt.Errorf("filter %q takes no arguments", name)
++		}
++		val = strings.ToUpper(val)
++	case "lower":
++		if hasArg {
++			return val, pos, fmt.Errorf("filter %q takes no arguments", name)
++		}
++		val = strings.ToLower(val)
++	case "trim":
++		if hasArg {
++			return val, pos, fmt.Errorf("filter %q takes no arguments", name)
++		}
++		val = strings.TrimSpace(val)
++	case "html":
++		if hasArg {
++			return val, pos, fmt.Errorf("filter %q takes no arguments", name)
++		}
++		val = htmlEscape(val)
++	case "default":
++		if !hasArg {
++			return val, pos, fmt.Errorf("filter %q requires an argument", name)
++		}
++		if val == "" {
++			val = arg
++		}
++	case "truncate":
++		if !hasArg {
++			return val, pos, fmt.Errorf("filter %q requires an argument", name)
++		}
++		n, err := strconv.Atoi(arg)
++		if err != nil || n < 0 {
++			return val, pos, fmt.Errorf("filter %q: invalid argument %q", name, arg)
++		}
++		val = truncate(val, n)
++	default:
++		return val, pos, fmt.Errorf("unknown filter %q", name)
++	}
++	return val, pos, nil
++}
++
++// parseQuoted reads a double-quoted argument starting at s[pos] == '"'.
++func parseQuoted(s string, pos int) (string, int, error) {
++	pos++ // opening quote
++	var b strings.Builder
++	for {
++		if pos >= len(s) {
++			return "", pos, errors.New("unterminated argument")
++		}
++		c := s[pos]
++		if c == '\\' {
++			if pos+1 >= len(s) {
++				return "", pos, errors.New("unterminated argument")
++			}
++			pos++
++			switch s[pos] {
++			case '"', '\\':
++				b.WriteByte(s[pos])
++				pos++
++			default:
++				return "", pos, fmt.Errorf("invalid escape %q", s[pos])
++			}
++			continue
++		}
++		if c == '"' {
++			return b.String(), pos + 1, nil
++		}
++		b.WriteByte(c)
++		pos++
++	}
++}
++
++var escaper = strings.NewReplacer(
++	"&", "&amp;",
++	"<", "&lt;",
++	">", "&gt;",
++	`"`, "&#34;",
++	"'", "&#39;",
++)
++
++// htmlEscape escapes the five HTML special characters.
++func htmlEscape(s string) string {
++	return escaper.Replace(s)
++}
++
++// truncate keeps at most n runes, appending … if anything was cut.
++func truncate(s string, n int) string {
++	r := []rune(s)
++	if len(r) <= n {
++		return s
++	}
++	return string(r[:n]) + "…"
++}
++
++func isIdentStart(c byte) bool {
++	return c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
++}
++
++func isIdentRune(c byte) bool {
++	return isIdentStart(c) || (c >= '0' && c <= '9')
++}
++
++func skipWS(s string, pos *int) {
++	for *pos < len(s) {
++		switch s[*pos] {
++		case ' ', '\t', '\n', '\r':
++			*pos++
++		default:
++			return
++		}
++	}
++}
+diff --git a/tmpl/tmpl_test.go b/tmpl/tmpl_test.go
+new file mode 100644
+index 0000000..817a976
+--- /dev/null
++++ b/tmpl/tmpl_test.go
+@@ -0,0 +1,206 @@
++package tmpl
++
++import (
++	"strings"
++	"testing"
++)
++
++func mustRender(t *testing.T, src string, data map[string]any) string {
++	t.Helper()
++	got, err := Render(src, data)
++	if err != nil {
++		t.Fatalf("Render(%q) error: %v", src, err)
++	}
++	return got
++}
++
++func wantErr(t *testing.T, src string, data map[string]any, contains ...string) {
++	t.Helper()
++	got, err := Render(src, data)
++	if err == nil {
++		t.Fatalf("Render(%q) = %q, want error", src, got)
++	}
++	for _, c := range contains {
++		if !strings.Contains(err.Error(), c) {
++			t.Fatalf("Render(%q) error = %q, want it to contain %q", src, err.Error(), c)
++		}
++	}
++	if got != "" {
++		t.Fatalf("Render(%q) output = %q, want empty on error", src, got)
++	}
++}
++
++func TestPlainText(t *testing.T) {
++	if got := mustRender(t, "hello world\n1+1=2", nil); got != "hello world\n1+1=2" {
++		t.Fatalf("got %q", got)
++	}
++	if got := mustRender(t, "a } } b { { c", nil); got != "a } } b { { c" {
++		t.Fatalf("got %q", got)
++	}
++}
++
++func TestLiteralBraces(t *testing.T) {
++	if got := mustRender(t, "{{{{", nil); got != "{{" {
++		t.Fatalf("got %q", got)
++	}
++	if got := mustRender(t, "{{{{ name }}", map[string]any{"name": "x"}); got != "{{ name }}" {
++		t.Fatalf("got %q", got)
++	}
++}
++
++func TestValues(t *testing.T) {
++	data := map[string]any{
++		"empty": "",
++		"str":   "  hi ",
++		"i":     42,
++		"i64":   int64(7),
++		"f":     3.14,
++		"b":     true,
++		"bf":    false,
++		"none":  nil,
++	}
++	cases := []struct{ tag, want string }{
++		{"{{ empty }}", ""},
++		{"{{ str }}", "  hi "},
++		{"{{ i }}", "42"},
++		{"{{ i64 }}", "7"},
++		{"{{ f }}", "3.14"},
++		{"{{ b }}", "true"},
++		{"{{ bf }}", "false"},
++		{"{{ missing }}", ""},
++		{"{{ none }}", ""},
++	}
++	for _, c := range cases {
++		if got := mustRender(t, c.tag, data); got != c.want {
++			t.Errorf("Render(%q) = %q, want %q", c.tag, got, c.want)
++		}
++	}
++}
++
++func TestNestedLookup(t *testing.T) {
++	data := map[string]any{
++		"user": map[string]any{
++			"name": "Alice",
++			"age":  30,
++			"nick": nil,
++		},
++	}
++	if got := mustRender(t, "{{ user.name }}", data); got != "Alice" {
++		t.Fatalf("got %q", got)
++	}
++	if got := mustRender(t, "{{ user.age }}", data); got != "30" {
++		t.Fatalf("got %q", got)
++	}
++	if got := mustRender(t, "{{ user.missing }}", data); got != "" {
++		t.Fatalf("got %q", got)
++	}
++	if got := mustRender(t, "{{ user.nick }}", data); got != "" {
++		t.Fatalf("got %q", got)
++	}
++	if got := mustRender(t, "{{ ghost.name }}", data); got != "" {
++		t.Fatalf("got %q, want empty for missing root", got)
++	}
++}
++
++func TestNonMapIndexError(t *testing.T) {
++	data := map[string]any{
++		"user": map[string]any{"name": "Alice"},
++	}
++	wantErr(t, "{{ user.name.first }}", data, "user.name.first")
++	if got := mustRender(t, "{{ user }}", map[string]any{"user": 3}); got != "3" {
++		t.Fatalf("got %q, want %q", got, "3")
++	}
++}
++
++func TestFilters(t *testing.T) {
++	data := map[string]any{
++		"raw":  "  Hello  ",
++		"long": "abcdefgh",
++		"uni":  "héllo",
++		"html": "<a href=\"x\">&'>'",
++	}
++	cases := []struct{ tag, want string }{
++		{"{{ raw | upper }}", "  HELLO  "},
++		{"{{ raw | lower }}", "  hello  "},
++		{"{{ raw | trim }}", "Hello"},
++		{"{{ raw | trim | upper }}", "HELLO"},
++		{"{{ missing | default:\"none\" }}", "none"},
++		{"{{ raw | default:\"none\" }}", "  Hello  "},
++		{"{{ raw | trim | default:\"none\" }}", "Hello"},
++		{"{{ long | truncate:\"2\" }}", "ab…"},
++		{"{{ long | truncate:\"8\" }}", "abcdefgh"},
++		{"{{ long | truncate:\"0\" }}", "…"},
++		{"{{ uni | truncate:\"2\" }}", "hé…"},
++		{`{{ html | html }}`, "&lt;a href=&#34;x&#34;&gt;&amp;&#39;&gt;&#39;"},
++	}
++	for _, c := range cases {
++		if got := mustRender(t, c.tag, data); got != c.want {
++			t.Errorf("Render(%q) = %q, want %q", c.tag, got, c.want)
++		}
++	}
++}
++
++func TestFilterArgEscapes(t *testing.T) {
++	data := map[string]any{"s": ""}
++	if got := mustRender(t, `{{ s | default:"a\"b\\c" }}`, data); got != `a"b\c` {
++		t.Fatalf("got %q", got)
++	}
++}
++
++func TestWhitespaceIgnored(t *testing.T) {
++	data := map[string]any{"user": map[string]any{"name": "bob"}}
++	if got := mustRender(t, "{{  user.name  |  upper  }}", data); got != "BOB" {
++		t.Fatalf("got %q", got)
++	}
++	if got := mustRender(t, "{{\n user.name\n}}", data); got != "bob" {
++		t.Fatalf("got %q", got)
++	}
++}
++
++func TestErrors(t *testing.T) {
++	data := map[string]any{"name": "x"}
++	wantErr(t, "{{ name | nope }}", data, "nope")
++	wantErr(t, "{{ missing | nope:5 }}", data, "nope")
++	wantErr(t, "{{ name | default }}", data, "default")
++	wantErr(t, `{{ name | default }}`, data, "default")
++	wantErr(t, `{{ name | upper:"y" }}`, data, "upper")
++	wantErr(t, `{{ name | lower:1 }}`, data, "lower")
++	wantErr(t, `{{ name | trim:"x" }}`, data, "trim")
++	wantErr(t, `{{ name | html:"x" }}`, data, "html")
++	wantErr(t, `{{ name | truncate:"x" }}`, data, "truncate")
++	wantErr(t, `{{ name | truncate:"-1" }}`, data, "truncate")
++	wantErr(t, `{{ name | truncate }}`, data, "truncate")
++	wantErr(t, "{{ name", data, "unterminated")
++	wantErr(t, "{{ }}", data)
++	wantErr(t, "{{   }}", data)
++	wantErr(t, "{{ 1abc }}", data)
++	wantErr(t, "{{ .name }}", data)
++	wantErr(t, `{{ name | upper:"unterminated }}`, data)
++	wantErr(t, `{{ name | upper:5 }}`, data)
++}
++
++func TestMixedDocument(t *testing.T) {
++	data := map[string]any{
++		"title":     "My <Page>",
++		"user":      map[string]any{"name": "  alice  "},
++		"biography": strings.Repeat("word ", 100),
++		"count":     5,
++	}
++	src := `{{ title | html }}
++By {{ user.name | trim | lower | default:"anonymous" }}
++{{ count }} {{ user.name | trim | default:"anonymous" }}
++{{ biography | truncate:"12" }}
++Braces: {{{{ stay`
++	want := `My &lt;Page&gt;
++By alice
++5 alice
++word word wo…
++Braces: {{ stay`
++	got, err := Render(src, data)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if got != want {
++		t.Fatalf("got %q, want %q", got, want)
++	}
++}

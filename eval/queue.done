@@ -19,3 +19,4 @@
 2026-10-27T05:58:24Z rc=0 ./bin/qh eval --agent "eval/runner/pi_agent.sh little" --agent-timeout-min 60 --out eval/results/littlecoder-baseline --only tierB --reps 1 --parallel 1 > eval/results/littlecoder-baseline-B.log 2>&1
 2026-10-27T08:02:03Z rc=0 ./bin/qh eval --harness harness/cand/l2-test-after-write --out eval/results/expL2-test-after-write --only b06-markdown,b01-expr-lang,b05-port-cron --reps 1 --parallel 1 > eval/results/expL2-test-after-write.log 2>&1
 2026-10-28T04:11:21Z rc=0 ./bin/qh eval --agent "eval/runner/pi_agent.sh little" --agent-timeout-min 60 --out eval/results/littlecoder-baseline --only b04-kv-server,b05-port-cron,b06-markdown --reps 1 --parallel 1 >> eval/results/littlecoder-baseline-B.log 2>&1
+2026-10-28T08:46:47Z rc=0 ./bin/qh eval --harness harness/it1 --out eval/results/it1 --only tierB,h01-paginate-bugs,h02-config-merge,h03-worker-pool,h04-mini-template --reps 1 --parallel 1 > eval/results/it1.log 2>&1

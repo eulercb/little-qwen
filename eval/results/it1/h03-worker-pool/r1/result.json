@@ -1,0 +1,37 @@
+{
+  "task_id": "h03-worker-pool",
+  "tier": "heldout",
+  "rep": 1,
+  "harness_hash": "a01327c09982",
+  "success": true,
+  "score": 1,
+  "tests_passed": 14,
+  "tests_total": 14,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Rewrote Map in pool/pool.go: the coordinator goroutine now tracks jobs by index, so out[i] is always fn(ctx, in[i]) regardless of arrival order; a select loop stops dispatching new inputs as soon as a call fails or ctx is cancelled, then drains all in-flight results (with a `stop` channel so no worker can ever block on an abandoned send), and guarantees no goroutine leaks by closing channels and wg.Wait() before returning. The return value follows the doc: nil + *IndexError for the lowest failing index (when a failure predates cancellation), ctx.Err() on cancellation, else the ordered results. Added tests in pool/pool_extra_test.go covering order with 16 workers, lowest-index error selection, stop-on-failure, cancellation (including a pre-cancelled context), failure-beats-later-cancellation, and empty input. Verified with `go test -race -count=1 ./...` (exit 0) and repeated `-count=5` runs under the race detector.",
+    "Turns": 17,
+    "Compactions": 0,
+    "PromptTokens": 238698,
+    "PrefillTokens": 17002,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 8525,
+    "ReasoningTokens": 3790,
+    "ToolCalls": 19,
+    "ToolErrors": 2,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F4": 1
+    },
+    "WallSeconds": 1145.039773301,
+    "Err": ""
+  },
+  "started": "2026-10-28T08:10:37Z",
+  "hidden_output": "=== RUN   TestOrderWithManyWorkers\n--- PASS: TestOrderWithManyWorkers (0.07s)\n=== RUN   TestLowestFailingIndex\n--- PASS: TestLowestFailingIndex (0.05s)\n=== RUN   TestErrorStopsNewWork\n--- PASS: TestErrorStopsNewWork (0.10s)\n=== RUN   TestCancelledReturnsCtxErr\n--- PASS: TestCancelledReturnsCtxErr (0.05s)\n=== RUN   TestPreCancelled\n--- PASS: TestPreCancelled (0.02s)\n=== RUN   TestEmptyInput\n--- PASS: TestEmptyInput (0.00s)\n=== RUN   TestFailureBeatsLaterCancellation\n--- PASS: TestFailureBeatsLaterCancellation (0.00s)\n=== RUN   TestSquares\n--- PASS: TestSquares (0.00s)\n=== RUN   TestHiddenOrder\n--- PASS: TestHiddenOrder (0.02s)\n=== RUN   TestHiddenLowestIndexError\n--- PASS: TestHiddenLowestIndexError (0.00s)\n=== RUN   TestHiddenLowestIndexDeterministic\n--- PASS: TestHiddenLowestIndexDeterministic (0.05s)\n=== RUN   TestHiddenCancelNoHangNoLeak\n--- PASS: TestHiddenCancelNoHangNoLeak (0.07s)\n=== RUN   TestHiddenEarlyErrorNoLeak\n--- PASS: TestHiddenEarlyErrorNoLeak (0.05s)\n=== RUN   TestHiddenEmptyAndZeroWorkers\n--- PASS: TestHiddenEmptyAndZeroWorkers (0.00s)\nPASS\nok  \texample.com/pool/pool\t1.511s",
+  "work": "/tmp/qh-runs/it1/h03-worker-pool-r1"
+}

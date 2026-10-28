@@ -1,0 +1,344 @@
+ pool/pool.go            |  88 ++++++++++++++-----
+ pool/pool_extra_test.go | 220 ++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 289 insertions(+), 19 deletions(-)
+
+diff --git a/pool/pool.go b/pool/pool.go
+index ba7e123..f911433 100644
+--- a/pool/pool.go
++++ b/pool/pool.go
+@@ -32,40 +32,90 @@ func Map[T, R any](ctx context.Context, in []T, workers int, fn func(context.Con
+ 	if workers < 1 {
+ 		workers = 1
+ 	}
++	n := len(in)
++	out := make([]R, n)
++	if n == 0 {
++		return out, nil
++	}
++
+ 	type result struct {
+ 		r   R
+ 		err error
+ 		i   int
+ 	}
+-	jobs := make(chan int)
++	jobs := make(chan int) // unbuffered: a job counts as handed out only when a worker takes it
+ 	results := make(chan result)
++	stop := make(chan struct{}) // closed once every result has been accounted for
+ 	var wg sync.WaitGroup
+ 	for w := 0; w < workers; w++ {
+ 		wg.Add(1)
+ 		go func() {
+ 			defer wg.Done()
+-			for i := range jobs {
+-				r, err := fn(ctx, in[i])
+-				results <- result{r, err, i}
++			for {
++				select {
++				case i, ok := <-jobs:
++					if !ok {
++						return
++					}
++					r, err := fn(ctx, in[i])
++					results <- result{r, err, i}
++				case <-stop:
++					return
++				}
+ 			}
+ 		}()
+ 	}
+-	go func() {
+-		for i := range in {
+-			jobs <- i
+-		}
+-		close(jobs)
+-	}()
+-	go func() {
+-		wg.Wait()
+-		close(results)
+-	}()
+-	var out []R
+-	for res := range results {
++
++	ctxDone := ctx.Err() != nil
++	next := 0 // next input not yet handed out
++	inFlight := 0
++	failIdx := -1 // lowest index of a failed call
++	var failErr error
++	failFirst := false
++
++	record := func(res result) {
++		inFlight--
+ 		if res.err != nil {
+-			return nil, &IndexError{Index: res.i, Err: res.err}
++			if failIdx == -1 || res.i < failIdx {
++				failIdx, failErr = res.i, res.err
++			}
++			if !ctxDone {
++				failFirst = true
++			}
++		} else {
++			out[res.i] = res.r
+ 		}
+-		out = append(out, res.r)
+ 	}
+-	return out, nil
++
++	for {
++		if next < n && !ctxDone && failIdx == -1 {
++			select {
++			case jobs <- next:
++				next++
++				inFlight++
++				continue
++			case res := <-results:
++				record(res)
++				continue
++			case <-ctx.Done():
++				ctxDone = true
++			}
++		}
++		if inFlight == 0 {
++			break
++		}
++		record(<-results)
++	}
++	close(stop) // no worker can be blocked anymore; let them exit
++	close(jobs)
++	wg.Wait() // guarantee no leaked goroutines before returning
++
++	switch {
++	case failIdx >= 0 && (failFirst || !ctxDone):
++		return nil, &IndexError{Index: failIdx, Err: failErr}
++	case ctxDone:
++		return nil, ctx.Err()
++	default:
++		return out, nil
++	}
+ }
+diff --git a/pool/pool_extra_test.go b/pool/pool_extra_test.go
+new file mode 100644
+index 0000000..c01fce3
+--- /dev/null
++++ b/pool/pool_extra_test.go
+@@ -0,0 +1,220 @@
++package pool
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"testing"
++	"time"
++)
++
++func TestOrderWithManyWorkers(t *testing.T) {
++	in := make([]int, 200)
++	for i := range in {
++		in[i] = i
++	}
++	// Slow on even inputs so arrival order diverges from input order.
++	fn := func(_ context.Context, x int) (int, error) {
++		if x%2 == 0 {
++			time.Sleep(10 * time.Millisecond)
++		}
++		return x * 10, nil
++	}
++	out, err := Map(context.Background(), in, 16, fn)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(out) != len(in) {
++		t.Fatalf("len(out) = %d, want %d", len(out), len(in))
++	}
++	for i := range in {
++		if out[i] != in[i]*10 {
++			t.Fatalf("out[%d] = %d, want %d", i, out[i], in[i]*10)
++		}
++	}
++}
++
++func TestLowestFailingIndex(t *testing.T) {
++	var boom = errors.New("boom")
++	in := make([]int, 30)
++	fn := func(_ context.Context, x int) (int, error) {
++		if x%10 == 0 { // inputs 0, 10, 20 fail
++			time.Sleep(50 * time.Millisecond) // later indices finish first
++			return 0, boom
++		}
++		return x, nil
++	}
++	out, err := Map(context.Background(), in, 16, fn)
++	if out != nil {
++		t.Fatalf("out = %v, want nil", out)
++	}
++	var ie *IndexError
++	if !errors.As(err, &ie) {
++		t.Fatalf("err = %v, want *IndexError", err)
++	}
++	if ie.Index != 0 {
++		t.Fatalf("Index = %d, want 0", ie.Index)
++	}
++	if !errors.Is(ie.Err, boom) {
++		t.Fatalf("Err = %v, want %v", ie.Err, boom)
++	}
++}
++
++// No cancellation: a failing call must stop new work from starting.
++func TestErrorStopsNewWork(t *testing.T) {
++	started := make(chan int, 1000)
++	release := make(chan struct{})
++	fn := func(_ context.Context, x int) (int, error) {
++		started <- x
++		if x == 1 {
++			return 0, errors.New("stop")
++		}
++		<-release
++		return x, nil
++	}
++	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++	defer cancel()
++	done := make(chan struct{})
++	var err error
++	go func() {
++		defer close(done)
++		_, err = Map(ctx, []int{0, 1, 2, 3, 4, 5}, 2, fn)
++	}()
++	// 0 and 1 start; 1 fails. If Map kept dispatching, 2..5 would start
++	// and the test would deadlock until the timeout.
++	if _, ok := <-started; !ok {
++		t.Fatal("input 0 never started")
++	}
++	if _, ok := <-started; !ok {
++		t.Fatal("input 1 never started")
++	}
++	time.Sleep(100 * time.Millisecond)
++	select {
++	case x := <-started:
++		t.Fatalf("input %d started after a failure; new work should stop", x)
++	default:
++	}
++	close(release)
++	select {
++	case <-done:
++	case <-ctx.Done():
++		t.Fatal("Map did not return after running calls finished (timeout)")
++	}
++	var ie *IndexError
++	if !errors.As(err, &ie) {
++		t.Fatalf("err = %v, want *IndexError", err)
++	}
++	if ie.Index != 1 {
++		t.Fatalf("Index = %d, want 1", ie.Index)
++	}
++}
++
++func TestCancelledReturnsCtxErr(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	time.AfterFunc(20*time.Millisecond, cancel)
++	started := make(chan int, 1000)
++	fn := func(_ context.Context, x int) (int, error) {
++		started <- x
++		time.Sleep(50 * time.Millisecond)
++		return x, nil
++	}
++	done := make(chan struct{})
++	var out []int
++	var err error
++	go func() {
++		defer close(done)
++		out, err = Map(ctx, makeRange(100), 4, fn)
++	}()
++	select {
++	case <-done:
++	case <-time.After(5 * time.Second):
++		t.Fatal("Map hung after ctx cancellation")
++	}
++	if out != nil {
++		t.Fatalf("out = %v, want nil", out)
++	}
++	if !errors.Is(err, context.Canceled) {
++		t.Fatalf("err = %v, want context.Canceled", err)
++	}
++}
++
++// Pre-cancelled context: Map must not run (or only barely run) work and
++// must return ctx.Err().
++func TestPreCancelled(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	called := make(chan struct{}, 1000)
++	fn := func(context.Context, int) (int, error) {
++		called <- struct{}{}
++		return 0, nil
++	}
++	done := make(chan struct{})
++	var err error
++	go func() {
++		defer close(done)
++		_, err = Map(ctx, makeRange(50), 4, fn)
++	}()
++	select {
++	case <-done:
++	case <-time.After(5 * time.Second):
++		t.Fatal("Map hung with pre-cancelled ctx")
++	}
++	if !errors.Is(err, context.Canceled) {
++		t.Fatalf("err = %v, want context.Canceled", err)
++	}
++	time.Sleep(20 * time.Millisecond) // give any stray dispatch a chance to misbehave
++	if n := len(called); n > 1 {
++		t.Fatalf("%d calls started despite pre-cancelled ctx", n)
++	}
++}
++
++func TestEmptyInput(t *testing.T) {
++	out, err := Map(context.Background(), nil, 0, func(_ context.Context, _ string) (int, error) { return 0, nil })
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(out) != 0 {
++		t.Fatalf("out = %v, want empty", out)
++	}
++}
++
++// Cancellation and a real (pre-existing) failure: the failing input is
++// lowest-index and its error must win per the doc comment.
++func TestFailureBeatsLaterCancellation(t *testing.T) {
++	boom := fmt.Errorf("boom")
++	ctx, cancel := context.WithCancel(context.Background())
++	fn := func(_ context.Context, x int) (int, error) {
++		if x == 0 {
++			return 0, boom
++		}
++		time.Sleep(50 * time.Millisecond)
++		return x, nil
++	}
++	time.AfterFunc(10*time.Millisecond, cancel)
++	done := make(chan struct{})
++	var err error
++	go func() {
++		defer close(done)
++		_, err = Map(ctx, []int{0, 1, 2, 3}, 2, fn)
++	}()
++	select {
++	case <-done:
++	case <-time.After(5 * time.Second):
++		t.Fatal("Map hung")
++	}
++	var ie *IndexError
++	if !errors.As(err, &ie) {
++		t.Fatalf("err = %v, want *IndexError wrapping %v", err, boom)
++	}
++	if !errors.Is(ie.Err, boom) {
++		t.Fatalf("Err = %v, want %v", ie.Err, boom)
++	}
++}
++
++func makeRange(n int) []int {
++	v := make([]int, n)
++	for i := range v {
++		v[i] = i
++	}
++	return v
++}
