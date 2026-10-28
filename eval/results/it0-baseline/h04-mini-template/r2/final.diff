@@ -1,0 +1,417 @@
+ tmpl/tmpl.go      | 300 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ tmpl/tmpl_test.go | 101 ++++++++++++++++++
+ 2 files changed, 401 insertions(+)
+
+diff --git a/tmpl/tmpl.go b/tmpl/tmpl.go
+new file mode 100644
+index 0000000..4ca1f23
+--- /dev/null
++++ b/tmpl/tmpl.go
+@@ -0,0 +1,300 @@
++// Package tmpl implements a tiny text template engine.
++//
++// A template is plain text that may contain tags of the form
++//
++//	{{ name | filter | filter:"arg" }}
++//
++// where name resolves a value from a data map (with optional .field
++// segments for nested maps) and filters are applied left to right to the
++// resulting string. The sequence {{{{ renders a literal {{ and does not
++// start a tag.
++package tmpl
++
++import (
++	"fmt"
++	"strconv"
++	"strings"
++)
++
++// Render renders src using data and returns the resulting text.
++func Render(src string, data map[string]any) (string, error) {
++	var out strings.Builder
++	for i := 0; i < len(src); {
++		if src[i] == '{' && i+1 < len(src) && src[i+1] == '{' {
++			if i+4 <= len(src) && src[i+2] == '{' && src[i+3] == '{' {
++				// {{{{ renders a literal {{ and is not a tag.
++				out.WriteString("{{")
++				i += 4
++				continue
++			}
++			end := strings.Index(src[i+2:], "}}")
++			if end < 0 {
++				return "", fmt.Errorf("unterminated tag starting at %d", i)
++			}
++			val, err := renderTag(src[i+2:i+2+end], data)
++			if err != nil {
++				return "", err
++			}
++			out.WriteString(val)
++			i += end + 4
++			continue
++		}
++		out.WriteByte(src[i])
++		i++
++	}
++	return out.String(), nil
++}
++
++// renderTag renders a single tag body (the text between {{ and }}).
++func renderTag(body string, data map[string]any) (string, error) {
++	p := &tagParser{s: strings.TrimSpace(body)}
++	if p.i >= len(p.s) {
++		return "", fmt.Errorf("empty tag")
++	}
++	name, err := p.parseName()
++	if err != nil {
++		return "", err
++	}
++	v, err := resolve(data, name)
++	if err != nil {
++		return "", err
++	}
++	s := formatValue(v)
++	for {
++		p.skipSpace()
++		if p.i >= len(p.s) {
++			break
++		}
++		if p.s[p.i] != '|' {
++			return "", fmt.Errorf("unexpected character %q in tag", p.s[p.i])
++		}
++		p.i++
++		s, err = p.applyFilter(s)
++		if err != nil {
++			return "", err
++		}
++	}
++	return s, nil
++}
++
++// filterSpec describes a filter: whether it requires exactly one quoted
++// argument and how it transforms its string input.
++type filterSpec struct {
++	needsArg bool
++	fn       func(value, arg string) (string, error)
++}
++
++var htmlEscaper = strings.NewReplacer(
++	"&", "&amp;",
++	"<", "&lt;",
++	">", "&gt;",
++	`"`, "&#34;",
++	"'", "&#39;",
++)
++
++var filters = map[string]filterSpec{
++	"upper": {false, func(v, _ string) (string, error) {
++		return strings.ToUpper(v), nil
++	}},
++	"lower": {false, func(v, _ string) (string, error) {
++		return strings.ToLower(v), nil
++	}},
++	"trim": {false, func(v, _ string) (string, error) {
++		return strings.TrimSpace(v), nil
++	}},
++	"html": {false, func(v, _ string) (string, error) {
++		return htmlEscaper.Replace(v), nil
++	}},
++	"default": {true, func(v, arg string) (string, error) {
++		if v == "" {
++			return arg, nil
++		}
++		return v, nil
++	}},
++	"truncate": {true, func(v, arg string) (string, error) {
++		n, err := strconv.Atoi(arg)
++		if err != nil {
++			return "", fmt.Errorf("truncate: argument %q is not an integer", arg)
++		}
++		if n < 0 {
++			return "", fmt.Errorf("truncate: argument %q must not be negative", arg)
++		}
++		r := []rune(v)
++		if len(r) <= n {
++			return v, nil
++		}
++		return string(r[:n]) + "\u2026", nil
++	}},
++}
++
++// resolve looks up name (with optional .field segments) in data. A missing
++// or nil value resolves to nil; indexing a .field into a non-nil value that
++// is not a map is an error.
++func resolve(data map[string]any, name string) (any, error) {
++	parts := strings.Split(name, ".")
++	v, ok := data[parts[0]]
++	if !ok || v == nil {
++		v = nil
++	}
++	for _, part := range parts[1:] {
++		m, isMap := v.(map[string]any)
++		if !isMap {
++			if v == nil {
++				// The value was missing; it stays empty, no error.
++				continue
++			}
++			return nil, fmt.Errorf("indexing %s into a value that is not a map", name)
++		}
++		nv, ok := m[part]
++		if !ok || nv == nil {
++			v = nil
++			continue
++		}
++		v = nv
++	}
++	return v, nil
++}
++
++// formatValue renders a resolved value as a string.
++func formatValue(v any) string {
++	switch x := v.(type) {
++	case nil:
++		return ""
++	case string:
++		return x
++	case bool:
++		if x {
++			return "true"
++		}
++		return "false"
++	case int, int64, float64:
++		return fmt.Sprint(x)
++	default:
++		return fmt.Sprint(x)
++	}
++}
++
++// tagParser is a small position-based parser over a tag body.
++type tagParser struct {
++	s string
++	i int
++}
++
++func (p *tagParser) skipSpace() {
++	for p.i < len(p.s) && (p.s[p.i] == ' ' || p.s[p.i] == '\t') {
++		p.i++
++	}
++}
++
++func isIdentStart(c byte) bool {
++	return c == '_' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z'
++}
++
++func isIdent(c byte) bool {
++	return isIdentStart(c) || '0' <= c && c <= '9'
++}
++
++// parseName parses name[.field...].
++func (p *tagParser) parseName() (string, error) {
++	p.skipSpace()
++	if p.i >= len(p.s) || !isIdentStart(p.s[p.i]) {
++		return "", fmt.Errorf("bad name in tag %q", p.s)
++	}
++	var name strings.Builder
++	for p.i < len(p.s) && isIdent(p.s[p.i]) {
++		name.WriteByte(p.s[p.i])
++		p.i++
++	}
++	for p.i < len(p.s) && p.s[p.i] == '.' {
++		p.i++
++		if p.i >= len(p.s) || !isIdentStart(p.s[p.i]) {
++			return "", fmt.Errorf("bad name in tag %q", p.s)
++		}
++		name.WriteByte('.')
++		for p.i < len(p.s) && isIdent(p.s[p.i]) {
++			name.WriteByte(p.s[p.i])
++			p.i++
++		}
++	}
++	return name.String(), nil
++}
++
++// parseIdent parses a bare identifier.
++func (p *tagParser) parseIdent() (string, error) {
++	if p.i >= len(p.s) || !isIdentStart(p.s[p.i]) {
++		return "", fmt.Errorf("expected an identifier, tag body is %q", p.s)
++	}
++	start := p.i
++	for p.i < len(p.s) && isIdent(p.s[p.i]) {
++		p.i++
++	}
++	return p.s[start:p.i], nil
++}
++
++// parseArg parses a double-quoted argument supporting \" and \\ escapes.
++func (p *tagParser) parseArg() (string, error) {
++	if p.i >= len(p.s) || p.s[p.i] != '"' {
++		return "", fmt.Errorf("missing argument")
++	}
++	p.i++
++	var b strings.Builder
++	for p.i < len(p.s) {
++		c := p.s[p.i]
++		if c == '"' {
++			p.i++
++			return b.String(), nil
++		}
++		if c == '\\' {
++			if p.i+1 >= len(p.s) {
++				return "", fmt.Errorf("unterminated argument")
++			}
++			n := p.s[p.i+1]
++			if n != '"' && n != '\\' {
++				return "", fmt.Errorf("invalid escape in argument")
++			}
++			b.WriteByte(n)
++			p.i += 2
++			continue
++		}
++		b.WriteByte(c)
++		p.i++
++	}
++	return "", fmt.Errorf("unterminated argument")
++}
++
++// applyFilter parses and applies one filter to s.
++func (p *tagParser) applyFilter(s string) (string, error) {
++	p.skipSpace()
++	fn, err := p.parseIdent()
++	if err != nil {
++		return "", fmt.Errorf("invalid filter: %v", err)
++	}
++	spec, ok := filters[fn]
++	if !ok {
++		return "", fmt.Errorf("unknown filter %q", fn)
++	}
++	p.skipSpace()
++	hasArg := p.i < len(p.s) && p.s[p.i] == ':'
++	if hasArg {
++		p.i++
++		p.skipSpace()
++	}
++	var arg string
++	if hasArg {
++		arg, err = p.parseArg()
++		if err != nil {
++			return "", fmt.Errorf("filter %q: %v", fn, err)
++		}
++	}
++	if spec.needsArg != hasArg {
++		verb := "missing"
++		if !spec.needsArg {
++			verb = "extra"
++		}
++		return "", fmt.Errorf("filter %q: %s argument", fn, verb)
++	}
++	if !spec.needsArg {
++		return spec.fn(s, "")
++	}
++	return spec.fn(s, arg)
++}
+diff --git a/tmpl/tmpl_test.go b/tmpl/tmpl_test.go
+new file mode 100644
+index 0000000..530562a
+--- /dev/null
++++ b/tmpl/tmpl_test.go
+@@ -0,0 +1,101 @@
++package tmpl
++
++import (
++	"strings"
++	"testing"
++)
++
++func TestRender(t *testing.T) {
++	tests := []struct {
++		name string
++		src  string
++		data map[string]any
++		want string
++		err  string // expected error substring; empty means no error
++	}{
++		{name: "text only", src: "hello world", data: nil, want: "hello world"},
++		{name: "empty template", src: "", data: nil, want: ""},
++		{name: "no data map", src: "x {{ a }} y", data: nil, want: "x  y"},
++		{name: "simple value", src: "{{ name }}", data: map[string]any{"name": "Ada"}, want: "Ada"},
++		{name: "whitespace ignored", src: "{{  name  }}", data: map[string]any{"name": "Ada"}, want: "Ada"},
++		{name: "missing name", src: "a {{ nope }} b", data: map[string]any{}, want: "a  b"},
++		{name: "explicit nil", src: "a {{ x }} b", data: map[string]any{"x": nil}, want: "a  b"},
++		{name: "int", src: "{{ n }}", data: map[string]any{"n": 42}, want: "42"},
++		{name: "int64", src: "{{ n }}", data: map[string]any{"n": int64(7)}, want: "7"},
++		{name: "float64", src: "{{ f }}", data: map[string]any{"f": 1.5}, want: "1.5"},
++		{name: "bool true", src: "{{ b }}", data: map[string]any{"b": true}, want: "true"},
++		{name: "bool false", src: "{{ b }}", data: map[string]any{"b": false}, want: "false"},
++		{name: "nested", src: "{{ user.name }}",
++			data: map[string]any{"user": map[string]any{"name": "Bob", "age": 30}}, want: "Bob"},
++		{name: "nested missing", src: "{{ user.name }}", data: map[string]any{"user": map[string]any{}}, want: ""},
++		{name: "nested deep missing", src: "{{ user.name.first }}",
++			data: map[string]any{"user": map[string]any{}}, want: ""},
++		{name: "literal braces", src: "a{{{{b", data: nil, want: "a{{b"},
++		{name: "literal braces in tag", src: "{{{{ name }}", data: map[string]any{"name": "x"}, want: "{{ name }}"},
++		{name: "two values", src: "{{ a }} and {{ b }}",
++			data: map[string]any{"a": "x", "b": "y"}, want: "x and y"},
++
++		{name: "upper", src: "{{ s | upper }}", data: map[string]any{"s": "Hello"}, want: "HELLO"},
++		{name: "lower", src: "{{ s | lower }}", data: map[string]any{"s": "Hello"}, want: "hello"},
++		{name: "trim", src: "{{ s | trim }}", data: map[string]any{"s": "  a b  "}, want: "a b"},
++		{name: "trim unicode", src: "{{ s | trim }}", data: map[string]any{"s": " \t hi\n"}, want: "hi"},
++		{name: "default on empty", src: `{{ s | default:"x" }}`, data: map[string]any{"s": ""}, want: "x"},
++		{name: "default on missing", src: `{{ s | default:"x" }}`, data: map[string]any{}, want: "x"},
++		{name: "default keeps value", src: `{{ s | default:"x" }}`, data: map[string]any{"s": "y"}, want: "y"},
++		{name: "truncate cuts", src: `{{ s | truncate:"2" }}`, data: map[string]any{"s": "hello"}, want: "he\u2026"},
++		{name: "truncate exact length", src: `{{ s | truncate:"3" }}`, data: map[string]any{"s": "hel"}, want: "hel"},
++		{name: "truncate zero", src: `{{ s | truncate:"0" }}`, data: map[string]any{"s": "hi"}, want: "\u2026"},
++		{name: "truncate zero empty", src: `{{ s | truncate:"0" }}`, data: map[string]any{}, want: ""},
++		{name: "truncate counts runes", src: `{{ s | truncate:"2" }}`, data: map[string]any{"s": "héllö"}, want: "hé\u2026"},
++		{name: "html", src: `{{ s | html }}`,
++			data: map[string]any{"s": `<a href="x">&'</a>`}, want: `&lt;a href=&#34;x&#34;&gt;&amp;&#39;&lt;/a&gt;`},
++		{name: "html no double escape", src: `{{ s | html }}`, data: map[string]any{"s": "&amp;"}, want: "&amp;amp;"},
++		{name: "chained filters", src: "{{ s | upper | trim }}", data: map[string]any{"s": "  a  "}, want: "A"},
++		{name: "chained default then upper", src: `{{ s | default:"hi" | upper }}`, data: map[string]any{"s": ""}, want: "HI"},
++		{name: "whitespace around pipes", src: `{{s| trim |default : "x"}}`, data: map[string]any{"s": "  "}, want: "x"},
++		{name: "escaped quote in arg", src: `{{ s | default:"a\"b" }}`, data: map[string]any{}, want: `a"b`},
++		{name: "escaped backslash in arg", src: `{{ s | default:"a\\b" }}`, data: map[string]any{}, want: `a\b`},
++		{name: "pipe in arg", src: `{{ s | default:"a|b" }}`, data: map[string]any{}, want: "a|b"},
++
++		{name: "err unknown filter", src: `{{ s | nope }}`, data: map[string]any{"s": "x"}, err: "nope"},
++		{name: "err extra arg", src: `{{ s | upper:"x" }}`, data: map[string]any{"s": "x"}, err: "upper"},
++		{name: "err missing arg", src: `{{ s | default }}`, data: map[string]any{"s": "x"}, err: "default"},
++		{name: "err truncate non integer", src: `{{ s | truncate:"a" }}`, data: map[string]any{"s": "x"}, err: "truncate"},
++		{name: "err truncate negative", src: `{{ s | truncate:"-1" }}`, data: map[string]any{"s": "x"}, err: "truncate"},
++		{name: "err unterminated tag", src: `{{ name`, data: nil, err: "unterminated"},
++		{name: "err unterminated tag 2", src: `a {{ name b`, data: nil, err: "unterminated"},
++		{name: "err empty tag", src: `{{ }}`, data: nil, err: "empty"},
++		{name: "err empty tag braces", src: `{{}}`, data: nil, err: "empty"},
++		{name: "err bad name", src: `{{ 123 }}`, data: nil, err: "name"},
++		{name: "err bad name dot", src: `{{ a.1 }}`, data: nil, err: "name"},
++		{name: "err bad filter name", src: `{{ s | 1 }}`, data: map[string]any{"s": "x"}, err: "filter"},
++		{name: "err non-map index", src: `{{ user.name.first }}`,
++			data: map[string]any{"user": map[string]any{"name": "s"}}, err: "user.name.first"},
++		{name: "err non-map index top", src: `{{ user.first }}`,
++			data: map[string]any{"user": "s"}, err: "user.first"},
++	}
++
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			got, err := Render(tc.src, tc.data)
++			if tc.err == "" {
++				if err != nil {
++					t.Fatalf("Render(%q, %v) = %q, unexpected error: %v", tc.src, tc.data, got, err)
++				}
++				if got != tc.want {
++					t.Errorf("Render(%q, %v) = %q, want %q", tc.src, tc.data, got, tc.want)
++				}
++				return
++			}
++			if err == nil {
++				t.Fatalf("Render(%q, %v) = %q, expected error containing %q, got none", tc.src, tc.data, got, tc.err)
++			}
++			if !strings.Contains(err.Error(), tc.err) {
++				t.Errorf("error %q does not contain %q", err, tc.err)
++			}
++			if got != "" {
++				t.Errorf("output on error = %q, want empty", got)
++			}
++		})
++	}
++}

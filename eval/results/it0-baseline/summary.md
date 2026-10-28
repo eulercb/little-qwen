@@ -1,16 +1,16 @@
-Harness: 6e880e0d3539 — 22 runs over 22 tasks
+Harness: 6e880e0d3539 — 24 runs over 22 tasks
 
 | metric | mean ± sd |
 |---|---|
-| success | 0.77 ± 0.43 |
-| score | 0.90 ± 0.29 |
-| wall (min) | 21.3 ± 21.3 |
-| turns | 16.6 ± 12.9 |
-| prefill tokens | 20366 ± 18284 |
+| success | 0.79 ± 0.41 |
+| score | 0.91 ± 0.28 |
+| wall (min) | 20.2 ± 20.7 |
+| turns | 16.2 ± 12.5 |
+| prefill tokens | 19753 ± 17603 |
 | re-prefill tokens | 0 ± 0 |
-| completion tokens | 16364 ± 18465 |
-| reasoning tokens | 10172 ± 15251 |
-| tool calls / errors / repaired | 473 / 34 (7.2%) / 1 |
+| completion tokens | 15833 ± 17775 |
+| reasoning tokens | 9744 ± 14688 |
+| tool calls / errors / repaired | 504 / 35 (6.9%) / 1 |
 
 Failure codes: F4=6 F10=3 F3=2 
 
@@ -35,6 +35,6 @@ Failure codes: F4=6 F10=3 F3=2
 | b05-port-cron | tierB | 0.00 | 0.00 | wall_clock | 29 | 60.1 | 0 |
 | b06-markdown | tierB | 0.00 | 0.00 | wall_clock | 7 | 73.7 | 0 |
 | h01-paginate-bugs | heldout | 1.00 | 1.00 | finished | 9 | 3.2 | 0 |
-| h02-config-merge | heldout | 0.00 | 0.92 | finished | 7 | 2.3 | 0 |
+| h02-config-merge | heldout | 0.50 | 0.96 | finished,finished | 13 | 3.8 | 0 |
 | h03-worker-pool | heldout | 1.00 | 1.00 | finished | 13 | 16.3 | 0 |
-| h04-mini-template | heldout | 0.00 | 0.92 | finished | 26 | 19.9 | 0 |
+| h04-mini-template | heldout | 0.50 | 0.96 | finished,finished | 16 | 15.9 | 0 |
