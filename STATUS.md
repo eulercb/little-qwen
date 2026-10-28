@@ -202,4 +202,7 @@ Then follow "Decisions waiting on those results" below as items finish.
   - Held-out 4/4 at 1.00.
 - 2026-10-28 09:04 — base rep 2: h02 and h04 both 1.00, so C1 is retired as noise (probes removed from the queue).
   it2 Tier-B started.
+  - The Tier D (d01) and Tier C (Terminal-Bench subset) items now run with harness/it2 (outputs `it2`,
+    `tbC-it2`) instead of base. qh's best version is what we compare with little-coder, and these tiers are too
+    slow to run twice.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
