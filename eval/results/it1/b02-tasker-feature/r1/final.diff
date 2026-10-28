@@ -1,0 +1,726 @@
+ README.md                    |  19 ++++++--
+ internal/cli/cli.go          | 111 ++++++++++++++++++++++++++++++++++++++++++-
+ internal/cli/cli_test.go     | 103 +++++++++++++++++++++++++++++++++++++--
+ internal/cli/format.go       |  13 ++++-
+ internal/model/task.go       |  39 ++++++++++++---
+ internal/model/task_test.go  |  24 +++++++++-
+ internal/query/query.go      |  45 +++++++++++++++++-
+ internal/query/query_test.go |  67 ++++++++++++++++++++++++++
+ internal/store/store.go      |   2 +-
+ internal/store/store_test.go |  42 ++++++++++++++++
+ 10 files changed, 446 insertions(+), 19 deletions(-)
+
+diff --git a/README.md b/README.md
+index d532f62..8ed60ba 100644
+--- a/README.md
++++ b/README.md
+@@ -3,13 +3,26 @@
+ A small command-line task tracker that stores tasks in a JSON file.
+ 
+ ```
+-tasker add [-p N] <title words...>     add a task (priority 1-5, default 3)
+-tasker list [--all] [--sort id|priority] list open tasks (or all)
++tasker add [-p N] [--tag T ...] [--due YYYY-MM-DD] <title words...>
++                                                  add a task (priority 1-5, default 3)
++tasker list [--all] [--sort id|priority|due] [--tag T ...] [--overdue]
++                                                  list open tasks (or all)
+ tasker done <id>                        mark a task done
+ tasker rm <id>                          delete a task
+-tasker edit <id> [-p N] [--title T]     change priority or title
++tasker edit <id> [-p N] [--title T] [--tag T ...] [--untag T ...] [--due YYYY-MM-DD|none]
++                                                  change priority, title, tags or due date
++tasker tags                             list all tags used by open tasks with counts
+ ```
+ 
++List output is `#<id> [x| ] P<priority> <title> (due YYYY-MM-DD) [tag1,tag2]`,
++where the due date and tags parts are only shown when set.
++
++Tags are normalised on save (trimmed, lower-cased, de-duplicated, sorted) and
++must match `^[a-z0-9][a-z0-9-]*$`. Due dates are stored as UTC midnight.
++`list --overdue` shows open tasks due before today; `list --tag T` may be
++repeated and a task must have all given tags; `--sort due` orders by due date
++ascending with undated tasks last.
++
+ The data file is `$TASKER_FILE` (default `tasks.json` in the current directory).
+ 
+ ## Layout
+diff --git a/internal/cli/cli.go b/internal/cli/cli.go
+index f599715..c9915d5 100644
+--- a/internal/cli/cli.go
++++ b/internal/cli/cli.go
+@@ -5,6 +5,7 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"io"
++	"sort"
+ 	"strconv"
+ 	"strings"
+ 	"time"
+@@ -51,7 +52,7 @@ func Run(args []string, env Env) int {
+ 
+ func dispatch(args []string, env Env) error {
+ 	if len(args) == 0 {
+-		return usagef("missing command (add, list, done, rm, edit)")
++		return usagef("missing command (add, list, done, rm, edit, tags)")
+ 	}
+ 	s, err := store.Open(env.File)
+ 	if err != nil {
+@@ -69,6 +70,8 @@ func dispatch(args []string, env Env) error {
+ 		return cmdRm(s, rest, env)
+ 	case "edit":
+ 		return cmdEdit(s, rest, env)
++	case "tags":
++		return cmdTags(s, rest, env)
+ 	}
+ 	return usagef("unknown command %q", cmd)
+ }
+@@ -93,6 +96,20 @@ func parsePriority(v string) (int, error) {
+ 	return p, nil
+ }
+ 
++// parseDue parses a YYYY-MM-DD date into UTC midnight.
++func parseDue(v string) (time.Time, error) {
++	d, err := time.Parse("2006-01-02", v)
++	if err != nil {
++		return time.Time{}, usagef("bad due date %q (want YYYY-MM-DD)", v)
++	}
++	return d.UTC(), nil
++}
++
++// normaliseTag applies the same normalisation as model validation.
++func normaliseTag(v string) string {
++	return strings.ToLower(strings.TrimSpace(v))
++}
++
+ func parseID(args []string) (int, error) {
+ 	if len(args) != 1 {
+ 		return 0, usagef("expected exactly one task id")
+@@ -119,6 +136,24 @@ func cmdAdd(s *store.Store, args []string, env Env) error {
+ 				return err
+ 			}
+ 			i = next
++		case a == "--tag" || strings.HasPrefix(a, "--tag="):
++			_, v, next, err := flagValue(args, i)
++			if err != nil {
++				return err
++			}
++			t.Tags = append(t.Tags, v)
++			i = next
++		case a == "--due" || strings.HasPrefix(a, "--due="):
++			_, v, next, err := flagValue(args, i)
++			if err != nil {
++				return err
++			}
++			due, err := parseDue(v)
++			if err != nil {
++				return err
++			}
++			t.Due = &due
++			i = next
+ 		case strings.HasPrefix(a, "-") && a != "-":
+ 			return usagef("unknown flag %s", a)
+ 		default:
+@@ -140,12 +175,24 @@ func cmdAdd(s *store.Store, args []string, env Env) error {
+ 
+ func cmdList(s *store.Store, args []string, env Env) error {
+ 	var o query.Options
++	now := env.Now().UTC()
++	o.Today = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+ 	for i := 0; i < len(args); {
+ 		a := args[i]
+ 		switch {
+ 		case a == "--all":
+ 			o.IncludeDone = true
+ 			i++
++		case a == "--overdue":
++			o.Overdue = true
++			i++
++		case a == "--tag" || strings.HasPrefix(a, "--tag="):
++			_, v, next, err := flagValue(args, i)
++			if err != nil {
++				return err
++			}
++			o.Tags = append(o.Tags, normaliseTag(v))
++			i = next
+ 		case a == "--sort" || strings.HasPrefix(a, "--sort="):
+ 			_, v, next, err := flagValue(args, i)
+ 			if err != nil {
+@@ -234,12 +281,48 @@ func cmdEdit(s *store.Store, args []string, env Env) error {
+ 			}
+ 			t.Title = v
+ 			i = next
++		case a == "--tag" || strings.HasPrefix(a, "--tag="):
++			_, v, next, err := flagValue(rest, i)
++			if err != nil {
++				return err
++			}
++			t.Tags = append(t.Tags, v)
++			i = next
++		case a == "--untag" || strings.HasPrefix(a, "--untag="):
++			_, v, next, err := flagValue(rest, i)
++			if err != nil {
++				return err
++			}
++			tag := normaliseTag(v)
++			kept := t.Tags[:0]
++			for _, have := range t.Tags {
++				if normaliseTag(have) != tag {
++					kept = append(kept, have)
++				}
++			}
++			t.Tags = kept
++			i = next
++		case a == "--due" || strings.HasPrefix(a, "--due="):
++			_, v, next, err := flagValue(rest, i)
++			if err != nil {
++				return err
++			}
++			if v == "none" {
++				t.Due = nil
++			} else {
++				due, err := parseDue(v)
++				if err != nil {
++					return err
++				}
++				t.Due = &due
++			}
++			i = next
+ 		default:
+ 			return usagef("unexpected argument %s", a)
+ 		}
+ 	}
+ 	if err := s.Update(t); err != nil {
+-		if errors.Is(err, model.ErrEmptyTitle) || errors.Is(err, model.ErrBadPriority) {
++		if errors.Is(err, model.ErrEmptyTitle) || errors.Is(err, model.ErrBadPriority) || errors.Is(err, model.ErrBadTag) {
+ 			return usagef("%v", err)
+ 		}
+ 		return err
+@@ -250,3 +333,27 @@ func cmdEdit(s *store.Store, args []string, env Env) error {
+ 	fmt.Fprintf(env.Stdout, "updated #%d\n", id)
+ 	return nil
+ }
++
++func cmdTags(s *store.Store, args []string, env Env) error {
++	if len(args) > 0 {
++		return usagef("unexpected argument %s", args[0])
++	}
++	counts := map[string]int{}
++	for _, t := range s.All() {
++		if t.Done {
++			continue
++		}
++		for _, tag := range t.Tags {
++			counts[tag]++
++		}
++	}
++	tags := make([]string, 0, len(counts))
++	for tag := range counts {
++		tags = append(tags, tag)
++	}
++	sort.Strings(tags)
++	for _, tag := range tags {
++		fmt.Fprintf(env.Stdout, "%s %d\n", tag, counts[tag])
++	}
++	return nil
++}
+diff --git a/internal/cli/cli_test.go b/internal/cli/cli_test.go
+index daeb08d..bccfd00 100644
+--- a/internal/cli/cli_test.go
++++ b/internal/cli/cli_test.go
+@@ -9,9 +9,10 @@ import (
+ )
+ 
+ type harness struct {
+-	t    *testing.T
+-	file string
+-	now  time.Time
++	t       *testing.T
++	file    string
++	now     time.Time
++	lastErr string
+ }
+ 
+ func newHarness(t *testing.T) *harness {
+@@ -21,6 +22,7 @@ func newHarness(t *testing.T) *harness {
+ func (h *harness) run(args ...string) (string, string, int) {
+ 	var out, errb bytes.Buffer
+ 	code := Run(args, Env{Stdout: &out, Stderr: &errb, File: h.file, Now: func() time.Time { return h.now }})
++	h.lastErr = errb.String()
+ 	return out.String(), errb.String(), code
+ }
+ 
+@@ -52,4 +54,99 @@ func TestUsageErrors(t *testing.T) {
+ 	if _, _, code := h.run("done", "42"); code != 1 {
+ 		t.Fatal("missing task is a runtime error")
+ 	}
++	if _, _, code := h.run("add", "--due", "15/04/2026", "x"); code != 2 {
++		t.Fatal("bad due date must be a usage error")
++	}
++	if _, _, code := h.run("add", "--tag", "Bad Tag", "x"); code != 2 {
++		t.Fatal("bad tag must be a usage error")
++	}
++	if _, _, code := h.run(); !strings.Contains(h.lastErr, "tags") || code != 2 {
++		t.Fatalf("missing command usage should mention tags: %q %d", h.lastErr, code)
++	}
++}
++
++func TestTagsAndDue(t *testing.T) {
++	h := newHarness(t) // today is 2026-03-10
++	out, errb, code := h.run("add", "-p", "2", "--tag", "Money", "--tag=HOME", "--tag=home", "--due", "2026-04-15", "file", "taxes")
++	if code != 0 || out != "added #1\n" {
++		t.Fatalf("add: %q %q %d", out, errb, code)
++	}
++	h.run("add", "--due=2026-03-09", "pay rent")
++	h.run("add", "--tag", "home", "wash dishes")
++	h.run("add", "water plants", "--due=2026-03-10")
++
++	out, _, _ = h.run("list")
++	want := "#1 [ ] P2 file taxes (due 2026-04-15) [home,money]\n" +
++		"#2 [ ] P3 pay rent (due 2026-03-09)\n" +
++		"#3 [ ] P3 wash dishes [home]\n" +
++		"#4 [ ] P3 water plants (due 2026-03-10)\n"
++	if out != want {
++		t.Fatalf("list: %q", out)
++	}
++
++	out, _, _ = h.run("list", "--tag", "home", "--tag=money")
++	if out != "#1 [ ] P2 file taxes (due 2026-04-15) [home,money]\n" {
++		t.Fatalf("list --tag: %q", out)
++	}
++
++	out, _, _ = h.run("list", "--overdue")
++	if out != "#2 [ ] P3 pay rent (due 2026-03-09)\n" {
++		t.Fatalf("list --overdue: %q", out)
++	}
++
++	out, _, _ = h.run("list", "--sort", "due")
++	want = "#2 [ ] P3 pay rent (due 2026-03-09)\n" +
++		"#4 [ ] P3 water plants (due 2026-03-10)\n" +
++		"#1 [ ] P2 file taxes (due 2026-04-15) [home,money]\n" +
++		"#3 [ ] P3 wash dishes [home]\n"
++	if out != want {
++		t.Fatalf("list --sort due: %q", out)
++	}
++
++	out, _, _ = h.run("tags")
++	if out != "home 2\nmoney 1\n" {
++		t.Fatalf("tags: %q", out)
++	}
++
++	// edit: remove a tag, clear the due date
++	out, _, code = h.run("edit", "1", "--untag", "home", "--due=none")
++	if code != 0 || out != "updated #1\n" {
++		t.Fatalf("edit: %q %d", out, code)
++	}
++	// untag of a tag that is not present is fine
++	if _, _, code = h.run("edit", "2", "--untag", "nope"); code != 0 {
++		t.Fatal("untag absent tag must not fail")
++	}
++	// edit: add a tag
++	if _, _, code = h.run("edit", "2", "--tag", "home"); code != 0 {
++		t.Fatal("edit --tag")
++	}
++	out, _, _ = h.run("list")
++	want = "#1 [ ] P2 file taxes [money]\n" +
++		"#2 [ ] P3 pay rent (due 2026-03-09) [home]\n" +
++		"#3 [ ] P3 wash dishes [home]\n" +
++		"#4 [ ] P3 water plants (due 2026-03-10)\n"
++	if out != want {
++		t.Fatalf("list after edit: %q", out)
++	}
++	out, _, _ = h.run("tags")
++	if out != "home 2\nmoney 1\n" {
++		t.Fatalf("tags after edit: %q", out)
++	}
++
++	// done tasks are excluded from tags
++	if _, _, code = h.run("done", "1"); code != 0 {
++		t.Fatal("done")
++	}
++	out, _, _ = h.run("tags")
++	if out != "home 2\n" {
++		t.Fatalf("tags after done: %q", out)
++	}
++
++	if _, _, code = h.run("edit", "3", "--tag", "Bad Tag"); code != 2 {
++		t.Fatal("bad tag in edit must be a usage error")
++	}
++	if _, _, code = h.run("edit", "3", "--due", "soon"); code != 2 {
++		t.Fatal("bad due in edit must be a usage error")
++	}
+ }
+diff --git a/internal/cli/format.go b/internal/cli/format.go
+index 5993233..23caf76 100644
+--- a/internal/cli/format.go
++++ b/internal/cli/format.go
+@@ -2,15 +2,24 @@ package cli
+ 
+ import (
+ 	"fmt"
++	"strings"
+ 
+ 	"example.com/tasker/internal/model"
+ )
+ 
+-// FormatTask renders one list line: "#<id> [x| ] P<priority> <title>".
++// FormatTask renders one list line:
++// "#<id> [x| ] P<priority> <title> (due YYYY-MM-DD) [tag1,tag2]".
+ func FormatTask(t model.Task) string {
+ 	mark := " "
+ 	if t.Done {
+ 		mark = "x"
+ 	}
+-	return fmt.Sprintf("#%d [%s] P%d %s", t.ID, mark, t.Priority, t.Title)
++	s := fmt.Sprintf("#%d [%s] P%d %s", t.ID, mark, t.Priority, t.Title)
++	if t.Due != nil {
++		s += fmt.Sprintf(" (due %s)", t.Due.UTC().Format("2006-01-02"))
++	}
++	if len(t.Tags) > 0 {
++		s += fmt.Sprintf(" [%s]", strings.Join(t.Tags, ","))
++	}
++	return s
+ }
+diff --git a/internal/model/task.go b/internal/model/task.go
+index 575bec1..f5d68a8 100644
+--- a/internal/model/task.go
++++ b/internal/model/task.go
+@@ -3,29 +3,37 @@ package model
+ 
+ import (
+ 	"errors"
++	"regexp"
++	"sort"
+ 	"strings"
+ 	"time"
+ )
+ 
+ // Task is one tracked item.
+ type Task struct {
+-	ID       int       `json:"id"`
+-	Title    string    `json:"title"`
+-	Priority int       `json:"priority"`
+-	Done     bool      `json:"done"`
+-	Created  time.Time `json:"created"`
++	ID       int        `json:"id"`
++	Title    string     `json:"title"`
++	Priority int        `json:"priority"`
++	Done     bool       `json:"done"`
++	Created  time.Time  `json:"created"`
++	Tags     []string   `json:"tags,omitempty"`
++	Due      *time.Time `json:"due,omitempty"`
+ }
+ 
+ // Validation errors.
+ var (
+ 	ErrEmptyTitle  = errors.New("title must not be empty")
+ 	ErrBadPriority = errors.New("priority must be between 1 and 5")
++	ErrBadTag      = errors.New("bad tag")
+ )
+ 
+ // DefaultPriority is used when none is given.
+ const DefaultPriority = 3
+ 
+-// Validate checks the task fields.
++var tagPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
++
++// Validate checks the task fields and normalises its tags
++// (trimmed, lower-cased, de-duplicated, sorted).
+ func (t *Task) Validate() error {
+ 	t.Title = strings.TrimSpace(t.Title)
+ 	if t.Title == "" {
+@@ -34,5 +42,24 @@ func (t *Task) Validate() error {
+ 	if t.Priority < 1 || t.Priority > 5 {
+ 		return ErrBadPriority
+ 	}
++	seen := make(map[string]bool, len(t.Tags))
++	tags := make([]string, 0, len(t.Tags))
++	for _, raw := range t.Tags {
++		tag := strings.ToLower(strings.TrimSpace(raw))
++		if !tagPattern.MatchString(tag) {
++			return ErrBadTag
++		}
++		if seen[tag] {
++			continue
++		}
++		seen[tag] = true
++		tags = append(tags, tag)
++	}
++	sort.Strings(tags)
++	t.Tags = tags
++	if t.Due != nil {
++		due := t.Due.UTC()
++		t.Due = &due
++	}
+ 	return nil
+ }
+diff --git a/internal/model/task_test.go b/internal/model/task_test.go
+index 526a2d1..1b47b04 100644
+--- a/internal/model/task_test.go
++++ b/internal/model/task_test.go
+@@ -1,6 +1,9 @@
+ package model
+ 
+-import "testing"
++import (
++	"strings"
++	"testing"
++)
+ 
+ func TestValidate(t *testing.T) {
+ 	tk := Task{Title: "  x  ", Priority: 3}
+@@ -11,3 +14,22 @@ func TestValidate(t *testing.T) {
+ 		t.Fatal("priority")
+ 	}
+ }
++
++func TestTagNormalisation(t *testing.T) {
++	tk := Task{Title: "x", Priority: 3, Tags: []string{" Money ", "MONEY", "home", "home-2"}}
++	if err := tk.Validate(); err != nil {
++		t.Fatal(err)
++	}
++	if got, want := strings.Join(tk.Tags, ","), "home,home-2,money"; got != want {
++		t.Fatalf("tags = %q, want %q", got, want)
++	}
++}
++
++func TestBadTag(t *testing.T) {
++	for _, tag := range []string{"Bad Tag", "-foo", "foo_bar", ""} {
++		tk := Task{Title: "x", Priority: 3, Tags: []string{tag}}
++		if err := tk.Validate(); err != ErrBadTag {
++			t.Fatalf("tag %q: err = %v, want ErrBadTag", tag, err)
++		}
++	}
++}
+diff --git a/internal/query/query.go b/internal/query/query.go
+index a0a7153..6f48a4f 100644
+--- a/internal/query/query.go
++++ b/internal/query/query.go
+@@ -4,6 +4,7 @@ package query
+ import (
+ 	"fmt"
+ 	"sort"
++	"time"
+ 
+ 	"example.com/tasker/internal/model"
+ )
+@@ -11,7 +12,10 @@ import (
+ // Options selects and orders tasks.
+ type Options struct {
+ 	IncludeDone bool
+-	SortBy      string // "id" (default) or "priority"
++	SortBy      string    // "id" (default), "priority" or "due"
++	Tags        []string  // task must have all of these
++	Overdue     bool      // only undone tasks due before Today
++	Today       time.Time // UTC midnight of "today"
+ }
+ 
+ // Apply returns the matching tasks in order.
+@@ -21,6 +25,14 @@ func Apply(tasks []model.Task, o Options) ([]model.Task, error) {
+ 		if t.Done && !o.IncludeDone {
+ 			continue
+ 		}
++		if len(o.Tags) > 0 && !hasAllTags(t, o.Tags) {
++			continue
++		}
++		if o.Overdue {
++			if t.Done || t.Due == nil || !t.Due.Before(o.Today) {
++				continue
++			}
++		}
+ 		out = append(out, t)
+ 	}
+ 	switch o.SortBy {
+@@ -33,8 +45,39 @@ func Apply(tasks []model.Task, o Options) ([]model.Task, error) {
+ 			}
+ 			return out[i].ID < out[j].ID
+ 		})
++	case "due":
++		sort.SliceStable(out, func(i, j int) bool {
++			a, b := out[i].Due, out[j].Due
++			switch {
++			case a == nil && b == nil:
++				return out[i].ID < out[j].ID
++			case a == nil:
++				return false
++			case b == nil:
++				return true
++			case !a.Equal(*b):
++				return a.Before(*b)
++			}
++			return out[i].ID < out[j].ID
++		})
+ 	default:
+ 		return nil, fmt.Errorf("unknown sort key %q", o.SortBy)
+ 	}
+ 	return out, nil
+ }
++
++func hasAllTags(t model.Task, tags []string) bool {
++	for _, want := range tags {
++		ok := false
++		for _, have := range t.Tags {
++			if have == want {
++				ok = true
++				break
++			}
++		}
++		if !ok {
++			return false
++		}
++	}
++	return true
++}
+diff --git a/internal/query/query_test.go b/internal/query/query_test.go
+index 4d2a005..05d958a 100644
+--- a/internal/query/query_test.go
++++ b/internal/query/query_test.go
+@@ -2,6 +2,7 @@ package query
+ 
+ import (
+ 	"testing"
++	"time"
+ 
+ 	"example.com/tasker/internal/model"
+ )
+@@ -16,3 +17,69 @@ func TestApply(t *testing.T) {
+ 		t.Fatal("bad sort accepted")
+ 	}
+ }
++
++func dueDate(t *testing.T, s string) *time.Time {
++	d, err := time.Parse("2006-01-02", s)
++	if err != nil {
++		t.Fatal(err)
++	}
++	d = d.UTC()
++	return &d
++}
++
++func ids(ts []model.Task) string {
++	out := ""
++	for _, t := range ts {
++		out += string(rune('0' + t.ID))
++	}
++	return out
++}
++
++func TestApplyTags(t *testing.T) {
++	d := dueDate(t, "2026-03-01")
++	ts := []model.Task{
++		{ID: 1, Tags: []string{"home", "money"}, Due: d},
++		{ID: 2, Tags: []string{"home", "money"}},
++		{ID: 3, Tags: []string{"home"}, Due: dueDate(t, "2026-03-10")},
++		{ID: 4, Tags: []string{"money"}, Done: true, Due: dueDate(t, "2026-02-01")},
++	}
++	got, err := Apply(ts, Options{Tags: []string{"home", "money"}})
++	if err != nil || ids(got) != "12" {
++		t.Fatalf("got %v err %v, want 12", got, err)
++	}
++	if got, _ := Apply(ts, Options{Tags: []string{"home"}, IncludeDone: true}); ids(got) != "123" {
++		t.Fatalf("want 123, got %v", got)
++	}
++}
++
++func TestApplyOverdue(t *testing.T) {
++	today := time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)
++	ts := []model.Task{
++		{ID: 1, Due: dueDate(t, "2026-03-01")},
++		{ID: 2},
++		{ID: 3, Due: dueDate(t, "2026-03-10")}, // due today is not overdue
++		{ID: 4, Done: true, Due: dueDate(t, "2026-02-01")},
++	}
++	got, err := Apply(ts, Options{Overdue: true, Today: today})
++	if err != nil || ids(got) != "1" {
++		t.Fatalf("got %v err %v, want 1", got, err)
++	}
++	// even with --all, overdue tasks must be open
++	got, _ = Apply(ts, Options{Overdue: true, IncludeDone: true, Today: today})
++	if ids(got) != "1" {
++		t.Fatalf("got %v, want 1", got)
++	}
++}
++
++func TestApplySortDue(t *testing.T) {
++	ts := []model.Task{
++		{ID: 3, Due: dueDate(t, "2026-03-10")},
++		{ID: 2},
++		{ID: 1, Due: dueDate(t, "2026-03-01")},
++		{ID: 4, Due: dueDate(t, "2026-03-01")}, // same due as 1: tie by ID
++	}
++	got, err := Apply(ts, Options{SortBy: "due"})
++	if err != nil || ids(got) != "1432" {
++		t.Fatalf("got %v err %v, want 1432", got, err)
++	}
++}
+diff --git a/internal/store/store.go b/internal/store/store.go
+index 137459f..94590fb 100644
+--- a/internal/store/store.go
++++ b/internal/store/store.go
+@@ -12,7 +12,7 @@ import (
+ )
+ 
+ // Version is the current file schema version.
+-const Version = 1
++const Version = 2
+ 
+ // ErrNotFound is returned for unknown task IDs.
+ var ErrNotFound = errors.New("task not found")
+diff --git a/internal/store/store_test.go b/internal/store/store_test.go
+index 26aa220..5f68ba4 100644
+--- a/internal/store/store_test.go
++++ b/internal/store/store_test.go
+@@ -1,8 +1,11 @@
+ package store
+ 
+ import (
++	"os"
+ 	"path/filepath"
++	"strings"
+ 	"testing"
++	"time"
+ 
+ 	"example.com/tasker/internal/model"
+ )
+@@ -32,3 +35,42 @@ func TestRoundTrip(t *testing.T) {
+ 		t.Fatalf("ids must not be reused: %d", c.ID)
+ 	}
+ }
++
++func TestVersionMigration(t *testing.T) {
++	p := filepath.Join(t.TempDir(), "t.json")
++	v1 := `{"version": 1, "next_id": 2, "tasks": [
++		{"id": 1, "title": "old", "priority": 3, "done": false, "created": "2026-01-01T00:00:00Z"}]}`
++	if err := os.WriteFile(p, []byte(v1), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	s, err := Open(p)
++	if err != nil {
++		t.Fatal(err)
++	}
++	all := s.All()
++	if len(all) != 1 || all[0].Title != "old" || len(all[0].Tags) != 0 || all[0].Due != nil {
++		t.Fatalf("%+v", all)
++	}
++	due := time.Date(2026, 4, 15, 0, 0, 0, 0, time.UTC)
++	if _, err := s.Add(model.Task{Title: "new", Priority: 2, Tags: []string{"home"}, Due: &due}); err != nil {
++		t.Fatal(err)
++	}
++	if err := s.Save(); err != nil {
++		t.Fatal(err)
++	}
++	data, err := os.ReadFile(p)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if !strings.Contains(string(data), `"version": 2`) {
++		t.Fatalf("saved file is not version 2: %s", data)
++	}
++	s2, err := Open(p)
++	if err != nil {
++		t.Fatal(err)
++	}
++	got := s2.All()[1]
++	if got.ID != 2 || strings.Join(got.Tags, ",") != "home" || got.Due == nil || !got.Due.Equal(due) {
++		t.Fatalf("%+v", got)
++	}
++}

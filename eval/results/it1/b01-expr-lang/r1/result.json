@@ -1,0 +1,37 @@
+{
+  "task_id": "b01-expr-lang",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "a01327c09982",
+  "success": true,
+  "score": 1,
+  "tests_passed": 19,
+  "tests_total": 19,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Implemented the full SPEC.md in package `expr` (expr/lexer.go tokenize, expr/ast.go, expr/parser.go recursive-descent parser, expr/eval.go evaluator + builtins, expr/error.go, expr/expr.go public API). Precedence follows the spec exactly (right-assoc `^` above unary so `-2^2=-4`, `2^-1=0.5`, `2^3^2=512`; right-assoc ternary), with short-circuit `\u0026\u0026`/`||`/`?:`, compile errors for unknown functions/arity and syntax issues, and runtime errors (unknown variable, division by zero, sqrt of negative, non-finite result) all as *Error with spec'd positions/messages. Wrote expr/expr_test.go with ~100 cases covering literals, precedence, truthiness, functions, all error messages/positions, Vars(), and Program reuse; `go vet ./... \u0026\u0026 go test -count=1 ./...` passes and the code is gofmt-clean.",
+    "Turns": 25,
+    "Compactions": 0,
+    "PromptTokens": 569311,
+    "PrefillTokens": 33919,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 22849,
+    "ReasoningTokens": 9001,
+    "ToolCalls": 41,
+    "ToolErrors": 2,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F4": 1
+    },
+    "WallSeconds": 2094.702898488,
+    "Err": ""
+  },
+  "started": "2026-10-28T04:11:24Z",
+  "hidden_output": "=== RUN   TestNumberLiterals\n--- PASS: TestNumberLiterals (0.00s)\n=== RUN   TestArithmetic\n--- PASS: TestArithmetic (0.00s)\n=== RUN   TestComparisonsAndLogic\n--- PASS: TestComparisonsAndLogic (0.00s)\n=== RUN   TestTernary\n--- PASS: TestTernary (0.00s)\n=== RUN   TestShortCircuit\n--- PASS: TestShortCircuit (0.00s)\n=== RUN   TestFunctions\n--- PASS: TestFunctions (0.00s)\n=== RUN   TestCompileErrors\n--- PASS: TestCompileErrors (0.00s)\n=== RUN   TestRuntimeErrors\n--- PASS: TestRuntimeErrors (0.00s)\n=== RUN   TestErrorString\n--- PASS: TestErrorString (0.00s)\n=== RUN   TestVars\n--- PASS: TestVars (0.00s)\n=== RUN   TestProgramReuse\n--- PASS: TestProgramReuse (0.00s)\n=== RUN   TestPrecedenceTricky\n--- PASS: TestPrecedenceTricky (0.00s)\n=== RUN   TestHiddenArithmetic\n--- PASS: TestHiddenArithmetic (0.00s)\n=== RUN   TestHiddenLogic\n--- PASS: TestHiddenLogic (0.00s)\n=== RUN   TestHiddenShortCircuit\n--- PASS: TestHiddenShortCircuit (0.00s)\n=== RUN   TestHiddenFunctions\n--- PASS: TestHiddenFunctions (0.00s)\n=== RUN   TestHiddenCompileErrors\n--- PASS: TestHiddenCompileErrors (0.00s)\n=== RUN   TestHiddenRuntimeErrors\n--- PASS: TestHiddenRuntimeErrors (0.00s)\n=== RUN   TestHiddenProgramReuseAndVars\n--- PASS: TestHiddenProgramReuseAndVars (0.00s)\nPASS\nok  \texample.com/expr/expr\t0.008s",
+  "work": "/tmp/qh-runs/it1/b01-expr-lang-r1"
+}

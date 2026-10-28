@@ -1,0 +1,38 @@
+{
+  "task_id": "b04-kv-server",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "a01327c09982",
+  "success": false,
+  "score": 0.9090909090909091,
+  "tests_passed": 30,
+  "tests_total": 33,
+  "outcome": {
+    "Status": "wall_clock",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 61,
+    "Compactions": 0,
+    "PromptTokens": 2164845,
+    "PrefillTokens": 61389,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 46795,
+    "ReasoningTokens": 21716,
+    "ToolCalls": 75,
+    "ToolErrors": 6,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F4": 1
+    },
+    "WallSeconds": 3643.595897057,
+    "Err": ""
+  },
+  "started": "2026-10-28T05:09:17Z",
+  "hidden_output": "--- PASS: TestCeilSeconds (0.00s)\n=== RUN   TestValueFormat\n--- PASS: TestValueFormat (0.00s)\n=== RUN   TestHiddenExecTable\n    zz_hidden_test.go:56: Exec(\"SET t v EX abc\") = \"-ERR syntax error\\n\" want \"-ERR value is not an integer\\n\"\n--- FAIL: TestHiddenExecTable (0.00s)\n=== RUN   TestHiddenTTLRoundsUp\n--- PASS: TestHiddenTTLRoundsUp (0.00s)\n=== RUN   TestHiddenKeysArrayQuoting\n--- PASS: TestHiddenKeysArrayQuoting (0.00s)\nFAIL\nFAIL\texample.com/kv/proto\t0.013s\n=== RUN   TestServeBasics\n--- PASS: TestServeBasics (0.00s)\n=== RUN   TestServeLineTooLong\n=== RUN   TestSetGet\n--- PASS: TestSetGet (0.00s)\n=== RUN   TestExpiry\n--- PASS: TestExpiry (0.00s)\n=== RUN   TestExpirePersist\n--- PASS: TestExpirePersist (0.00s)\n=== RUN   TestIncr\n--- PASS: TestIncr (0.00s)\n=== RUN   TestKeysGlob\n--- PASS: TestKeysGlob (0.00s)\n=== RUN   TestMatchUnit\n--- PASS: TestMatchUnit (0.00s)\n=== RUN   TestSaveLoad\n--- PASS: TestSaveLoad (0.00s)\n=== RUN   TestConcurrent\n--- PASS: TestServeLineTooLong (0.02s)\n=== RUN   TestServeConcurrentWriteOrder\n--- PASS: TestServeConcurrentWriteOrder (0.00s)\n=== RUN   TestHiddenPipelineAndQuit\n--- PASS: TestHiddenPipelineAndQuit (0.00s)\n=== RUN   TestHiddenConcurrentClientsSharedStore\n--- PASS: TestHiddenConcurrentClientsSharedStore (0.01s)\n=== RUN   TestHiddenLineTooLong\n--- PASS: TestHiddenLineTooLong (0.01s)\n=== RUN   TestHiddenCancelClosesIdleConnections\n--- PASS: TestHiddenCancelClosesIdleConnections (0.00s)\nPASS\n--- PASS: TestConcurrent (0.10s)\n=== RUN   TestHiddenExpiry\n    zz_hidden_test.go:31: ttl 10s -1s -2s\n--- FAIL: TestHiddenExpiry (0.00s)\n=== RUN   TestHiddenExpirePersist\n    zz_hidden_test.go:56: persist\n--- FAIL: TestHiddenExpirePersist (0.00s)\n=== RUN   TestHiddenDelIncr\n--- PASS: TestHiddenDelIncr (0.00s)\n=== RUN   TestHiddenKeysGlob\n--- PASS: TestHiddenKeysGlob (0.00s)\n=== RUN   TestHiddenSnapshot\n--- PASS: TestHiddenSnapshot (0.00s)\n=== RUN   TestHiddenConcurrent\n--- PASS: TestHiddenConcurrent (0.02s)\nFAIL\nFAIL\texample.com/kv/store\t0.143s\nok  \texample.com/kv/server\t1.061s",
+  "work": "/tmp/qh-runs/it1/b04-kv-server-r1"
+}

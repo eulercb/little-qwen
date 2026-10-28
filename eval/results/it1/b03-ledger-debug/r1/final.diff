@@ -1,0 +1,106 @@
+ ledger/ledger.go | 67 +++++++++++++++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 64 insertions(+), 3 deletions(-)
+
+diff --git a/ledger/ledger.go b/ledger/ledger.go
+index 2c4c98f..9eb166a 100644
+--- a/ledger/ledger.go
++++ b/ledger/ledger.go
+@@ -5,12 +5,19 @@ import (
+ 	"encoding/json"
+ 	"fmt"
+ 	"io"
++	"sort"
++	"strconv"
+ 	"time"
+ )
+ 
+ // Rates converts one unit of a currency to USD.
+ var Rates = map[string]float64{"USD": 1, "EUR": 1.0825, "GBP": 1.2675}
+ 
++// rateScale is the number of decimal places of precision the Rates table
++// has; rates are treated as exact decimals, so a rate of 1.0825 is exactly
++// 10825/10000.
++const rateScale = 4
++
+ // Event is one log entry.
+ type Event struct {
+ 	ID       string    `json:"id"`
+@@ -43,21 +50,75 @@ func ReadEvents(r io.Reader) ([]Event, error) {
+ 	return out, sc.Err()
+ }
+ 
+-// toUSD converts an amount in minor units to USD cents.
++// toUSD converts an amount in minor units to USD cents, rounded to the
++// nearest cent with ties to even (banker's rounding).
+ func toUSD(amount int64, currency string) (int64, error) {
+ 	rate, ok := Rates[currency]
+ 	if !ok {
+ 		return 0, fmt.Errorf("unknown currency %q", currency)
+ 	}
+-	return int64(float64(amount) * rate), nil
++	// Recover the exact decimal representation of the rate (e.g. 1.0825 ->
++	// 10825/10000) to avoid float rounding errors.
++	s := strconv.FormatFloat(rate, 'f', rateScale, 64)
++	num := s
++	den := int64(1)
++	if i := len(s) - 1 - rateScale; i >= 0 && s[i] == '.' {
++		num = s[:i] + s[i+1:]
++		den = 1
++		for i = 0; i < rateScale; i++ {
++			den *= 10
++		}
++	}
++	n, err := strconv.ParseInt(num, 10, 64)
++	if err != nil {
++		return 0, fmt.Errorf("invalid rate %q: %w", s, err)
++	}
++	return roundHalfToEven(amount * n, den), nil
++}
++
++// roundHalfToEven rounds n/d (d > 0) to the nearest integer, ties to even.
++func roundHalfToEven(n, d int64) int64 {
++	sign := int64(1)
++	if n < 0 {
++		sign = -1
++		n = -n
++	}
++	q, r := n/d, n%d
++	switch {
++	case 2*r > d:
++		q++
++	case 2*r == d:
++		if q%2 == 1 {
++			q++
++		}
++	}
++	return sign * q
+ }
+ 
+ // Replay applies the events and returns balances in USD cents.
++//
++// Events are applied in timestamp order (ties broken by seq). Because
++// delivery is at-least-once, only the first occurrence of each event id
++// counts.
+ func Replay(events []Event) (map[string]int64, error) {
++	ordered := make([]Event, len(events))
++	copy(ordered, events)
++	sort.Slice(ordered, func(i, j int) bool {
++		if !ordered[i].TS.Equal(ordered[j].TS) {
++			return ordered[i].TS.Before(ordered[j].TS)
++		}
++		return ordered[i].Seq < ordered[j].Seq
++	})
++
+ 	bal := map[string]int64{}
+ 	applied := map[string]Event{}
+ 	reversed := map[string]bool{}
+-	for _, e := range events {
++	seen := map[string]bool{}
++	for _, e := range ordered {
++		if seen[e.ID] {
++			continue
++		}
++		seen[e.ID] = true
+ 		switch e.Type {
+ 		case "deposit", "withdrawal", "transfer":
+ 			usd, err := toUSD(e.Amount, e.Currency)
