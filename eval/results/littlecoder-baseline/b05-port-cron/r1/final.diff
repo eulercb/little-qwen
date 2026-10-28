@@ -1,0 +1,490 @@
+ cron/cron.go                               | 309 +++++++++++++++++++++++++++++
+ cron/cron_test.go                          | 161 +++++++++++++++
+ reference/__pycache__/cron.cpython-313.pyc | Bin 10599 -> 10597 bytes
+ 3 files changed, 470 insertions(+)
+
+diff --git a/cron/cron.go b/cron/cron.go
+new file mode 100644
+index 0000000..9a47f9d
+--- /dev/null
++++ b/cron/cron.go
+@@ -0,0 +1,309 @@
++// Package cron is a Go port of the reference cron-expression library.
++//
++// Syntax: five space-separated fields: minute hour day-of-month month day-of-week
++//
++//	minute 0-59, hour 0-23, day-of-month 1-31, month 1-12 (or JAN-DEC),
++//	day-of-week 0-6 (or SUN-SAT; 7 is also Sunday)
++//
++// Day matching follows Vixie cron: if both day-of-month and day-of-week are
++// restricted (neither field is "*"), a day matches when EITHER matches;
++// otherwise both must match.
++package cron
++
++import (
++	"fmt"
++	"strconv"
++	"strings"
++	"time"
++)
++
++type fieldSpec struct {
++	name string
++	lo   int
++	hi   int
++}
++
++var fieldSpecs = [5]fieldSpec{
++	{"minute", 0, 59},
++	{"hour", 0, 23},
++	{"day-of-month", 1, 31},
++	{"month", 1, 12},
++	{"day-of-week", 0, 6},
++}
++
++var months = []string{"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"}
++var days = []string{"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"}
++var macros = map[string]string{
++	"@yearly":   "0 0 1 1 *",
++	"@annually": "0 0 1 1 *",
++	"@monthly":  "0 0 1 * *",
++	"@weekly":   "0 0 * * 0",
++	"@daily":    "0 0 * * *",
++	"@midnight": "0 0 * * *",
++	"@hourly":   "0 * * * *",
++}
++
++// Schedule is a parsed cron expression.
++type Schedule struct {
++	expr       string
++	minute     map[int]bool
++	hour       map[int]bool
++	dayOfMonth map[int]bool
++	month      map[int]bool
++	dayOfWeek  map[int]bool
++	domStar    bool
++	dowStar    bool
++}
++
++func repr(s string) string { return "'" + s + "'" }
++
++// Parse parses expr with the same accepted syntax and errors as the
++// reference parse().
++func Parse(expr string) (*Schedule, error) {
++	original := expr
++	expr = strings.TrimSpace(expr)
++	if strings.HasPrefix(expr, "@") {
++		m, ok := macros[strings.ToLower(expr)]
++		if !ok {
++			return nil, fmt.Errorf("unknown macro %s", repr(expr))
++		}
++		expr = m
++	}
++	parts := strings.Fields(expr)
++	if len(parts) != 5 {
++		return nil, fmt.Errorf("expected 5 fields, got %d", len(parts))
++	}
++	s := &Schedule{expr: strings.TrimSpace(original)}
++	for i, p := range parts {
++		values, err := parseField(p, i)
++		if err != nil {
++			return nil, err
++		}
++		switch i {
++		case 0:
++			s.minute = values
++		case 1:
++			s.hour = values
++		case 2:
++			s.dayOfMonth = values
++			s.domStar = p == "*"
++		case 3:
++			s.month = values
++		case 4:
++			s.dayOfWeek = values
++			s.dowStar = p == "*"
++		}
++	}
++	return s, nil
++}
++
++func isDigits(s string) bool {
++	if s == "" {
++		return false
++	}
++	for i := 0; i < len(s); i++ {
++		if s[i] < '0' || s[i] > '9' {
++			return false
++		}
++	}
++	return true
++}
++
++func value(tok string, idx int) (int, error) {
++	spec := fieldSpecs[idx]
++	t := strings.ToUpper(tok)
++	if idx == 3 {
++		for i, m := range months {
++			if t == m {
++				return i + 1, nil
++			}
++		}
++	}
++	if idx == 4 {
++		for i, d := range days {
++			if t == d {
++				return i, nil
++			}
++		}
++	}
++	if !isDigits(tok) {
++		return 0, fmt.Errorf("%s: invalid value %s", spec.name, repr(tok))
++	}
++	v, _ := strconv.Atoi(tok)
++	if idx == 4 && v == 7 {
++		v = 0
++	}
++	if v < spec.lo || v > spec.hi {
++		return 0, fmt.Errorf("%s: value %d out of range %d-%d", spec.name, v, spec.lo, spec.hi)
++	}
++	return v, nil
++}
++
++func parseField(text string, idx int) (map[int]bool, error) {
++	spec := fieldSpecs[idx]
++	if text == "" {
++		return nil, fmt.Errorf("%s: empty field", spec.name)
++	}
++	values := make(map[int]bool)
++	for _, item := range strings.Split(text, ",") {
++		if item == "" {
++			return nil, fmt.Errorf("%s: empty item", spec.name)
++		}
++		step := 1
++		base := item
++		if i := strings.Index(item, "/"); i >= 0 {
++			s := item[i+1:]
++			if !isDigits(s) || atoi(s) < 1 {
++				return nil, fmt.Errorf("%s: invalid step %s", spec.name, repr(s))
++			}
++			step = atoi(s)
++			base = item[:i]
++		}
++		var start, end int
++		switch {
++		case base == "*":
++			start, end = spec.lo, spec.hi
++		case strings.Contains(base, "-"):
++			a, b := base[:strings.Index(base, "-")], base[strings.Index(base, "-")+1:]
++			va, err := value(a, idx)
++			if err != nil {
++				return nil, err
++			}
++			vb, err := value(b, idx)
++			if err != nil {
++				return nil, err
++			}
++			start, end = va, vb
++			if start > end {
++				return nil, fmt.Errorf("%s: range %d-%d is reversed", spec.name, start, end)
++			}
++		default:
++			v, err := value(base, idx)
++			if err != nil {
++				return nil, err
++			}
++			start = v
++			if strings.Contains(item, "/") {
++				end = spec.hi
++			} else {
++				end = v
++			}
++		}
++		for v := start; v <= end; v += step {
++			values[v] = true
++		}
++	}
++	return values, nil
++}
++
++func atoi(s string) int {
++	n := 0
++	for i := 0; i < len(s); i++ {
++		n = n*10 + int(s[i]-'0')
++	}
++	return n
++}
++
++func dayOK(s *Schedule, d time.Time) bool {
++	dow := int(d.Weekday())
++	inDom := s.dayOfMonth[d.Day()]
++	inDow := s.dayOfWeek[dow]
++	if !s.domStar && !s.dowStar {
++		return inDom || inDow
++	}
++	return inDom && inDow
++}
++
++// Next returns the first matching time strictly after after, in after's
++// location, with the same semantics (and errors) as the reference next_run().
++func (s *Schedule) Next(after time.Time) (time.Time, error) {
++	loc := after.Location()
++	y, mo, d := after.Date()
++	h, mi, _ := after.Clock()
++	t := time.Date(y, mo, d, h, mi, 0, 0, loc)
++	t = t.Add(time.Minute)
++	limit := after.AddDate(0, 0, 366*5)
++	for !t.After(limit) {
++		if !s.month[int(t.Month())] {
++			m := int(t.Month())
++			if m == 12 {
++				t = time.Date(t.Year()+1, 1, 1, 0, 0, 0, 0, loc)
++			} else {
++				t = time.Date(t.Year(), time.Month(m+1), 1, 0, 0, 0, 0, loc)
++			}
++			continue
++		}
++		if !dayOK(s, t) {
++			y, m, d := t.Date()
++			t = time.Date(y, m, d, 0, 0, 0, 0, loc).Add(24 * time.Hour)
++			continue
++		}
++		if !s.hour[t.Hour()] {
++			y, m, d := t.Date()
++			t = time.Date(y, m, d, t.Hour()+1, 0, 0, 0, loc)
++			continue
++		}
++		if !s.minute[t.Minute()] {
++			t = t.Add(time.Minute)
++			continue
++		}
++		return t, nil
++	}
++	return time.Time{}, fmt.Errorf("no match within 5 years for %s", repr(s.expr))
++}
++
++func fmtField(values map[int]bool, idx int) string {
++	spec := fieldSpecs[idx]
++	full := true
++	for v := spec.lo; v <= spec.hi; v++ {
++		if !values[v] {
++			full = false
++			break
++		}
++	}
++	if full {
++		return "*"
++	}
++	var vs []int
++	for v := range values {
++		vs = append(vs, v)
++	}
++	sortInts(vs)
++	var out []string
++	for i := 0; i < len(vs); {
++		j := i
++		for j+1 < len(vs) && vs[j+1] == vs[j]+1 {
++			j++
++		}
++		if j-i < 2 {
++			out = append(out, strconv.Itoa(vs[i]))
++		} else {
++			out = append(out, fmt.Sprintf("%d-%d", vs[i], vs[j]))
++		}
++		if 0 < j-i && j-i < 2 {
++			for k := i + 1; k <= j; k++ {
++				out = append(out, strconv.Itoa(vs[k]))
++			}
++		}
++		i = j + 1
++	}
++	return strings.Join(out, ",")
++}
++
++func sortInts(v []int) {
++	for i := 1; i < len(v); i++ {
++		for j := i; j > 0 && v[j] < v[j-1]; j-- {
++			v[j], v[j-1] = v[j-1], v[j]
++		}
++	}
++}
++
++// String renders the schedule with the same syntax as the reference
++// describe().
++func (s *Schedule) String() string {
++	return fmtField(s.minute, 0) + " " +
++		fmtField(s.hour, 1) + " " +
++		fmtField(s.dayOfMonth, 2) + " " +
++		fmtField(s.month, 3) + " " +
++		fmtField(s.dayOfWeek, 4)
++}
+diff --git a/cron/cron_test.go b/cron/cron_test.go
+new file mode 100644
+index 0000000..7adb956
+--- /dev/null
++++ b/cron/cron_test.go
+@@ -0,0 +1,161 @@
++package cron
++
++import (
++	"testing"
++	"time"
++)
++
++func ts(s string) time.Time {
++	t, err := time.Parse(time.RFC3339, s)
++	if err != nil {
++		panic(err)
++	}
++	return t
++}
++
++func TestParseErrors(t *testing.T) {
++	cases := []struct {
++		expr string
++		want string
++	}{
++		{"", "expected 5 fields, got 0"},
++		{"* * *", "expected 5 fields, got 3"},
++		{"* * * * * *", "expected 5 fields, got 6"},
++		{"60 * * * *", "minute: value 60 out of range 0-59"},
++		{"* 24 * * *", "hour: value 24 out of range 0-23"},
++		{"* * 0 * *", "day-of-month: value 0 out of range 1-31"},
++		{"* * * 13 *", "month: value 13 out of range 1-12"},
++		{"* * * * 8", "day-of-week: value 8 out of range 0-6"},
++		{"a * * * *", "minute: invalid value 'a'"},
++		{"* -5 * * *", "hour: invalid value ''"},
++		{"*/0 * * * *", "minute: invalid step '0'"},
++		{"*/x * * * *", "minute: invalid step 'x'"},
++		{"*/1.5 * * * *", "minute: invalid step '1.5'"},
++		{"5-1 * * * *", "minute: range 5-1 is reversed"},
++		{"5-1/2 * * * *", "minute: range 5-1 is reversed"},
++		{"* * * jan *", ""}, // month names are case-insensitive, so this parses fine
++		{"* * * janu *", "month: invalid value 'janu'"},
++		{"@bogus", "unknown macro '@bogus'"},
++		{"* * * *", "expected 5 fields, got 4"},
++	}
++	for _, c := range cases {
++		_, err := Parse(c.expr)
++		if c.want == "" {
++			if err != nil {
++				t.Errorf("Parse(%q): unexpected error %q", c.expr, err.Error())
++			}
++			continue
++		}
++		if err == nil {
++			t.Errorf("Parse(%q): got nil error, want %q", c.expr, c.want)
++			continue
++		}
++		if err.Error() != c.want {
++			t.Errorf("Parse(%q) = %q, want %q", c.expr, err.Error(), c.want)
++		}
++	}
++}
++
++func TestParseOK(t *testing.T) {
++	s, err := Parse("5-1 * * * *")
++	if err == nil {
++		t.Fatalf("Parse reversed range: got nil error, got %v", s)
++	}
++	if _, err := Parse("*/15 0,6-9 1,15 jan-mar mon,fri"); err != nil {
++		t.Fatalf("Parse: %v", err)
++	}
++	if _, err := Parse("@WEEKLY"); err != nil {
++		t.Fatalf("Parse @WEEKLY: %v", err)
++	}
++	if _, err := Parse("7 * * * 7"); err != nil {
++		t.Fatalf("Parse 7 dow: %v", err)
++	}
++}
++
++func TestString(t *testing.T) {
++	cases := map[string]string{
++		"0 0 1 1 *":           "0 0 1 1 *",
++		"@daily":              "0 0 * * *",
++		"*/15 * * * *":        "0,15,30,45 * * * *",
++		"0,30 * * * *":        "0,30 * * * *",
++		"1-5 * * * *":         "1-5 * * * *",
++		"1-1 * * * *":         "1 * * * *",
++		"59 * * * *":          "59 * * * *",
++		"0,59 * * * *":        "0,59 * * * *",
++		"0-59 * * * *":        "* * * * *",
++		"1,3,5,6,8 * * * *":   "1,3,5,6,8 * * * *",
++		"5 4 3 2 1":           "5 4 3 2 1",
++		"* * * * sun-sat":     "* * * * *",
++		"*/2 0-2 * jan,jul *": "0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58 0-2 * 1,7 *",
++	}
++	for in, want := range cases {
++		s, err := Parse(in)
++		if err != nil {
++			t.Errorf("Parse(%q): %v", in, err)
++			continue
++		}
++		if got := s.String(); got != want {
++			t.Errorf("Parse(%q).String() = %q, want %q", in, got, want)
++		}
++	}
++}
++
++func TestNext(t *testing.T) {
++	cases := []struct {
++		expr  string
++		after string
++		want  string
++		err   bool
++	}{
++		{"0 0 * * *", "2024-03-10T05:00:00Z", "2024-03-11T00:00:00Z", false},
++		{"30 14 * * *", "2024-03-10T14:30:00Z", "2024-03-11T14:30:00Z", false},
++		{"30 14 * * *", "2024-03-10T14:29:59Z", "2024-03-10T14:30:00Z", false},
++		{"* * * * *", "2024-03-10T14:29:59Z", "2024-03-10T14:30:00Z", false},
++		{"0 0 1 1 *", "2024-12-31T23:59:00Z", "2025-01-01T00:00:00Z", false},
++		{"0 0 29 2 *", "2023-01-01T00:00:00Z", "2024-02-29T00:00:00Z", false},
++		{"0 0 31 4 *", "2024-01-01T00:00:00Z", "", true}, // April 31 never occurs
++		{"0 0 * * 0", "2024-03-10T00:00:00Z", "2024-03-17T00:00:00Z", false},
++		{"0 0 13 * 5", "2024-02-01T00:00:00Z", "2024-02-02T00:00:00Z", false}, // Vixie OR: Feb 2 2024 is Friday
++		{"15 10 * * mon-fri", "2024-03-09T10:15:00Z", "2024-03-11T10:15:00Z", false}, // Fri 10:15 excluded (strictly after) -> Mon
++		{"*/5 8 1-3 3 1-5", "2024-03-02T08:00:00Z", "2024-03-02T08:05:00Z", false}, // Vixie OR: dom 2 matches
++		{"0 12 * * *", "2024-03-10T13:00:00Z", "2024-03-11T12:00:00Z", false},
++	}
++	for _, c := range cases {
++		s, err := Parse(c.expr)
++		if err != nil {
++			t.Errorf("Parse(%q): %v", c.expr, err)
++			continue
++		}
++		got, err := s.Next(ts(c.after))
++		if c.err {
++			if err == nil {
++				t.Errorf("Next(%q, %q): expected error, got %s", c.expr, c.after, got.Format(time.RFC3339))
++			}
++			continue
++		}
++		if err != nil {
++			t.Errorf("Next(%q, %q): %v", c.expr, c.after, err)
++			continue
++		}
++		if got.Format(time.RFC3339) != c.want {
++			t.Errorf("Next(%q, %q) = %s, want %s", c.expr, c.after, got.Format(time.RFC3339), c.want)
++		}
++	}
++}
++
++func TestNextNoMatch(t *testing.T) {
++	s, err := Parse("0 0 31 2 *")
++	if err != nil {
++		t.Fatalf("Parse: %v", err)
++	}
++	// Feb 31 never happens, but both dom and dow are restricted; dow is "*"
++	// so only dom must match -> no match ever.
++	_, err = s.Next(ts("2024-01-01T00:00:00Z"))
++	if err == nil {
++		t.Fatal("expected no-match error")
++	}
++	want := "no match within 5 years for '0 0 31 2 *'"
++	if err.Error() != want {
++		t.Errorf("error = %q, want %q", err.Error(), want)
++	}
++}
+diff --git a/reference/__pycache__/cron.cpython-313.pyc b/reference/__pycache__/cron.cpython-313.pyc
+index d0da691..b1589b1 100644
+Binary files a/reference/__pycache__/cron.cpython-313.pyc and b/reference/__pycache__/cron.cpython-313.pyc differ

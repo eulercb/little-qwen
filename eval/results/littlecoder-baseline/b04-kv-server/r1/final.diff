@@ -1,0 +1,1342 @@
+ proto/proto.go      | 271 +++++++++++++++++++++++++++++++++++
+ proto/proto_test.go | 300 ++++++++++++++++++++++++++++++++++++++
+ store/store.go      | 403 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ store/store_test.go | 338 +++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 1312 insertions(+)
+
+diff --git a/proto/proto.go b/proto/proto.go
+new file mode 100644
+index 0000000..aca83cf
+--- /dev/null
++++ b/proto/proto.go
+@@ -0,0 +1,271 @@
++package proto
++
++import (
++	"strconv"
++	"strings"
++	"time"
++
++	"example.com/kv/store"
++)
++
++// Exec parses one request line and returns the full response, including the
++// trailing newline.
++func Exec(s *store.Store, line string) string {
++	if strings.TrimSpace(line) == "" {
++		return errResp("empty command")
++	}
++	toks, err := tokenize(line)
++	if err != nil {
++		return errResp("syntax error")
++	}
++	if len(toks) == 0 {
++		return errResp("empty command")
++	}
++	name := strings.ToLower(toks[0])
++	args := toks[1:]
++	switch name {
++	case "ping":
++		if len(args) != 0 {
++			return errArgs("ping")
++		}
++		return "+PONG\n"
++	case "quit":
++		return "+BYE\n"
++	case "set":
++		return cmdSet(s, args)
++	case "get":
++		if len(args) != 1 {
++			return errArgs("get")
++		}
++		if v, ok := s.Get(args[0]); ok {
++			return stringResp(v)
++		}
++		return "$nil\n"
++	case "del":
++		if len(args) < 1 {
++			return errArgs("del")
++		}
++		return intResp(int64(s.Del(args...)))
++	case "exists":
++		if len(args) != 1 {
++			return errArgs("exists")
++		}
++		if s.Exists(args[0]) {
++			return ":1\n"
++		}
++		return ":0\n"
++	case "expire":
++		if len(args) != 2 {
++			return errArgs("expire")
++		}
++		n, err := parseIntArg(args[1])
++		if err != nil {
++			return errResp("value is not an integer")
++		}
++		if s.Expire(args[0], time.Duration(n)*time.Second) {
++			return ":1\n"
++		}
++		return ":0\n"
++	case "persist":
++		if len(args) != 1 {
++			return errArgs("persist")
++		}
++		if s.Persist(args[0]) {
++			return ":1\n"
++		}
++		return ":0\n"
++	case "ttl":
++		if len(args) != 1 {
++			return errArgs("ttl")
++		}
++		d := s.TTL(args[0])
++		switch {
++		case d == -2*time.Second:
++			return ":-2\n"
++		case d == -1*time.Second:
++			return ":-1\n"
++		default:
++			// round up to whole seconds
++			sec := int64((d + time.Second - time.Nanosecond) / time.Second)
++			return intResp(sec)
++		}
++	case "incr":
++		if len(args) != 1 {
++			return errArgs("incr")
++		}
++		return cmdIncr(s, args[0], 1)
++	case "incrby":
++		if len(args) != 2 {
++			return errArgs("incrby")
++		}
++		n, err := parseIntArg(args[1])
++		if err != nil {
++			return errResp("value is not an integer")
++		}
++		return cmdIncr(s, args[0], n)
++	case "keys":
++		if len(args) != 1 {
++			return errArgs("keys")
++		}
++		ks := s.Keys(args[0])
++		var b strings.Builder
++		b.WriteString("*" + strconv.Itoa(len(ks)) + "\n")
++		for _, k := range ks {
++			b.WriteString(stringResp(k))
++		}
++		return b.String()
++	case "dbsize":
++		if len(args) != 0 {
++			return errArgs("dbsize")
++		}
++		return intResp(int64(s.Len()))
++	default:
++		return "-ERR unknown command '" + toks[0] + "'\n"
++	}
++}
++
++func cmdSet(s *store.Store, args []string) string {
++	switch len(args) {
++	case 2:
++		s.Set(args[0], args[1], 0)
++		return "+OK\n"
++	case 4:
++		if !strings.EqualFold(args[2], "EX") {
++			return errResp("syntax error")
++		}
++		n, err := strconv.ParseInt(args[3], 10, 64)
++		if err != nil {
++			return errResp("value is not an integer")
++		}
++		if n <= 0 {
++			return errResp("syntax error")
++		}
++		s.Set(args[0], args[1], time.Duration(n)*time.Second)
++		return "+OK\n"
++	case 3:
++		return errResp("syntax error")
++	default:
++		return errArgs("set")
++	}
++}
++
++func cmdIncr(s *store.Store, key string, by int64) string {
++	n, err := s.Incr(key, by)
++	if err != nil {
++		return errResp("value is not an integer")
++	}
++	return intResp(n)
++}
++
++func parseIntArg(t string) (int64, error) {
++	return strconv.ParseInt(t, 10, 64)
++}
++
++func errResp(msg string) string { return "-ERR " + msg + "\n" }
++
++func errArgs(name string) string { return "-ERR wrong number of arguments for '" + name + "'\n" }
++
++func intResp(n int64) string { return ":" + strconv.FormatInt(n, 10) + "\n" }
++
++// stringResp renders a bulk string, quoting with escapes when the value
++// contains a space, tab, quote, backslash or newline, or is empty.
++func stringResp(v string) string {
++	needsQuote := v == ""
++	for i := 0; i < len(v); i++ {
++		switch v[i] {
++		case ' ', '\t', '"', '\\', '\n':
++			needsQuote = true
++		}
++	}
++	if !needsQuote {
++		return "$" + v + "\n"
++	}
++	var b strings.Builder
++	b.WriteByte('$')
++	b.WriteByte('"')
++	for i := 0; i < len(v); i++ {
++		c := v[i]
++		switch c {
++		case '"':
++			b.WriteString(`\"`)
++		case '\\':
++			b.WriteString(`\\`)
++		case '\n':
++			b.WriteString(`\n`)
++		default:
++			b.WriteByte(c)
++		}
++	}
++	b.WriteByte('"')
++	b.WriteByte('\n')
++	return b.String()
++}
++
++// tokenize splits a request line into tokens. Tokens are separated by one or
++// more spaces/tabs. A token may be double-quoted; inside quotes \" \\ and \n
++// are escapes. An unterminated quote or a bad escape is a syntax error.
++func tokenize(line string) ([]string, error) {
++	var toks []string
++	i := 0
++	n := len(line)
++	for i < n {
++		// skip separators
++		for i < n && (line[i] == ' ' || line[i] == '\t') {
++			i++
++		}
++		if i >= n {
++			break
++		}
++		var tok string
++		if line[i] == '"' {
++			i++ // consume opening quote
++			var b strings.Builder
++			closed := false
++		quoteLoop:
++			for i < n {
++				c := line[i]
++				switch {
++				case c == '"':
++					closed = true
++					i++
++					break quoteLoop
++				case c == '\\':
++					if i+1 >= n {
++						return nil, errSyntax
++					}
++					esc := line[i+1]
++					switch esc {
++					case '"', '\\':
++						b.WriteByte(esc)
++					case 'n':
++						b.WriteByte('\n')
++					default:
++						return nil, errSyntax
++					}
++					i += 2
++				default:
++					b.WriteByte(c)
++					i++
++				}
++			}
++			if !closed {
++				return nil, errSyntax
++			}
++			tok = b.String()
++		} else {
++			start := i
++			for i < n && line[i] != ' ' && line[i] != '\t' {
++				i++
++			}
++			tok = line[start:i]
++		}
++		toks = append(toks, tok)
++	}
++	return toks, nil
++}
++
++var errSyntax = err("syntax error")
++
++type err string
++
++func (e err) Error() string { return string(e) }
+diff --git a/proto/proto_test.go b/proto/proto_test.go
+new file mode 100644
+index 0000000..948f68d
+--- /dev/null
++++ b/proto/proto_test.go
+@@ -0,0 +1,300 @@
++package proto
++
++import (
++	"testing"
++	"time"
++
++	"example.com/kv/store"
++)
++
++type fc struct{ t time.Time }
++
++func (f *fc) Now() time.Time { return f.t }
++
++var base = time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
++
++func newStore() (*store.Store, *fc) {
++	f := &fc{t: base}
++	return store.New(f.Now), f
++}
++
++func exec(s *store.Store, line string) string { return Exec(s, line) }
++
++func TestPing(t *testing.T) {
++	s, _ := newStore()
++	if got := exec(s, "PING"); got != "+PONG\n" {
++		t.Fatalf("PING = %q", got)
++	}
++	if got := exec(s, "ping"); got != "+PONG\n" {
++		t.Fatalf("ping = %q", got)
++	}
++}
++
++func TestSetGet(t *testing.T) {
++	s, _ := newStore()
++	if got := exec(s, "SET a b"); got != "+OK\n" {
++		t.Fatalf("SET = %q", got)
++	}
++	if got := exec(s, "GET a"); got != "$b\n" {
++		t.Fatalf("GET = %q", got)
++	}
++	if got := exec(s, "GET missing"); got != "$nil\n" {
++		t.Fatalf("GET missing = %q", got)
++	}
++}
++
++func TestSetEX(t *testing.T) {
++	s, f := newStore()
++	if got := exec(s, "SET a b EX 5"); got != "+OK\n" {
++		t.Fatalf("SET EX = %q", got)
++	}
++	if v, ok := s.Get("a"); !ok || v != "b" {
++		t.Fatalf("a = %q %v", v, ok)
++	}
++	f.t = f.t.Add(6 * time.Second)
++	if _, ok := s.Get("a"); ok {
++		t.Fatal("EX key should expire")
++	}
++	if got := exec(s, "SET a b EX -3"); got != "-ERR syntax error\n" {
++		t.Fatalf("SET EX negative = %q", got)
++	}
++	if got := exec(s, "SET a b EX 0"); got != "-ERR syntax error\n" {
++		t.Fatalf("SET EX zero = %q", got)
++	}
++	if got := exec(s, "SET a b EX x"); got != "-ERR value is not an integer\n" {
++		t.Fatalf("SET EX non-int = %q", got)
++	}
++	if got := exec(s, "SET a b NX"); got != "-ERR syntax error\n" {
++		t.Fatalf("SET NX = %q", got)
++	}
++	if got := exec(s, "SET a"); got != "-ERR wrong number of arguments for 'set'\n" {
++		t.Fatalf("SET 1 arg = %q", got)
++	}
++	if got := exec(s, `SET a b EX`); got != "-ERR syntax error\n" {
++		t.Fatalf("SET a b EX = %q", got)
++	}
++}
++
++func TestQuotedValues(t *testing.T) {
++	s, _ := newStore()
++	// quoting on write
++	if got := exec(s, `SET a "hello world"`); got != "+OK\n" {
++		t.Fatalf("SET quoted = %q", got)
++	}
++	if got := exec(s, "GET a"); got != "$\"hello world\"\n" {
++		t.Fatalf("GET quoted = %q", got)
++	}
++	// escaping: value is: say "hi"\\<LF>
++	if got := exec(s, `SET b "say \"hi\"\\` + `\n` + `"`); got != "+OK\n" {
++		t.Fatalf("SET escapes = %q", got)
++	}
++	if got := exec(s, "GET b"); got != `$"say \"hi\"\\` + `\n` + `"` + "\n" {
++		t.Fatalf("GET escapes = %q", got)
++	}
++	// empty value
++	exec(s, `SET e ""`)
++	if got := exec(s, "GET e"); got != "$\"\"\n" {
++		t.Fatalf("GET empty = %q", got)
++	}
++	// backslash and tab
++	exec(s, `SET t "a\\tb"`)
++	if got := exec(s, "GET t"); got != "$\"a\\tb\"\n" {
++		t.Fatalf("GET tab = %q", got)
++	}
++	// plain value unquoted
++	exec(s, "SET p hello")
++	if got := exec(s, "GET p"); got != "$hello\n" {
++		t.Fatalf("GET plain = %q", got)
++	}
++}
++
++func TestUnterminatedQuote(t *testing.T) {
++	s, _ := newStore()
++	if got := exec(s, `SET a "unclosed`); got != "-ERR syntax error\n" {
++		t.Fatalf("unterminated = %q", got)
++	}
++	if got := exec(s, `SET a "bad\q`); got != "-ERR syntax error\n" {
++		t.Fatalf("bad escape = %q", got)
++	}
++}
++
++func TestEmptyLine(t *testing.T) {
++	s, _ := newStore()
++	if got := exec(s, ""); got != "-ERR empty command\n" {
++		t.Fatalf("empty = %q", got)
++	}
++	if got := exec(s, "   \t  "); got != "-ERR empty command\n" {
++		t.Fatalf("whitespace = %q", got)
++	}
++}
++
++func TestUnknownCommand(t *testing.T) {
++	s, _ := newStore()
++	if got := exec(s, "FOO bar"); got != "-ERR unknown command 'FOO'\n" {
++		t.Fatalf("unknown = %q", got)
++	}
++	if got := exec(s, "FoO"); got != "-ERR unknown command 'FoO'\n" {
++		t.Fatalf("unknown as-sent = %q", got)
++	}
++}
++
++func TestWrongArgCount(t *testing.T) {
++	s, _ := newStore()
++	cases := []struct{ line, want string }{
++		{"GET", "-ERR wrong number of arguments for 'get'\n"},
++		{"GET a b", "-ERR wrong number of arguments for 'get'\n"},
++		{"DEL", "-ERR wrong number of arguments for 'del'\n"},
++		{"EXISTS", "-ERR wrong number of arguments for 'exists'\n"},
++		{"EXPIRE a", "-ERR wrong number of arguments for 'expire'\n"},
++		{"EXPIRE a 5 b", "-ERR wrong number of arguments for 'expire'\n"},
++		{"PERSIST", "-ERR wrong number of arguments for 'persist'\n"},
++		{"TTL a b", "-ERR wrong number of arguments for 'ttl'\n"},
++		{"INCR", "-ERR wrong number of arguments for 'incr'\n"},
++		{"INCRBY a", "-ERR wrong number of arguments for 'incrby'\n"},
++		{"INCRBY a 1 x", "-ERR wrong number of arguments for 'incrby'\n"},
++		{"KEYS", "-ERR wrong number of arguments for 'keys'\n"},
++		{"DBSIZE x", "-ERR wrong number of arguments for 'dbsize'\n"},
++	}
++	for _, c := range cases {
++		if got := exec(s, c.line); got != c.want {
++			t.Errorf("%q = %q, want %q", c.line, got, c.want)
++		}
++	}
++}
++
++func TestDel(t *testing.T) {
++	s, _ := newStore()
++	exec(s, "SET a 1")
++	exec(s, "SET b 2")
++	if got := exec(s, "DEL a b c"); got != ":2\n" {
++		t.Fatalf("DEL = %q", got)
++	}
++	if got := exec(s, "DEL a"); got != ":0\n" {
++		t.Fatalf("DEL again = %q", got)
++	}
++}
++
++func TestExistsExpirePersist(t *testing.T) {
++	s, _ := newStore()
++	exec(s, "SET a 1")
++	if got := exec(s, "EXISTS a"); got != ":1\n" {
++		t.Fatalf("EXISTS = %q", got)
++	}
++	if got := exec(s, "EXISTS b"); got != ":0\n" {
++		t.Fatalf("EXISTS missing = %q", got)
++	}
++	if got := exec(s, "EXPIRE a 5"); got != ":1\n" {
++		t.Fatalf("EXPIRE = %q", got)
++	}
++	if got := exec(s, "EXPIRE b 5"); got != ":0\n" {
++		t.Fatalf("EXPIRE missing = %q", got)
++	}
++	if got := exec(s, "EXPIRE a x"); got != "-ERR value is not an integer\n" {
++		t.Fatalf("EXPIRE bad = %q", got)
++	}
++	if got := exec(s, "PERSIST a"); got != ":1\n" {
++		t.Fatalf("PERSIST = %q", got)
++	}
++	if got := exec(s, "PERSIST a"); got != ":0\n" {
++		t.Fatalf("PERSIST again = %q", got)
++	}
++	if got := exec(s, "PERSIST b"); got != ":0\n" {
++		t.Fatalf("PERSIST missing = %q", got)
++	}
++}
++
++func TestTTL(t *testing.T) {
++	s, f := newStore()
++	if got := exec(s, "TTL missing"); got != ":-2\n" {
++		t.Fatalf("TTL missing = %q", got)
++	}
++	exec(s, "SET a 1")
++	if got := exec(s, "TTL a"); got != ":-1\n" {
++		t.Fatalf("TTL no-exp = %q", got)
++	}
++	exec(s, "SET b 1 EX 2")
++	// exactly 2s remaining
++	if got := exec(s, "TTL b"); got != ":2\n" {
++		t.Fatalf("TTL 2s = %q", got)
++	}
++	f.t = f.t.Add(800 * time.Millisecond)
++	// 1.2s remaining rounds up to 2
++	if got := exec(s, "TTL b"); got != ":2\n" {
++		t.Fatalf("TTL 1.2s = %q", got)
++	}
++	f.t = f.t.Add(2100 * time.Millisecond) // expired
++	if got := exec(s, "TTL b"); got != ":-2\n" {
++		t.Fatalf("TTL expired = %q", got)
++	}
++}
++
++func TestIncr(t *testing.T) {
++	s, _ := newStore()
++	if got := exec(s, "INCR c"); got != ":1\n" {
++		t.Fatalf("INCR = %q", got)
++	}
++	if got := exec(s, "INCRBY c 5"); got != ":6\n" {
++		t.Fatalf("INCRBY = %q", got)
++	}
++	if got := exec(s, "INCRBY c -10"); got != ":-4\n" {
++		t.Fatalf("INCRBY neg = %q", got)
++	}
++	exec(s, `SET s "abc"`)
++	if got := exec(s, "INCR s"); got != "-ERR value is not an integer\n" {
++		t.Fatalf("INCR non-int = %q", got)
++	}
++	if got := exec(s, "INCRBY s 1"); got != "-ERR value is not an integer\n" {
++		t.Fatalf("INCRBY non-int = %q", got)
++	}
++	if got := exec(s, "INCRBY s x"); got != "-ERR value is not an integer\n" {
++		t.Fatalf("INCRBY bad arg = %q", got)
++	}
++}
++
++func TestKeys(t *testing.T) {
++	s, _ := newStore()
++	exec(s, "SET user:1 a")
++	exec(s, "SET user:2 b")
++	exec(s, "SET other c")
++	if got := exec(s, "KEYS user:*"); got != "*2\n$user:1\n$user:2\n" {
++		t.Fatalf("KEYS = %q", got)
++	}
++	if got := exec(s, "KEYS no-such-*"); got != "*0\n" {
++		t.Fatalf("KEYS empty = %q", got)
++	}
++	exec(s, `SET "sp ace" v`)
++	if got := exec(s, `KEYS "sp ace"`); got != "*1\n$\"sp ace\"\n" {
++		t.Fatalf("KEYS quoted = %q", got)
++	}
++}
++
++func TestDBSize(t *testing.T) {
++	s, _ := newStore()
++	if got := exec(s, "DBSIZE"); got != ":0\n" {
++		t.Fatalf("DBSIZE = %q", got)
++	}
++	exec(s, "SET a 1")
++	exec(s, "SET b 2 EX 1")
++	if got := exec(s, "DBSIZE"); got != ":2\n" {
++		t.Fatalf("DBSIZE = %q", got)
++	}
++}
++
++func TestTokenization(t *testing.T) {
++	s, _ := newStore()
++	exec(s, "SET\ta\tb")
++	if got := exec(s, "GET\ta"); got != "$b\n" {
++		t.Fatalf("tab-separated = %q", got)
++	}
++	exec(s, "SET a    b")
++	if got := exec(s, "GET a"); got != "$b\n" {
++		t.Fatalf("multi-space = %q", got)
++	}
++}
++
++func TestQuit(t *testing.T) {
++	s, _ := newStore()
++	if got := exec(s, "QUIT"); got != "+BYE\n" {
++		t.Fatalf("QUIT = %q", got)
++	}
++}
+diff --git a/store/store.go b/store/store.go
+new file mode 100644
+index 0000000..0cc2444
+--- /dev/null
++++ b/store/store.go
+@@ -0,0 +1,403 @@
++package store
++
++import (
++	"encoding/json"
++	"errors"
++	"io"
++	"sort"
++	"strconv"
++	"sync"
++	"time"
++)
++
++// ErrNotInteger is returned by Incr when the current value is not a base-10 int64.
++var ErrNotInteger = errors.New("value is not an integer")
++
++// Clock returns the current time.
++type Clock func() time.Time
++
++type entry struct {
++	value string
++	exp   time.Time // zero means no expiry
++}
++
++// Store is a concurrent key-value store with optional per-key expiries.
++type Store struct {
++	mu      sync.Mutex
++	clock   Clock
++	entries map[string]*entry
++}
++
++// New creates a Store. A nil clock uses time.Now.
++func New(clock Clock) *Store {
++	if clock == nil {
++		clock = time.Now
++	}
++	return &Store{clock: clock, entries: make(map[string]*entry)}
++}
++
++func (s *Store) live(e *entry) bool {
++	if e.exp.IsZero() {
++		return true
++	}
++	return s.clock().Before(e.exp)
++}
++
++func (s *Store) purge(key string) {
++	if e, ok := s.entries[key]; ok && !s.live(e) {
++		delete(s.entries, key)
++	}
++}
++
++// Set stores value under key. ttl <= 0 means no expiry. Set always replaces
++// both value and ttl.
++func (s *Store) Set(key, value string, ttl time.Duration) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	e := &entry{value: value}
++	if ttl > 0 {
++		e.exp = s.clock().Add(ttl)
++	}
++	s.entries[key] = e
++}
++
++// Get returns the value of key and whether it exists.
++func (s *Store) Get(key string) (string, bool) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	s.purge(key)
++	e, ok := s.entries[key]
++	if !ok {
++		return "", false
++	}
++	return e.value, true
++}
++
++// Del removes the given keys and returns how many existed.
++func (s *Store) Del(keys ...string) int {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	n := 0
++	for _, k := range keys {
++		s.purge(k)
++		if _, ok := s.entries[k]; ok {
++			delete(s.entries, k)
++			n++
++		}
++	}
++	return n
++}
++
++// Exists reports whether key exists and is not expired.
++func (s *Store) Exists(key string) bool {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	s.purge(key)
++	_, ok := s.entries[key]
++	return ok
++}
++
++// Expire sets the expiry of key. A ttl <= 0 deletes the key. It returns
++// false if the key is missing.
++func (s *Store) Expire(key string, ttl time.Duration) bool {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	s.purge(key)
++	e, ok := s.entries[key]
++	if !ok {
++		return false
++	}
++	if ttl <= 0 {
++		delete(s.entries, key)
++		return true
++	}
++	e.exp = s.clock().Add(ttl)
++	return true
++}
++
++// Persist removes the expiry of key. It returns true only if the key existed
++// and had an expiry.
++func (s *Store) Persist(key string) bool {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	s.purge(key)
++	e, ok := s.entries[key]
++	if !ok {
++		return false
++	}
++	if e.exp.IsZero() {
++		return false
++	}
++	e.exp = time.Time{}
++	return true
++}
++
++// TTL returns -2 if the key is missing, -1 if it has no expiry, otherwise
++// the remaining time (> 0).
++func (s *Store) TTL(key string) time.Duration {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	s.purge(key)
++	e, ok := s.entries[key]
++	if !ok {
++		return -2 * time.Second
++	}
++	if e.exp.IsZero() {
++		return -1 * time.Second
++	}
++	return e.exp.Sub(s.clock())
++}
++
++// Incr adds by to the integer value of key (missing counts as 0) and returns
++// the new value. The existing ttl is kept. It returns ErrNotInteger if the
++// current value is not a base-10 int64.
++func (s *Store) Incr(key string, by int64) (int64, error) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	s.purge(key)
++	e, ok := s.entries[key]
++	var n int64
++	if ok {
++		var err error
++		n, err = strconv.ParseInt(e.value, 10, 64)
++		if err != nil {
++			return 0, ErrNotInteger
++		}
++	}
++	if !ok {
++		e = &entry{}
++	}
++	n += by
++	e.value = strconv.FormatInt(n, 10)
++	s.entries[key] = e
++	return n, nil
++}
++
++// Keys returns the live keys matching the glob pattern, sorted ascending.
++func (s *Store) Keys(pattern string) []string {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	out := []string{}
++	for k, e := range s.entries {
++		if !s.live(e) {
++			continue
++		}
++		if matchGlob(pattern, k) {
++			out = append(out, k)
++		}
++	}
++	sort.Strings(out)
++	return out
++}
++
++// Len returns the number of live keys.
++func (s *Store) Len() int {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	n := 0
++	for k, e := range s.entries {
++		if s.live(e) {
++			n++
++		} else {
++			delete(s.entries, k)
++		}
++	}
++	return n
++}
++
++type snapshot struct {
++	Version int      `json:"version"`
++	Entries []sentry `json:"entries"`
++}
++
++type sentry struct {
++	K   string `json:"k"`
++	V   string `json:"v"`
++	Exp int64  `json:"exp"` // unix milliseconds, 0 = no expiry
++}
++
++// Save writes a JSON snapshot of all live keys to w.
++func (s *Store) Save(w io.Writer) error {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	snap := snapshot{Version: 1}
++	keys := make([]string, 0, len(s.entries))
++	for k, e := range s.entries {
++		if s.live(e) {
++			keys = append(keys, k)
++		} else {
++			delete(s.entries, k)
++		}
++	}
++	sort.Strings(keys)
++	for _, k := range keys {
++		e := s.entries[k]
++		en := sentry{K: k, V: e.value}
++		if !e.exp.IsZero() {
++			en.Exp = e.exp.UnixMilli()
++		}
++		snap.Entries = append(snap.Entries, en)
++	}
++	enc := json.NewEncoder(w)
++	return enc.Encode(snap)
++}
++
++// Load replaces all contents with the snapshot from r.
++func (s *Store) Load(r io.Reader) error {
++	var snap snapshot
++	if err := json.NewDecoder(r).Decode(&snap); err != nil {
++		return err
++	}
++	if snap.Version != 1 {
++		return errors.New("unsupported snapshot version")
++	}
++	now := s.clock()
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	s.entries = make(map[string]*entry, len(snap.Entries))
++	for _, en := range snap.Entries {
++		if en.Exp != 0 && !now.Before(time.UnixMilli(en.Exp)) {
++			continue // expired at load time
++		}
++		e := &entry{value: en.V}
++		if en.Exp != 0 {
++			e.exp = time.UnixMilli(en.Exp)
++		}
++		s.entries[en.K] = e
++	}
++	return nil
++}
++
++// matchGlob reports whether name matches pattern. `*` matches any sequence
++// (including empty and including '/'), `?` matches exactly one character,
++// [abc]/[a-z] match a set or range, [^..]/[!..] negate, and `\x` escapes x.
++func matchGlob(pattern, name string) bool {
++	// recursive with backtracking over pattern chars
++	pi, ni := 0, 0
++	star, sname := -1, -1
++	for ni < len(name) {
++		if pi < len(pattern) {
++			switch pc := pattern[pi]; pc {
++			case '*':
++				star = pi
++				sname = ni
++				pi++
++			case '\\':
++				if pi+1 >= len(pattern) {
++					return false
++				}
++				if pi+1 < len(pattern) && name[ni] == pattern[pi+1] {
++					pi += 2
++					ni++
++				} else if star >= 0 {
++					pi = star + 1
++					sname++
++					ni = sname
++				} else {
++					return false
++				}
++			case '?':
++				pi++
++				ni++
++			case '[':
++				end := indexOf(pattern, ']', pi+1)
++				if end < 0 {
++					return false
++				}
++				matched := inClass(pattern[pi+1:end], name[ni])
++				if matched {
++					pi = end + 1
++					ni++
++				} else if star >= 0 {
++					pi = star + 1
++					sname++
++					ni = sname
++				} else {
++					return false
++				}
++			default:
++				if name[ni] == pc {
++					pi++
++					ni++
++				} else if star >= 0 {
++					pi = star + 1
++					sname++
++					ni = sname
++				} else {
++					return false
++				}
++			}
++		} else if star >= 0 {
++			sname++
++			ni = sname
++			pi = star + 1
++			if pi >= len(pattern) {
++				return true
++			}
++		} else {
++			return false
++		}
++	}
++	// consumed all name chars; remaining pattern must be all '*'
++	for pi < len(pattern) {
++		switch c := pattern[pi]; c {
++		case '*':
++			pi++
++		case '\\':
++			pi += 2
++			if pi > len(pattern) {
++				return false
++			}
++		default:
++			return false
++		}
++	}
++	return true
++}
++
++func indexOf(s string, c byte, from int) int {
++	for i := from; i < len(s); i++ {
++		if s[i] == c {
++			return i
++		}
++	}
++	return -1
++}
++
++// inClass reports whether c is in the bracket class body (content between
++// [ and ]). Leading ^ or ! negates. Supports ranges a-z. A leading (non-^) -
++// is a literal.
++func inClass(body string, c byte) bool {
++	if len(body) == 0 {
++		return false
++	}
++	neg := false
++	i := 0
++	if body[0] == '^' || body[0] == '!' {
++		neg = true
++		i = 1
++	}
++	in := false
++	for i < len(body) {
++		b := body[i]
++		switch {
++		case i+2 < len(body) && body[i+1] == '-' && body[i+2] != ']':
++			if c >= b && c <= body[i+2] {
++				in = true
++			}
++			i += 3
++		case i+1 < len(body) && body[i+1] == '-':
++			// trailing dash: literal
++			if c == b {
++				in = true
++			}
++			i += 2
++		default:
++			if c == b {
++				in = true
++			}
++			i++
++		}
++	}
++	return in != neg
++}
+diff --git a/store/store_test.go b/store/store_test.go
+new file mode 100644
+index 0000000..8d39a70
+--- /dev/null
++++ b/store/store_test.go
+@@ -0,0 +1,338 @@
++package store
++
++import (
++	"bytes"
++	"strconv"
++	"strings"
++	"testing"
++	"time"
++)
++
++type fakeClock struct {
++	t time.Time
++}
++
++func (f *fakeClock) Now() time.Time { return f.t }
++
++func (f *fakeClock) Add(d time.Duration) { f.t = f.t.Add(d) }
++
++var t0 = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
++
++func newTestStore() (*Store, *fakeClock) {
++	fc := &fakeClock{t: t0}
++	return New(fc.Now), fc
++}
++
++func TestSetGet(t *testing.T) {
++	s, _ := newTestStore()
++	s.Set("k", "v", 0)
++	if v, ok := s.Get("k"); !ok || v != "v" {
++		t.Fatalf("Get = %q %v", v, ok)
++	}
++	if _, ok := s.Get("nope"); ok {
++		t.Fatal("missing key should be absent")
++	}
++	s.Set("k", "v2", 5*time.Second)
++	if v, _ := s.Get("k"); v != "v2" {
++		t.Fatalf("after re-set v = %q", v)
++	}
++}
++
++func TestExpiry(t *testing.T) {
++	s, fc := newTestStore()
++	s.Set("k", "v", 10*time.Second)
++	fc.Add(9 * time.Second)
++	if _, ok := s.Get("k"); !ok {
++		t.Fatal("key should still be alive just before deadline")
++	}
++	if d := s.TTL("k"); d != time.Second {
++		t.Fatalf("TTL = %v, want 1s", d)
++	}
++	fc.Add(time.Second) // now == deadline
++	if _, ok := s.Get("k"); ok {
++		t.Fatal("expired key (now == deadline) should be missing")
++	}
++	if s.Len() != 0 {
++		t.Fatalf("Len = %d, want 0", s.Len())
++	}
++	if got := s.Keys("*"); len(got) != 0 {
++		t.Fatalf("Keys = %v, want empty", got)
++	}
++}
++
++func TestSetReplacesTTL(t *testing.T) {
++	s, fc := newTestStore()
++	s.Set("k", "v1", 10*time.Second)
++	fc.Add(9 * time.Second)
++	s.Set("k", "v2", 0)
++	if v, ok := s.Get("k"); !ok || v != "v2" {
++		t.Fatalf("Get after re-set = %q %v", v, ok)
++	}
++	fc.Add(10 * time.Hour)
++	if v, ok := s.Get("k"); !ok || v != "v2" {
++		t.Fatalf("key with ttl=0 should not expire: %q %v", v, ok)
++	}
++}
++
++func TestDel(t *testing.T) {
++	s, _ := newTestStore()
++	s.Set("a", "1", 0)
++	s.Set("b", "2", 0)
++	if n := s.Del("a", "b", "c"); n != 2 {
++		t.Fatalf("Del = %d, want 2", n)
++	}
++	if n := s.Del("a"); n != 0 {
++		t.Fatalf("Del again = %d, want 0", n)
++	}
++}
++
++func TestExists(t *testing.T) {
++	s, fc := newTestStore()
++	s.Set("a", "1", 1*time.Second)
++	if !s.Exists("a") {
++		t.Fatal("Exists = false, want true")
++	}
++	fc.Add(2 * time.Second)
++	if s.Exists("a") {
++		t.Fatal("expired key Exists = true")
++	}
++}
++
++func TestExpire(t *testing.T) {
++	s, fc := newTestStore()
++	s.Set("a", "1", 0)
++	if !s.Expire("a", 3*time.Second) {
++		t.Fatal("Expire = false, want true")
++	}
++	if d := s.TTL("a"); d != 3*time.Second {
++		t.Fatalf("TTL = %v, want 3s", d)
++	}
++	fc.Add(4 * time.Second)
++	if _, ok := s.Get("a"); ok {
++		t.Fatal("expired key should be gone")
++	}
++	if s.Expire("missing", 1*time.Second) {
++		t.Fatal("Expire on missing key should be false")
++	}
++	s.Set("b", "2", 0)
++	if !s.Expire("b", 0) {
++		t.Fatal("Expire ttl<=0 should delete key and return true")
++	}
++	if _, ok := s.Get("b"); ok {
++		t.Fatal("key deleted via Expire(0) should be gone")
++	}
++}
++
++func TestPersist(t *testing.T) {
++	s, fc := newTestStore()
++	s.Set("a", "1", 5*time.Second)
++	s.Set("b", "2", 0)
++	if !s.Persist("a") {
++		t.Fatal("Persist on expiring key = false")
++	}
++	if s.Persist("a") {
++		t.Fatal("Persist twice should be false")
++	}
++	fc.Add(10 * time.Hour)
++	if v, ok := s.Get("a"); !ok || v != "1" {
++		t.Fatal("persisted key should not expire")
++	}
++	if s.Persist("missing") {
++		t.Fatal("Persist on missing key should be false")
++	}
++}
++
++func TestTTL(t *testing.T) {
++	s, fc := newTestStore()
++	if d := s.TTL("nope"); d != -2*time.Second {
++		t.Fatalf("TTL missing = %v, want -2s", d)
++	}
++	s.Set("a", "1", 0)
++	if d := s.TTL("a"); d != -1*time.Second {
++		t.Fatalf("TTL no-expiry = %v, want -1s", d)
++	}
++	s.Set("b", "2", 7*time.Second)
++	fc.Add(2 * time.Second)
++	if d := s.TTL("b"); d != 5*time.Second {
++		t.Fatalf("TTL remaining = %v, want 5s", d)
++	}
++}
++
++func TestIncr(t *testing.T) {
++	s, _ := newTestStore()
++	if n, err := s.Incr("c", 1); err != nil || n != 1 {
++		t.Fatalf("Incr missing = %d %v", n, err)
++	}
++	if n, err := s.Incr("c", 5); err != nil || n != 6 {
++		t.Fatalf("Incr = %d %v", n, err)
++	}
++	if n, err := s.Incr("c", -10); err != nil || n != -4 {
++		t.Fatalf("Incr neg = %d %v", n, err)
++	}
++	s.Set("s", "abc", 0)
++	if _, err := s.Incr("s", 1); err != ErrNotInteger {
++		t.Fatalf("Incr non-int err = %v, want ErrNotInteger", err)
++	}
++	s.Set("f", "1.5", 0)
++	if _, err := s.Incr("f", 1); err != ErrNotInteger {
++		t.Fatalf("Incr float err = %v, want ErrNotInteger", err)
++	}
++	// keeps existing ttl
++	sfc := &fakeClock{t: t0}
++	s2 := New(sfc.Now)
++	s2.Set("c", "1", 3*time.Second)
++	sfc.Add(2 * time.Second)
++	if d := s2.TTL("c"); d != time.Second {
++		t.Fatalf("ttl before = %v", d)
++	}
++	if _, err := s2.Incr("c", 1); err != nil {
++		t.Fatal(err)
++	}
++	if d := s2.TTL("c"); d != time.Second {
++		t.Fatalf("ttl after incr = %v, want 1s", d)
++	}
++}
++
++func TestKeysGlob(t *testing.T) {
++	s, _ := newTestStore()
++	for _, k := range []string{"user:1", "user:2", "users/4", "u2", "v1", "u9"} {
++		s.Set(k, "x", 0)
++	}
++	if n := s.Len(); n != 6 {
++		t.Fatalf("Len = %d, want 6", n)
++	}
++	cases := []struct {
++		pat  string
++		want []string
++	}{
++		{"*", []string{"u2", "u9", "user:1", "user:2", "users/4", "v1"}},
++		{"user:*", []string{"user:1", "user:2"}},
++		{"*4", []string{"users/4"}},
++		{"u?", []string{"u2", "u9"}},
++		{"u[1-9]", []string{"u2", "u9"}},
++		{"u[29]", []string{"u2", "u9"}},
++		{"u[^2]", []string{"u9"}},
++		{"u[!2]", []string{"u9"}},
++		{`u\2`, []string{"u2"}},
++		{`*/*`, []string{"users/4"}},
++		{"u2?", []string{}},
++	}
++	for _, c := range cases {
++		got := s.Keys(c.pat)
++		if strings.Join(got, ",") != strings.Join(c.want, ",") {
++			t.Errorf("Keys(%q) = %v, want %v", c.pat, got, c.want)
++		}
++	}
++}
++
++func TestSaveLoad(t *testing.T) {
++	s, fc := newTestStore()
++	s.Set("b", "2", 60*time.Second)
++	s.Set("a", "1", 0)
++	s.Set("gone", "x", time.Millisecond)
++	fc.Add(2 * time.Second)
++
++	var buf bytes.Buffer
++	if err := s.Save(&buf); err != nil {
++		t.Fatal(err)
++	}
++	const want = `{"version":1,"entries":[{"k":"a","v":"1","exp":0},{"k":"b","v":"2","exp":`
++	if !strings.HasPrefix(buf.String(), want) {
++		t.Fatalf("Save output = %s, want prefix %s", buf.String(), want)
++	}
++	wantExp := t0.Add(60 * time.Second).UnixMilli()
++	if !strings.Contains(buf.String(), `"exp":`+itoa(wantExp)) {
++		t.Fatalf("Save output = %s, want exp %d", buf.String(), wantExp)
++	}
++	if strings.Contains(buf.String(), "gone") {
++		t.Fatal("expired entry saved")
++	}
++
++	s2, _ := newTestStore()
++	snapBytes := buf.String()
++	if err := s2.Load(strings.NewReader(snapBytes)); err != nil {
++		t.Fatal(err)
++	}
++	if v, ok := s2.Get("a"); !ok || v != "1" {
++		t.Fatalf("after load a = %q %v", v, ok)
++	}
++	if v, ok := s2.Get("b"); !ok || v != "2" {
++		t.Fatalf("after load b = %q %v", v, ok)
++	}
++	// pre-existing contents replaced
++	s2.Set("zz", "z", 0)
++	if err := s2.Load(strings.NewReader(snapBytes)); err != nil {
++		t.Fatal(err)
++	}
++	if s2.Exists("zz") {
++		t.Fatal("Load should replace all contents")
++	}
++
++	// wrong version rejected
++	s3, _ := newTestStore()
++	s3.Set("a", "1", 0)
++	if err := s3.Load(strings.NewReader(`{"version":2,"entries":[]}`)); err == nil {
++		t.Fatal("Load should reject version 2")
++	}
++	if s3.Len() != 1 {
++		t.Fatal("failed Load should not clear store")
++	}
++}
++
++func TestLoadDropsExpired(t *testing.T) {
++	s, _ := newTestStore()
++	expired := t0.Add(-1 * time.Second).UnixMilli()
++	future := t0.Add(50 * time.Second).UnixMilli()
++	data := `{"version":1,"entries":[
++		{"k":"dead","v":"1","exp":` + itoa(expired) + `},
++		{"k":"live","v":"2","exp":` + itoa(future) + `},
++		{"k":"noexp","v":"3","exp":0}]}`
++	if err := s.Load(strings.NewReader(data)); err != nil {
++		t.Fatal(err)
++	}
++	if _, ok := s.Get("dead"); ok {
++		t.Fatal("entry expired at load time should be dropped")
++	}
++	if v, ok := s.Get("live"); !ok || v != "2" {
++		t.Fatalf("live = %q %v", v, ok)
++	}
++	if v, ok := s.Get("noexp"); !ok || v != "3" {
++		t.Fatalf("noexp = %q %v", v, ok)
++	}
++	// boundary: exp == now is expired at load
++	edge := t0.UnixMilli()
++	sfc := &fakeClock{t: t0}
++	s2 := New(sfc.Now)
++	if err := s2.Load(strings.NewReader(`{"version":1,"entries":[{"k":"edge","v":"1","exp":` + itoa(edge) + `}]}`)); err != nil {
++		t.Fatal(err)
++	}
++	if _, ok := s2.Get("edge"); ok {
++		t.Fatal("entry expiring exactly at load time should be dropped")
++	}
++}
++
++func itoa(n int64) string { return strconv.FormatInt(n, 10) }
++
++func TestConcurrency(t *testing.T) {
++	s, _ := newTestStore()
++	done := make(chan struct{})
++	for i := 0; i < 8; i++ {
++		go func(i int) {
++			defer func() { done <- struct{}{} }()
++			key := "k"
++			for j := 0; j < 1000; j++ {
++				s.Set(key, "v", time.Second)
++				s.Get(key)
++				s.Incr(key, 1)
++				s.Keys("*")
++				s.Len()
++				if i == 0 {
++					s.Del(key)
++				}
++			}
++		}(i)
++	}
++	for i := 0; i < 8; i++ {
++		<-done
++	}
++}
