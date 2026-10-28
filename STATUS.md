@@ -9,7 +9,9 @@ and compensates for its weaknesses, then improve it with the Harness² method (P
 evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is the roadmap).
 Results summary for readers: README.md "Results so far". Full experiment records: docs/EXPERIMENTS.md.
 
-## ⏸ PAUSED (2026-10-27 08:36 UTC) on request; nothing is running, everything is committed
+## Running state (2026-10-28): queue RUNNING on tunnel msg-opportunities-campbell-suddenly
+
+If this session is gone, the queue died with it: re-run resume.sh with the current tunnel. (Paused 2026-10-27 08:36 on request.)
 
 Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. It continues with the little-coder
 Tier-B re-run of b04–b06 (the interrupted b04 run was discarded), then it1 on Tier B + h01–h04, then the rest of
@@ -190,4 +192,5 @@ Then follow "Decisions waiting on those results" below as items finish.
 - 2026-10-27 08:02 — L2 probe done and ADOPTED: b06 0.96, the first non-zero b06 from any harness.
   - Composed harness/it1 = base + fuzzy_edit + L1 + L2; queued it1 on Tier B + held-out.
 - 2026-10-27 08:36 — PAUSED on request during the little-coder b04 re-run (interrupted run discarded).
+- 2026-10-28 — resumed on tunnel msg-opportunities-campbell-suddenly.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
