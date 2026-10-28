@@ -223,6 +223,29 @@ func TestTestAfterWriteNudgesOnce(t *testing.T) {
 	}
 }
 
+func TestRestoreGreenOnBudgetCut(t *testing.T) {
+	a, _, work := setup(t, []scripted{
+		{calls: []llm.ToolCall{call("c1", "write_file", map[string]any{"path": "a.txt", "content": "good\n"})}, prompt: 100},
+		{calls: []llm.ToolCall{call("c2", "run", map[string]any{"command": "make -s check"})}, prompt: 200},
+		{calls: []llm.ToolCall{call("c3", "edit_file", map[string]any{"path": "a.txt", "old_text": "good", "new_text": "bad"})}, prompt: 300},
+	}, func(c *harness.Config) { c.RestoreGreen = true; c.MaxTurns = 3 })
+	a.MaxTurn = 3
+	os.WriteFile(filepath.Join(work, "Makefile"), []byte("check:\n\tgrep -q good a.txt\n"), 0o644)
+	for _, c := range []string{"git init -q", "git add -A", "git -c user.email=t@t -c user.name=t commit -qm init"} {
+		if out, code, _ := tools.Shell(context.Background(), work, nil, c, 30*time.Second); code != 0 {
+			t.Fatalf("%s: %s", c, out)
+		}
+	}
+	o := a.Run(context.Background())
+	if o.Status != "max_turns" {
+		t.Fatalf("%+v", o)
+	}
+	b, _ := os.ReadFile(filepath.Join(work, "a.txt"))
+	if string(b) != "good\n" {
+		t.Fatalf("not restored: %q", b)
+	}
+}
+
 func TestLoopCompactsAndKeepsEffort(t *testing.T) {
 	a, fs, work := setup(t, []scripted{
 		{calls: []llm.ToolCall{call("c1", "list_dir", map[string]any{"path": "."})}, prompt: 9500},

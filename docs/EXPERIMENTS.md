@@ -216,8 +216,17 @@ Template:
     "[build failed]" and the score is 0.
   - The L2 probe's 0.96 was a timeout with a building tree.
 
-## L3 candidate: restore the last green state on timeout   (status: PROPOSED)
+## L3: restore the last green state on timeout   (status: IMPLEMENTED, in it2)
 - When a run ends on `wall_clock` or `max_turns` and the tree no longer builds or passes the visible check, but
   it did at an earlier turn, restore that snapshot. The harness can record a `git stash create` snapshot after
   every successful build or test run.
 - Expected effect: turns 0 into partial credit on long tasks cut mid-edit (it1 b06). Costs no model tokens.
+- Implemented as `restore_green`.
+  - After every `run` whose build/test passed, the workdir is written to a git tree through a throwaway index
+    (`git add -A` + `write-tree`; the real index is untouched).
+  - When a run ends on wall_clock or max_turns with edits since then, the last passing command is re-run. If it
+    now fails, the tree is restored (`read-tree` + `checkout-index`) and re-checked, with a `restore_green`
+    trace event.
+  - Offline test `TestRestoreGreenOnBudgetCut`, which fails with the knob off.
+- `harness/it2` = it1 + `restore_green`. Queued on Tier B as `eval/results/it2`. This also serves as a second
+  sample of the it1 gains, since L3 changes nothing before the cut.

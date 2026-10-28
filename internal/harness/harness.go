@@ -55,6 +55,7 @@ type Config struct {
 	ThinkBudgetTokens   int      `json:"think_budget_tokens"`    // abort a turn whose reasoning exceeds this (0 = off)
 	TestAfterWriteLines int      `json:"test_after_write_lines"` // nudge to build/test once this many lines were written untested (0 = off)
 	ThinkCapContinue    bool     `json:"think_cap_continue"`     // on think_budget: keep the partial reasoning and act on it with thinking off (little-coder style)
+	RestoreGreen        bool     `json:"restore_green"`          // L3: on wall_clock/max_turns, restore the last tree whose build/test passed if the current one fails
 	StripReasoning      bool     `json:"strip_reasoning"`        // do not send reasoning_content back in history
 	ThinkingMode        string   `json:"thinking_mode"`          // "on" (default) | "off" | "adaptive" (on for turns 1-2 and after errors)
 	NoWarmup            bool     `json:"no_warmup"`              // disable the prefix warm-up request

@@ -45,6 +45,8 @@ Then follow "Decisions waiting on those results" below as items finish.
   3b. (done) L2 probe: b01 1.00 / 29.3, b05 1.00 / 30.3, b06 0.96. ADOPTED.
   3c. little-coder Tier-B b04–b06 again (outage re-run).
   3d. (done) it1: Tier B 0.818, held-out 1.00.
+  4. Base rep 2 on h02/h04 (running).
+  4b. it2 (it1 + L3 restore_green) on Tier B (`eval/results/it2`).
   4. Base rep 2 on h02/h04.
   5. C1 INV probe (`e2-review`).
   6. C1 DOM probe (`c1-dom`).

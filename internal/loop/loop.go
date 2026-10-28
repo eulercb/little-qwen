@@ -82,6 +82,9 @@ type Agent struct {
 	noThinkNext bool            // run the next request with thinking off (think_cap_continue)
 	untested    int             // lines written by write_file since the last build/test run
 	testNudged  bool            // test_after_write_lines nudge already given for this untested stretch
+	greenTree   string          // git tree of the workdir at the last passing build/test run (restore_green)
+	greenCmd    string          // the command that passed
+	dirtyGreen  bool            // files changed since greenTree
 	lastTurnBad bool            // previous turn had a tool error, failed test/check or no tool call
 	prevProm    int             // prompt tokens of the previous request (for cache-loss accounting)
 }
@@ -417,6 +420,7 @@ func (a *Agent) handleCall(ctx context.Context, turn, idx int, tc llm.ToolCall) 
 			res.Output += a.verifyWrite(ctx, res.Changed)
 		}
 		res.Output += a.testAfterWrite(name, args, res)
+		a.trackGreen(ctx, name, args, res)
 	}
 	if !res.OK && res.ErrorClass != "" {
 		a.out.ToolErrors++
@@ -666,9 +670,55 @@ func (a *Agent) finalize() Outcome {
 	if a.out.Status == "" {
 		a.out.Status = "finished"
 	}
+	if a.out.Status == "wall_clock" || a.out.Status == "max_turns" {
+		a.restoreGreen()
+	}
 	a.out.WallSeconds = time.Since(a.start).Seconds()
 	a.Tr.Event(trace.Event{Agent: a.Name, Turn: a.out.Turns, Name: "end", Detail: a.out.Status, Data: map[string]any{"check_passed": a.out.CheckPassed}})
 	return a.out
+}
+
+// snapshotCmd writes the workdir (tracked + untracked, honoring .gitignore) to
+// a git tree through a throwaway index, so the real index is untouched.
+const snapshotCmd = `d=$(mktemp -d) && GIT_INDEX_FILE=$d/i git add -A . >/dev/null 2>&1 && GIT_INDEX_FILE=$d/i git write-tree; rm -rf "$d"`
+
+// trackGreen (L3) remembers the tree at the last passing build/test run.
+func (a *Agent) trackGreen(ctx context.Context, name string, args tools.Args, res tools.Result) {
+	if !a.cfg.RestoreGreen || a.IsSub {
+		return
+	}
+	if (name == "write_file" || name == "edit_file") && res.OK {
+		a.dirtyGreen = true
+		return
+	}
+	if name != "run" || res.TestSignal != "pass" {
+		return
+	}
+	out, code := a.Env.RunCmd(ctx, snapshotCmd, 30*time.Second)
+	if tree := strings.TrimSpace(out); code == 0 && len(tree) == 40 {
+		cmd, _ := args.Str("command")
+		a.greenTree, a.greenCmd, a.dirtyGreen = tree, cmd, false
+	}
+}
+
+// restoreGreen (L3): a run cut by a budget may stop mid-edit with a tree that no
+// longer builds (it1 b06: built at minute 45, broken at minute 60, scored 0).
+// If the last passing command now fails, put back the tree it passed on.
+func (a *Agent) restoreGreen() {
+	if !a.cfg.RestoreGreen || a.IsSub || a.greenTree == "" || !a.dirtyGreen {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	if _, code := a.Env.RunCmd(ctx, a.greenCmd, 3*time.Minute); code == 0 {
+		return
+	}
+	restore := `d=$(mktemp -d) && GIT_INDEX_FILE=$d/i git read-tree ` + a.greenTree + ` && GIT_INDEX_FILE=$d/i git checkout-index -a -f; rc=$?; rm -rf "$d"; exit $rc`
+	_, rc := a.Env.RunCmd(ctx, restore, time.Minute)
+	_, after := a.Env.RunCmd(ctx, a.greenCmd, 3*time.Minute)
+	a.Tr.Event(trace.Event{Agent: a.Name, Turn: a.out.Turns, Name: "restore_green",
+		Data: map[string]any{"tree": a.greenTree, "cmd": a.greenCmd, "restore_rc": rc, "passes_after": after == 0}})
+	a.logf("restore_green: last passing tree restored (rc=%d, %q passes now: %v)", rc, trunc(a.greenCmd, 80), after == 0)
 }
 
 func trunc(s string, n int) string {
