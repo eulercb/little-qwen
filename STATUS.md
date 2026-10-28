@@ -9,9 +9,20 @@ and compensates for its weaknesses, then improve it with the Harness² method (P
 evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is the roadmap).
 Results summary for readers: README.md "Results so far". Full experiment records: docs/EXPERIMENTS.md.
 
-## Running state (2026-10-28): queue RUNNING on tunnel msg-opportunities-campbell-suddenly
+## ⏸ PAUSED (2026-10-28 09:13 UTC) on request; nothing is running, everything is committed
 
-If this session is gone, the queue died with it: re-run resume.sh with the current tunnel. (Paused 2026-10-27 08:36 on request.)
+Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. The queue continues with:
+1. it2 (it1 + L3 restore_green) on Tier B; the interrupted b01 run was discarded.
+2. The OpenCode comparison.
+3. d01 with it2.
+4. The Terminal-Bench subset with it2, then with little-coder.
+
+Headline:
+- Tier-B mean: qh base 0.654, it1 0.818, pi 0.828, little-coder 0.650.
+- Held-out: it1 1.00; base 0.96 at rep 1, and 1.00 at rep 2 on h02/h04.
+- Adopted: L1 (thinking cap that keeps the reasoning) and L2 (build/test nudge).
+- Implemented: L3 (restore the last green tree on a budget cut), in it2 and awaiting its run.
+- Retired: C1 (noise).
 
 Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. It continues with the little-coder
 Tier-B re-run of b04–b06 (the interrupted b04 run was discarded), then it1 on Tier B + h01–h04, then the rest of
@@ -205,4 +216,5 @@ Then follow "Decisions waiting on those results" below as items finish.
   - The Tier D (d01) and Tier C (Terminal-Bench subset) items now run with harness/it2 (outputs `it2`,
     `tbC-it2`) instead of base. qh's best version is what we compare with little-coder, and these tiers are too
     slow to run twice.
+- 2026-10-28 09:13 — PAUSED on request during it2 Tier-B b01 (interrupted run discarded).
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
