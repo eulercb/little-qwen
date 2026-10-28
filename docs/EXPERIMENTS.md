@@ -199,3 +199,23 @@ Template:
   (`test_after_write_lines` 300).
 - Queued: `eval/results/it1` on Tier B and h01–h04, after the little-coder outage re-run.
 - C1 (review/DOM) probes are still queued against base; fold them in later if they win.
+
+## it1 run (2026-10-28), Tier B (h01–h04 in progress)
+- Results:
+  - b01 1.00 / 34.9 min.
+  - b02 1.00 / 18.3.
+  - b03 1.00 / 4.6.
+  - b04 0.91, wall clock.
+  - b05 1.00 / 53.4.
+  - b06 0, wall clock.
+- Tier-B mean 0.818, against base 0.654, pi 0.828 and little-coder 0.650.
+- b06 failed differently from the base: the L2 nudge fired, and the build passed at turns 7, 14 and 16.
+  - The run was then cut at minute 60 right after an edit that broke the build, so the hidden test reports
+    "[build failed]" and the score is 0.
+  - The L2 probe's 0.96 was a timeout with a building tree.
+
+## L3 candidate: restore the last green state on timeout   (status: PROPOSED)
+- When a run ends on `wall_clock` or `max_turns` and the tree no longer builds or passes the visible check, but
+  it did at an earlier turn, restore that snapshot. The harness can record a `git stash create` snapshot after
+  every successful build or test run.
+- Expected effect: turns 0 into partial credit on long tasks cut mid-edit (it1 b06). Costs no model tokens.

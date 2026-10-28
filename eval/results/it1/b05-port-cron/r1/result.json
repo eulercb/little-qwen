@@ -1,0 +1,37 @@
+{
+  "task_id": "b05-port-cron",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "a01327c09982",
+  "success": true,
+  "score": 1,
+  "tests_passed": 7,
+  "tests_total": 7,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Ported reference/cron.py to Go package cron (cron/cron.go) with the exact required API: Schedule (unexported fields), Parse, Next, String. Behavior matches the reference including all CronError messages (verified via a mini Python-repr) and the Vixie day-matching/next-run semantics, including a fix for Go's value-receiver mutation gotcha on the field bitsets. Tests in cron/cron_test.go and cron/differential_test.go compare Go output against the Python reference on ~570 inputs (syntax, errors, next runs, describe, and 500 randomized differential cases with 2 seeds); `go vet ./... \u0026\u0026 go test ./...` exits 0 and the workspace contains only the new cron/ directory.",
+    "Turns": 43,
+    "Compactions": 0,
+    "PromptTokens": 1821797,
+    "PrefillTokens": 61509,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 38922,
+    "ReasoningTokens": 20119,
+    "ToolCalls": 47,
+    "ToolErrors": 4,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F4": 1
+    },
+    "WallSeconds": 3206.812036986,
+    "Err": ""
+  },
+  "started": "2026-10-28T06:10:03Z",
+  "hidden_output": "=== RUN   TestString\n=== RUN   TestString/\"*_*_*_*_*\"\n--- PASS: TestString/\"*_*_*_*_*\" (0.02s)\n=== RUN   TestString/\"5_*_*_*_*\"\n--- PASS: TestString/\"5_*_*_*_*\" (0.02s)\n=== RUN   TestString/\"1,2_*_*_*_*\"\n--- PASS: TestString/\"1,2_*_*_*_*\" (0.02s)\n=== RUN   TestString/\"1,2,3_*_*_*_*\"\n--- PASS: TestString/\"1,2,3_*_*_*_*\" (0.02s)\n=== RUN   TestString/\"1,2,3,4_*_*_*_*\"\n--- PASS: TestString/\"1,2,3,4_*_*_*_*\" (0.02s)\n=== RUN   TestString/\"0,10,20,30,40,50_*_*_*_*\"\n--- PASS: TestString/\"0,10,20,30,40,50_*_*_*_*\" (0.02s)\n=== RUN   TestString/\"0,59_*_*_*_*\"\n--- PASS: TestString/\"0,59_*_*_*_*\" (0.02s)\n=== RUN   TestString/\"5-7_*_*_*_*\"\n--- PASS: TestString/\"5-7_*_*_*_*\" (0.01s)\n=== RUN   TestString/\"*/15_*_*_*_*\"\n--- PASS: TestString/\"*/15_*_*_*_*\" (0.01s)\n=== RUN   TestString/\"*/1_*_*_*_*\"\n--- PASS: TestString/\"*/1_*_*_*_*\" (0.02s)\n=== RUN   TestString/\"5/2_*_*_*_*\"\n--- PASS: TestString/\"5/2_*_*_*_*\" (0.02s)\n=== RUN   TestString/\"1-3/2_*_*_*_*\"\n--- PASS: TestString/\"1-3/2_*_*_*_*\" (0.02s)\n=== RUN   TestString/\"0,5,10-12,20-21,30/10_*_*_*_*\"\n--- PASS: TestString/\"0,5,10-12,20-21,30/10_*_*_*_*\" (0.02s)\n=== RUN   TestString/\"@daily\"\n--- PASS: TestString/\"@daily\" (0.02s)\n=== RUN   TestString/\"@monthly\"\n--- PASS: TestString/\"@monthly\" (0.02s)\n=== RUN   TestString/\"0_0_1_*_*\"\n--- PASS: TestString/\"0_0_1_*_*\" (0.01s)\n=== RUN   TestString/\"0_0_*_*_0\"\n--- PASS: TestString/\"0_0_*_*_0\" (0.02s)\n=== RUN   TestString/\"30_4_1,15_*_5\"\n--- PASS: TestString/\"30_4_1,15_*_5\" (0.02s)\n=== RUN   TestString/\"0_0_*_1,3-5,12_*\"\n--- PASS: TestString/\"0_0_*_1,3-5,12_*\" (0.02s)\n=== RUN   TestString/\"1-6_*_*_2,4_1-5\"\n--- PASS: TestString/\"1-6_*_*_2,4_1-5\" (0.02s)\n=== RUN   TestString/\"5-20/3_10-14_*_*_0\"\n--- PASS: TestString/\"5-20/3_10-14_*_*_0\" (0.02s)\n=== RUN   TestString/\"2_0_30_2_*\"\n--- PASS: TestString/\"2_0_30_2_*\" (0.02s)\n=== RUN   TestString/\"0_12_1,2_1-12_0-6\"\n--- PASS: TestString/\"0_12_1,2_1-12_0-6\" (0.02s)\n=== RUN   TestString/\"59/2_*_*_*_*\"\n--- PASS: TestString/\"59/2_*_*_*_*\" (0.02s)\n--- PASS: TestString (0.41s)\n=== RUN   TestDifferential\n--- PASS: TestDifferential (0.07s)\n=== RUN   TestHiddenParseErrors\n--- PASS: TestHiddenParseErrors (0.00s)\n=== RUN   TestHiddenDescribe\n--- PASS: TestHiddenDescribe (0.00s)\n=== RUN   TestHiddenNext\n--- PASS: TestHiddenNext (0.00s)\nPASS\nok  \texample.com/cron/cron\t1.596s",
+  "work": "/tmp/qh-runs/it1/b05-port-cron-r1"
+}

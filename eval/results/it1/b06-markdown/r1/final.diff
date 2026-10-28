@@ -1,0 +1,850 @@
+ md/md.go      | 710 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ md/md_test.go | 124 ++++++++++
+ 2 files changed, 834 insertions(+)
+
+diff --git a/md/md.go b/md/md.go
+new file mode 100644
+index 0000000..7e306d2
+--- /dev/null
++++ b/md/md.go
+@@ -0,0 +1,710 @@
++// Package md implements a Markdown-subset to HTML converter.
++// See SPEC.md at the repository root for the exact conversion rules.
++package md
++
++import (
++	"strings"
++)
++
++// ToHTML converts a Markdown-subset document to HTML.
++func ToHTML(src string) string {
++	lines := splitLines(src)
++	var out strings.Builder
++	for _, b := range parseBlocks(lines) {
++		out.WriteString(b)
++		out.WriteByte('\n')
++	}
++	return out.String()
++}
++
++func splitLines(src string) []string {
++	lines := strings.Split(src, "\n")
++	for i, l := range lines {
++		lines[i] = strings.TrimSuffix(l, "\r")
++	}
++	return lines
++}
++
++// ---------- blocks ----------
++
++func isBlank(l string) bool {
++	return l == "" || l == strings.TrimSpace(l)
++}
++
++func leadingSpaces(l string) int {
++	i := 0
++	for i < len(l) && l[i] == ' ' {
++		i++
++	}
++	return i
++}
++
++// parseBlocks renders top-level blocks; each block string has no trailing newline.
++func parseBlocks(lines []string) []string {
++	var out []string
++	i := 0
++	n := len(lines)
++	for i < n {
++		l := lines[i]
++		if isBlank(l) {
++			i++
++			continue
++		}
++		if strings.HasPrefix(l, "```") {
++			info := firstWord(l[3:])
++			i++
++			var content []string
++			for i < n && strings.TrimRight(lines[i], " ") != "```" {
++				content = append(content, lines[i])
++				i++
++			}
++			i++ // closing fence or end of input
++			out = append(out, codeBlockHTML(info, content))
++			continue
++		}
++		if h, ok := headingHTML(l); ok {
++			out = append(out, h)
++			i++
++			continue
++		}
++		if isRule(l) {
++			out = append(out, "<hr />")
++			i++
++			continue
++		}
++		if strings.HasPrefix(l, ">") {
++			var q []string
++			for i < n && strings.HasPrefix(lines[i], ">") {
++				q = append(q, dropQuote(lines[i]))
++				i++
++			}
++			out = append(out, "<blockquote>\n"+blocksToHTML(q)+"</blockquote>")
++			continue
++		}
++		if isItemMarker(l) {
++			tops, consumed := collectList(lines, i)
++			out = append(out, listHTML(tops))
++			i += consumed
++			continue
++		}
++		// paragraph: runs until a blank line or a non-paragraph line
++		var p []string
++		for i < n {
++			l2 := lines[i]
++			if _, ok := isHeadingLine(l2); ok {
++				break
++			}
++			if isBlank(l2) || strings.HasPrefix(l2, "```") || isRule(l2) ||
++				strings.HasPrefix(l2, ">") || isItemMarker(l2) {
++				break
++			}
++			p = append(p, l2)
++			i++
++		}
++		text := stripLeading(strings.Join(p, "\n"))
++		out = append(out, "<p>"+inline(text)+"</p>")
++	}
++	return out
++}
++
++func blocksToHTML(lines []string) string {
++	return strings.Join(parseBlocks(lines), "\n")
++}
++
++func firstWord(s string) string {
++	f := strings.Fields(s)
++	if len(f) == 0 {
++		return ""
++	}
++	return f[0]
++}
++
++func codeBlockHTML(info string, content []string) string {
++	var b strings.Builder
++	b.WriteString("<pre><code")
++	if info != "" {
++		b.WriteString(` class="`)
++		b.WriteString(escapeText(info))
++		b.WriteByte('"')
++	}
++	b.WriteString(">")
++	for _, c := range content {
++		b.WriteString(escapeText(c))
++		b.WriteByte('\n')
++	}
++	b.WriteString("</code></pre>")
++	return b.String()
++}
++
++// isHeadingLine reports whether l is a heading line and returns its level.
++func isHeadingLine(l string) (int, bool) {
++	n := 0
++	for n < len(l) && l[n] == '#' {
++		n++
++	}
++	if n < 1 || n > 6 {
++		return 0, false
++	}
++	if n < len(l) && l[n] != ' ' {
++		return 0, false
++	}
++	return n, true
++}
++
++func headingHTML(l string) (string, bool) {
++	level, ok := isHeadingLine(l)
++	if !ok {
++		return "", false
++	}
++	text := ""
++	if level < len(l) {
++		text = l[level+1:]
++	}
++	text = strings.TrimRight(text, " ")
++	for {
++		j := len(text)
++		for j > 0 && text[j-1] == '#' {
++			j--
++		}
++		if j == len(text) || j == 0 || text[j-1] != ' ' {
++			break
++		}
++		text = strings.TrimRight(text[:j], " ")
++	}
++	tag := "h" + string(rune('0'+byte(level)))
++	return "<" + tag + ">" + inline(text) + "</" + tag + ">", true
++}
++
++// isRule reports a horizontal rule line: 3+ of one of -, * or _, no other chars.
++func isRule(l string) bool {
++	if len(l) < 3 {
++		return false
++	}
++	c := l[0]
++	if c != '-' && c != '*' && c != '_' {
++		return false
++	}
++	for i := 1; i < len(l); i++ {
++		if l[i] != c {
++			return false
++		}
++	}
++	return true
++}
++
++func dropQuote(l string) string {
++	l = l[1:]
++	if strings.HasPrefix(l, " ") {
++		l = l[1:]
++	}
++	return l
++}
++
++// ---------- lists ----------
++
++const (
++	kindUnordered = iota
++	kindOrdered
++)
++
++type itemLine struct {
++	text   string
++	num    string // ordered marker number, "" for unordered
++	kind   int
++	nested []itemLine // nested items (one level)
++}
++
++func isItemMarker(l string) bool {
++	if strings.HasPrefix(l, "- ") || strings.HasPrefix(l, "* ") || strings.HasPrefix(l, "+ ") {
++		return true
++	}
++	idx := strings.IndexByte(l, '.')
++	if idx < 1 {
++		return false
++	}
++	for i := 0; i < idx; i++ {
++		if l[i] < '0' || l[i] > '9' {
++			return false
++		}
++	}
++	return idx+1 < len(l) && l[idx+1] == ' '
++}
++
++// parseItem strips the marker from an item line (assumed valid).
++func parseItem(l string) itemLine {
++	if strings.HasPrefix(l, "- ") || strings.HasPrefix(l, "* ") || strings.HasPrefix(l, "+ ") {
++		return itemLine{text: l[2:], kind: kindUnordered}
++	}
++	idx := strings.IndexByte(l, '.')
++	return itemLine{text: l[idx+2:], num: l[:idx], kind: kindOrdered}
++}
++
++// collectList consumes consecutive item lines (with continuations) starting at i.
++func collectList(lines []string, i int) ([]itemLine, int) {
++	var tops []itemLine
++	var lastNest []itemLine
++	lastNestIndent := -1
++	startKind := -1
++	n := len(lines)
++	for i < n {
++		l := lines[i]
++		sp := leadingSpaces(l)
++		if sp == 0 {
++			if !isItemMarker(l) || isBlank(l) {
++				break
++			}
++			it := parseItem(l)
++			if startKind == -1 {
++				startKind = it.kind
++			}
++			if it.kind != startKind {
++				break // a different kind starts a new list
++			}
++			tops = append(tops, it)
++			lastNest = nil
++			lastNestIndent = -1
++			i++
++			continue
++		}
++		if sp >= 2 && len(tops) > 0 {
++			s := l[min(sp, 4):]
++			if isItemMarker(s) {
++				it := parseItem(s)
++				lastNest = append(lastNest, it)
++				lastNestIndent = sp
++				tops[len(tops)-1].nested = lastNest
++				i++
++				continue
++			}
++			plain := strings.TrimLeft(l, " ")
++			if len(lastNest) > 0 && sp >= lastNestIndent+2 {
++				last := len(lastNest) - 1
++				lastNest[last].text += "\n" + plain
++				tops[len(tops)-1].nested = lastNest
++			} else {
++				tops[len(tops)-1].text += "\n" + plain
++			}
++			i++
++			continue
++		}
++		break
++	}
++	return tops, i - 0
++}
++
++func min(a, b int) int {
++	if a < b {
++		return a
++	}
++	return b
++}
++
++// listHTML renders a group of same-kind items.
++func listHTML(items []itemLine) string {
++	tag := "ul"
++	if items[0].kind == kindOrdered {
++		tag = "ol"
++		if items[0].num != "1" {
++			tag = `ol start="` + items[0].num + `"`
++		}
++	}
++	var parts []string
++	for _, it := range items {
++		parts = append(parts, itemHTML(it))
++	}
++	closeTag := "ul"
++	if items[0].kind == kindOrdered {
++		closeTag = "ol"
++	}
++	return "<" + tag + ">\n" + strings.Join(parts, "\n") + "\n</" + closeTag + ">"
++}
++
++func itemHTML(it itemLine) string {
++	var b strings.Builder
++	b.WriteString("<li>")
++	b.WriteString(inline(it.text))
++	groups := nestedGroups(it.nested)
++	for _, g := range groups {
++		b.WriteString("\n")
++		b.WriteString(listHTML(g))
++	}
++	if len(groups) > 0 {
++		b.WriteString("\n")
++	}
++	b.WriteString("</li>")
++	return b.String()
++}
++
++// nestedGroups splits nested items into consecutive same-kind groups.
++func nestedGroups(nested []itemLine) [][]itemLine {
++	var groups [][]itemLine
++	for _, it := range nested {
++		if len(groups) > 0 && groups[len(groups)-1][0].kind == it.kind {
++			groups[len(groups)-1] = append(groups[len(groups)-1], it)
++		} else {
++			groups = append(groups, []itemLine{it})
++		}
++	}
++	return groups
++}
++
++// stripLeading removes leading spaces from each line of a multiline string.
++func stripLeading(s string) string {
++	lines := strings.Split(s, "\n")
++	for i, l := range lines {
++		lines[i] = strings.TrimLeft(l, " ")
++	}
++	return strings.Join(lines, "\n")
++}
++
++// ---------- inline ----------
++
++// escapeText HTML-escapes &, <, > and ".
++func escapeText(s string) string {
++	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
++	return r.Replace(s)
++}
++
++// escapeAttr escapes attribute values (href, title).
++func escapeAttr(s string) string {
++	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
++	return r.Replace(s)
++}
++
++var escSet = "\\`*_{}[]()#+-.!<>"
++
++// inline processes the inline syntax of a (possibly multiline) text.
++func inline(s string) string {
++	lines := strings.Split(s, "\n")
++	for i, l := range lines {
++		br := false
++		if i < len(lines)-1 {
++			if strings.HasSuffix(l, `\`) {
++				br = true
++				l = l[:len(l)-1]
++			} else if trailingSpaceCount(l) >= 2 {
++				br = true
++			}
++		}
++		l = strings.TrimRight(l, " ")
++		if br {
++			l += "<br />"
++		}
++		lines[i] = inlineLine(l)
++	}
++	return strings.Join(lines, "\n")
++}
++
++func trailingSpaceCount(s string) int {
++	n := 0
++	for i := len(s) - 1; i >= 0 && s[i] == ' '; i-- {
++		n++
++	}
++	return n
++}
++
++type openMark struct {
++	pos int
++	ln  int
++	ch  byte
++}
++
++// emphPass handles strong/emphasis. It repeatedly finds the leftmost opener
++// that has a matching closer, renders it (recursing into the inner text),
++// and continues after the pair; unmatched markers stay literal.
++func emphPass(s string) string {
++	return emphPassLinks(s, true)
++}
++
++func emphPassLinks(s string, links bool) string {
++	var out strings.Builder
++	i := 0
++	for i < len(s) {
++		p, L := nextRun(s, i)
++		if p < 0 {
++			out.WriteString(inlineNoEmphLinks(s[i:], links))
++			break
++		}
++		c := s[p]
++		ln := runLen(c, L) // 2 for ** / __, 1 for * / _
++		openEnd := p + ln
++		isOpen := canOpen(s, p, c, L)
++		var q, qln int
++		if isOpen {
++			q, qln = findCloser(s, openEnd, c, ln)
++		}
++		if !isOpen || q < 0 {
++			// literal marker run
++			out.WriteString(inlineNoEmphLinks(s[i : p+L], links))
++			i = p + L
++			continue
++		}
++		tag := "em"
++		if ln == 2 {
++			tag = "strong"
++		}
++		out.WriteString(inlineNoEmphLinks(s[i:p], links))
++		out.WriteString("<" + tag + ">")
++		out.WriteString(emphPassLinks(s[openEnd:q], links))
++		out.WriteString("</" + tag + ">")
++		i = q + qln
++	}
++	return out.String()
++}
++
++// runLen returns the marker length used by a run of c with total length L.
++func runLen(c byte, L int) int {
++	if c == '_' && L < 2 {
++		return 1
++	}
++	if L >= 2 {
++		return 2
++	}
++	return 1
++}
++
++// nextRun finds the next run of '*' or '_' starting at or after i.
++func nextRun(s string, i int) (pos, length int) {
++	for j := i; j < len(s); j++ {
++		if s[j] == '*' || s[j] == '_' {
++			k := j
++			for k < len(s) && s[k] == s[j] {
++				k++
++			}
++			return j, k - j
++		}
++	}
++	return -1, 0
++}
++
++// canOpen reports whether the run [p, p+L) may open emphasis.
++func canOpen(s string, p int, c byte, L int) bool {
++	if p+L >= len(s) || s[p+L] == ' ' {
++		return false
++	}
++	if c == '_' && p > 0 && isWordChar(s[p-1]) {
++		return false
++	}
++	return true
++}
++
++// findCloser searches for the first run of c that may close emphasis of
++// length ln; returns its position and consumed length.
++func findCloser(s string, from int, c byte, ln int) (int, int) {
++	p, L := nextRun(s, from)
++	for p >= 0 {
++		if s[p] == c && canClose(s, p, c, L) {
++			consume := ln
++			if L < consume {
++				consume = L
++			}
++			return p, consume
++		}
++		p, L = nextRun(s, p+L)
++	}
++	return -1, 0
++}
++
++// canClose reports whether the run [p, p+L) may close emphasis.
++func canClose(s string, p int, c byte, L int) bool {
++	if p == 0 || s[p-1] == ' ' {
++		return false
++	}
++	if c == '_' && p+L < len(s) && isWordChar(s[p+L]) {
++		return false
++	}
++	return true
++}
++
++// inlineLine processes one line left to right.
++func inlineLine(s string) string {
++	return emphPass(s)
++}
++
++func isWordChar(c byte) bool {
++	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
++}
++
++// inlineNoEmph processes all inline constructs except strong/emphasis,
++// leaving * and _ as literal text.
++func inlineNoEmph(s string) string {
++	var out strings.Builder
++	var lit strings.Builder
++	flush := func() {
++		if lit.Len() > 0 {
++			out.WriteString(escapeText(lit.String()))
++			lit.Reset()
++		}
++	}
++	for i := 0; i < len(s); {
++		c := s[i]
++		// backslash escape
++		if c == '\\' && i+1 < len(s) && strings.IndexByte(escSet, s[i+1]) >= 0 {
++			flush()
++			out.WriteString(escapeText(string(s[i+1])))
++			i += 2
++			continue
++		}
++		// code span
++		if c == '`' {
++			n := 0
++			for i+n < len(s) && s[i+n] == '`' {
++				n++
++			}
++			if j := findCloseBacktick(s, i+n, n); j >= 0 {
++				content := s[i+n : j]
++				if len(content) >= 2 && content[0] == ' ' && content[len(content)-1] == ' ' &&
++					strings.TrimSpace(content) != "" {
++					content = content[1 : len(content)-1]
++				}
++				flush()
++				out.WriteString("<code>" + escapeText(content) + "</code>")
++				i = j + n
++				continue
++			}
++			lit.WriteByte('`')
++			i++
++			continue
++		}
++		// autolink
++		if c == '<' {
++			rest := s[i+1:]
++			var url string
++			if strings.HasPrefix(rest, "http://") {
++				url = "http://"
++			} else if strings.HasPrefix(rest, "https://") {
++				url = "https://"
++			}
++			if url != "" {
++				tail := s[i+len(url):]
++				end := strings.IndexAny(tail, " <>")
++				if end > 0 {
++					u := url + tail[:end]
++					flush()
++					out.WriteString(`<a href="` + escapeAttr(u) + `">` + escapeAttr(u) + "</a>")
++					i += len(url) + end + 1
++					continue
++				}
++			}
++			lit.WriteByte('<')
++			i++
++			continue
++		}
++		// link
++		if c == '[' {
++			if end := matchBracket(s, i); end > 0 {
++				after := s[end+1:]
++				if strings.HasPrefix(after, "(") {
++					if p := findCloseParen(s, end+1); p >= 0 {
++						target := s[end+2 : p]
++						url, title := parseTarget(target)
++						if url != "" {
++							flush()
++							out.WriteString(`<a href="` + escapeAttr(url) + `"`)
++							if title != "" {
++								out.WriteString(` title="` + escapeText(title) + `"`)
++							}
++							out.WriteString(">" + inlineLinkText(s[i+1:end]) + "</a>")
++							i = p + 1
++							continue
++						}
++					}
++				}
++			}
++			lit.WriteByte('[')
++			i++
++			continue
++		}
++		lit.WriteByte(c)
++		i++
++	}
++	flush()
++	return out.String()
++}
++
++// inlineLinkText processes link text with all syntax except links.
++func inlineLinkText(s string) string {
++	// Emphasis and code spans still apply inside link text.
++	return inlineLine(s)
++}
++
++// parseTarget splits "url" or "url \"title\"". ok is false when the target
++// does not match the pattern (url must have no spaces).
++func parseTarget(t string) (url, title string, ok bool) {
++	t = strings.TrimSpace(t)
++	if i := strings.IndexByte(t, '"'); i >= 0 {
++		if j := strings.IndexByte(t[i+1:], '"'); j >= 0 {
++			rest := strings.TrimSpace(t[i+1+j+1:])
++			if rest != "" {
++				return "", "", false
++			}
++			url = strings.TrimSpace(t[:i])
++			if url == "" || strings.Contains(url, " ") {
++				return "", "", false
++			}
++			return url, t[i+1 : i+1+j], true
++		}
++		return "", "", false
++	}
++	url = t
++	if url == "" || strings.Contains(url, " ") {
++		return "", "", false
++	}
++	return url, "", true
++}
++
++// findCloseBacktick finds the next run of exactly n backticks; returns its
++// start index or -1.
++func findCloseBacktick(s string, from, n int) int {
++	i := from
++	for i < len(s) {
++		if s[i] != '`' {
++			i++
++			continue
++		}
++		j := i
++		for j < len(s) && s[j] == '`' {
++			j++
++		}
++		if j-i == n {
++			return i
++		}
++		i = j
++	}
++	return -1
++}
++
++// matchBracket returns the index of the matching ']' for the '[' at i, or -1.
++func matchBracket(s string, i int) int {
++	depth := 0
++	for j := i; j < len(s); j++ {
++		switch s[j] {
++		case '[':
++			depth++
++		case ']':
++			depth--
++			if depth == 0 {
++				return j
++			}
++		}
++	}
++	return -1
++}
++
++// findCloseParen returns the index of the ')' closing the '(' at i, honouring
++// nested parentheses, or -1.
++func findCloseParen(s string, i int) int {
++	depth := 0
++	for j := i; j < len(s); j++ {
++		switch s[j] {
++		case '(':
++			depth++
++		case ')':
++			depth--
++			if depth == 0 {
++				return j
++			}
++		}
++	}
++	return -1
++}
+diff --git a/md/md_test.go b/md/md_test.go
+new file mode 100644
+index 0000000..8cdbaf4
+--- /dev/null
++++ b/md/md_test.go
+@@ -0,0 +1,124 @@
++package md
++
++import "testing"
++
++func TestSpecExample(t *testing.T) {
++	in := "# Title #\n\nSome *emphasis* and **strong** text\nwith `code` and a [link](http://x.io \"T\").\n\n- one\n- two\n  - nested\n3. three\n"
++	want := "<h1>Title</h1>\n" +
++		"<p>Some <em>emphasis</em> and <strong>strong</strong> text\nwith <code>code</code> and a <a href=\"http://x.io\" title=\"T\">link</a>.</p>\n" +
++		"<ul>\n<li>one</li>\n<li>two\n<ul>\n<li>nested</li>\n</ul>\n</li>\n</ul>\n" +
++		"<ol start=\"3\">\n<li>three</li>\n</ol>\n"
++	if got := ToHTML(in); got != want {
++		t.Errorf("got:\n%q\nwant:\n%q", got, want)
++	}
++}
++
++func TestBlocks(t *testing.T) {
++	tests := []struct {
++		in   string
++		want string
++	}{
++		{"# Title #", "<h1>Title</h1>\n"},
++		{"# Title  ##", "<h1>Title</h1>\n"},
++		{"#", "<h1></h1>\n"},
++		{"# ", "<h1></h1>\n"},
++		{"## two\n### three\n#### four\n##### five\n###### six", "<h2>two</h2>\n<h3>three</h3>\n<h4>four</h4>\n<h5>five</h5>\n<h6>six</h6>\n"},
++		{"####### seven", "<p>####### seven</p>\n"},
++		{"#foo", "<p>#foo</p>\n"},
++		{"---", "<hr />\n"},
++		{"***", "<hr />\n"},
++		{"___", "<hr />\n"},
++		{"----", "<hr />\n"},
++		{"--", "<p>--</p>\n"},
++		{"- -", "<p>- -</p>\n"},
++		{"a\n\nb", "<p>a</p>\n<p>b</p>\n"},
++		{"a\nb\n  c", "<p>a\nb\nc</p>\n"},
++		{"a\nb\n\nc", "<p>a\nb</p>\n<p>c</p>\n"},
++		{"a\n# h", "<p>a</p>\n<h1>h</h1>\n"},
++		{"a\n- x", "<p>a</p>\n<ul>\n<li>x</li>\n</ul>\n"},
++		{"```", "<pre><code></code></pre>\n"},
++		{"```\na\nb\n```", "<pre><code>a\nb\n</code></pre>\n"},
++		{"```go\na & <b>\n```", "<pre><code class=\"language-go\">a &amp; &lt;b&gt;\n</code></pre>\n"},
++		{"```\na\nb", "<pre><code>a\nb\n</code></pre>\n"},
++		{"```\na\n``` \n", "<pre><code>a\n</code></pre>\n"},
++		{"> q", "<blockquote>\n<p>q</p>\n</blockquote>\n"},
++		{">q", "<blockquote>\n<p>q</p>\n</blockquote>\n"},
++		{"> a\n> b", "<blockquote>\n<p>a\nb</p>\n</blockquote>\n"},
++		{"> # h\n> p", "<blockquote>\n<h1>h</h1>\n<p>p</p>\n</blockquote>\n"},
++		{"para\n> quote", "<p>para</p>\n<blockquote>\n<p>quote</p>\n</blockquote>\n"},
++		{"- a\n- b\n* c\n+ d", "<ul>\n<li>a</li>\n<li>b</li>\n<li>c</li>\n<li>d</li>\n</ul>\n"},
++		{"- a\n1. b", "<ul>\n<li>a</li>\n</ul>\n<ol>\n<li>b</li>\n</ol>\n"},
++		{"1. a\n2. b\n3. c", "<ol>\n<li>a</li>\n<li>b</li>\n<li>c</li>\n</ol>\n"},
++		{"3. a\n4. b", `<ol start="3">` + "\n<li>a</li>\n<li>b</li>\n</ol>\n"},
++		{"1. a\n\n2. b", "<ol>\n<li>a</li>\n</ol>\n<ol start=\"2\">\n<li>b</li>\n</ol>\n"},
++		{"- a\n  - n1\n  - n2", "<ul>\n<li>a\n<ul>\n<li>n1</li>\n<li>n2</li>\n</ul>\n</li>\n</ul>\n"},
++		{"- a\n  text", "<ul>\n<li>a\ntext</li>\n</ul>\n"},
++		{"- a\n    - n", "<ul>\n<li>a\n<ul>\n<li>n</li>\n</ul>\n</li>\n</ul>\n"},
++		{"- a\n      - n", "<ul>\n<li>a\n- n</li>\n</ul>\n"},
++		{"1. a\n  - n", "<ol>\n<li>a\n<ul>\n<li>n</li>\n</ul>\n</li>\n</ol>\n"},
++		{"- a\n- b\n  - n", "<ul>\n<li>a</li>\n<li>b\n<ul>\n<li>n</li>\n</ul>\n</li>\n</ul>\n"},
++		{"- a\n\n- b", "<ul>\n<li>a</li>\n</ul>\n<ul>\n<li>b</li>\n</ul>\n"},
++		{"- a", "<ul>\n<li>a</li>\n</ul>\n"},
++		{"-x", "<p>-x</p>\n"},
++		{"1.x", "<p>1.x</p>\n"},
++	}
++	for _, tt := range tests {
++		if got := ToHTML(tt.in); got != tt.want {
++			t.Errorf("ToHTML(%q) =\n%q\nwant:\n%q", tt.in, got, tt.want)
++		}
++	}
++}
++
++func TestInline(t *testing.T) {
++	tests := []struct {
++		in   string
++		want string
++	}{
++		{"a *b* c", "a <em>b</em> c\n"},
++		{"a*b*c", "a<em>b</em>c\n"},
++		{"*a b*", "<em>a b</em>\n"},
++		{"*a", "*a\n"},
++		{"a*", "a*\n"},
++		{"**a**", "<strong>a</strong>\n"},
++		{"__a__", "<strong>a</strong>\n"},
++		{"_a_", "<em>a</em>\n"},
++		{"snake_case_name", "snake_case_name\n"},
++		{"a_b_c", "a_b_c\n"},
++		{"foo_bar baz", "foo_bar baz\n"},
++		{"**a *b* c**", "<strong>a <em>b</em> c</strong>\n"},
++		{"`a < b`", "<code>a &lt; b</code>\n"},
++		{"`a` and `b`", "<code>a</code> and <code>b</code>\n"},
++		{"`unterminated", "`unterminated\n"},
++		{"``a`b``", "<code>a`b</code>\n"},
++		{"` a `", "<code>a</code>\n"},
++		{"`  `", "<code>  </code>\n"},
++		{"<http://x.io>", `<a href="http://x.io">http://x.io</a>` + "\n"},
++		{"<https://x.io/p>", `<a href="https://x.io/p">https://x.io/p</a>` + "\n"},
++		{"<ftp://x.io>", "&lt;ftp://x.io&gt;\n"},
++		{"<a b>", "&lt;a b&gt;\n"},
++		{"[t](http://u)", `<a href="http://u">t</a>` + "\n"},
++		{"[t](http://u \"T\")", `<a href="http://u" title="T">t</a>` + "\n"},
++		{"[a *b*](http://u)", `<a href="http://u">a <em>b</em></a>` + "\n"},
++		{"[t](u v)", "[t](u v)\n"},
++		{"[t] (u)", "[t] (u)\n"},
++		{"[t](u)", "[t](u)\n"},
++		{"[t](u v w)", "[t](u v w)\n"},
++		{"[t](u \"T\" x)", "[t](u &quot;T&quot; x)\n"},
++		{"&<>\", \"&lt;&gt;&quot;\n"},
++		{"a\\*b", "a*b\n"},
++		{"\\*", "*\n"},
++		{"\\x", "\\x\n"},
++		{"a  \nb", "a<br />\nb\n"},
++		{"a   \nb", "a<br />\nb\n"},
++		{"a\nb", "a\nb\n"},
++		{"a\\", "a\n"},
++		{"a\\\nb", "a<br />\nb\n"},
++		{"a b  ", "a b\n"},
++		{"a\\n", "a\\n\n"},
++	}
++	for _, tt := range tests {
++		if got := ToHTML(tt.in); got != tt.want {
++			t.Errorf("ToHTML(%q) =\n%q\nwant:\n%q", tt.in, got, tt.want)
++		}
++	}
++}

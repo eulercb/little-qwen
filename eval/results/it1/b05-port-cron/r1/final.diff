@@ -1,0 +1,817 @@
+ cron/cron.go              | 354 ++++++++++++++++++++++++++++++++++++++++++++++
+ cron/cron_test.go         | 215 ++++++++++++++++++++++++++++
+ cron/differential_test.go | 225 +++++++++++++++++++++++++++++
+ 3 files changed, 794 insertions(+)
+
+diff --git a/cron/cron.go b/cron/cron.go
+new file mode 100644
+index 0000000..def7307
+--- /dev/null
++++ b/cron/cron.go
+@@ -0,0 +1,354 @@
++// Package cron implements a five-field cron expression parser and
++// next-run calculator. It is a port of reference/cron.py with identical
++// behaviour, including error messages.
++package cron
++
++import (
++	"fmt"
++	"strconv"
++	"strings"
++	"time"
++)
++
++// CronError is returned by Parse and Next for all syntax and matching errors.
++type CronError struct{ msg string }
++
++func (e *CronError) Error() string { return e.msg }
++
++func newCronError(format string, args ...interface{}) error {
++	return &CronError{msg: fmt.Sprintf(format, args...)}
++}
++
++type fieldSpec struct {
++	name string
++	lo   int
++	hi   int
++}
++
++var fields = [5]fieldSpec{
++	{"minute", 0, 59},
++	{"hour", 0, 23},
++	{"day-of-month", 1, 31},
++	{"month", 1, 12},
++	{"day-of-week", 0, 6},
++}
++
++var months = []string{"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"}
++
++var days = []string{"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"}
++
++var macros = map[string]string{
++	"@yearly":   "0 0 1 1 *",
++	"@annually": "0 0 1 1 *",
++	"@monthly":  "0 0 1 * *",
++	"@weekly":   "0 0 * * 0",
++	"@daily":    "0 0 * * *",
++	"@midnight": "0 0 * * *",
++	"@hourly":   "0 * * * *",
++}
++
++// repr mimics Python's str repr for the strings that can appear in error
++// messages: single quotes unless the text contains a single quote (and no
++// double quote), in which case double quotes; backslashes are escaped.
++func repr(s string) string {
++	if !strings.ContainsAny(s, `'\`) {
++		return "'" + s + "'"
++	}
++	if !strings.Contains(s, "'") {
++		return "'" + strings.ReplaceAll(s, `\`, `\\`) + "'"
++	}
++	if !strings.Contains(s, `"`) {
++		return `"` + s + `"`
++	}
++	esc := strings.NewReplacer(`\`, `\\`, `'`, `\'`)
++	return "'" + esc.Replace(s) + "'"
++}
++
++// isDigits reports whether s is non-empty and consists only of decimal digits,
++// mirroring Python's str.isdigit.
++func isDigits(s string) bool {
++	if s == "" {
++		return false
++	}
++	for _, r := range s {
++		if r < '0' || r > '9' {
++			return false
++		}
++	}
++	return true
++}
++
++// value converts one token to its numeric value for field idx, like _value.
++func value(tok string, idx int) (int, error) {
++	spec := fields[idx]
++	t := strings.ToUpper(tok)
++	if idx == 3 {
++		for i, m := range months {
++			if t == m {
++				return i + 1, nil
++			}
++		}
++	}
++	if idx == 4 {
++		for i, d := range days {
++			if t == d {
++				return i, nil
++			}
++		}
++	}
++	if !isDigits(tok) {
++		return 0, newCronError("%s: invalid value %s", spec.name, repr(tok))
++	}
++	v, err := strconv.Atoi(tok)
++	if err != nil {
++		// tok holds a number that does not fit in int64, so it is
++		// certainly above the field maximum; print it as a digit string
++		// (leading zeros stripped), which equals Python's int rendering.
++		vStr := strings.TrimLeft(tok, "0")
++		if vStr == "" {
++			vStr = "0"
++		}
++		return 0, newCronError("%s: value %s out of range %d-%d", spec.name, vStr, spec.lo, spec.hi)
++	}
++	if idx == 4 && v == 7 {
++		v = 0
++	}
++	if v < spec.lo || v > spec.hi {
++		return 0, newCronError("%s: value %d out of range %d-%d", spec.name, v, spec.lo, spec.hi)
++	}
++	return v, nil
++}
++
++// fieldSet is a set of values bounded by the largest field range (0-59).
++type fieldSet [64]bool
++
++func (s *fieldSet) add(v int) { s[v] = true }
++
++func (s fieldSet) contains(v int) bool {
++	if v < 0 || v >= 64 {
++		return false
++	}
++	return s[v]
++}
++
++// full reports whether s holds exactly every value from lo through hi.
++func (s fieldSet) full(lo, hi int) bool {
++	for v := lo; v <= hi; v++ {
++		if !s[v] {
++			return false
++		}
++	}
++	return true
++}
++
++// field parses one field of a cron expression, like _field.
++func field(text string, idx int) (fieldSet, error) {
++	spec := fields[idx]
++	if text == "" {
++		return fieldSet{}, newCronError("%s: empty field", spec.name)
++	}
++	var values fieldSet
++	for _, item := range strings.Split(text, ",") {
++		if item == "" {
++			return fieldSet{}, newCronError("%s: empty item", spec.name)
++		}
++		step := 1
++		var base string
++		if slash := strings.IndexByte(item, '/'); slash >= 0 {
++			s := item[slash+1:]
++			if !isDigits(s) {
++				return fieldSet{}, newCronError("%s: invalid step %s", spec.name, repr(s))
++			}
++			v, err := strconv.Atoi(s)
++			if err != nil {
++				// Step overflows int64; like Python's unbounded int, it
++				// simply means the range yields only its start value.
++				step = 1 << 62
++			} else if v < 1 {
++				return fieldSet{}, newCronError("%s: invalid step %s", spec.name, repr(s))
++			} else {
++				step = v
++			}
++			base = item[:slash]
++		} else {
++			base = item
++		}
++		var start, end int
++		switch {
++		case base == "*":
++			start, end = spec.lo, spec.hi
++		case strings.Contains(base, "-"):
++			dash := strings.IndexByte(base, '-')
++			a, b := base[:dash], base[dash+1:]
++			var err error
++			start, err = value(a, idx)
++			if err != nil {
++				return fieldSet{}, err
++			}
++			end, err = value(b, idx)
++			if err != nil {
++				return fieldSet{}, err
++			}
++			if start > end {
++				return fieldSet{}, newCronError("%s: range %d-%d is reversed", spec.name, start, end)
++			}
++		default:
++			var err error
++			start, err = value(base, idx)
++			if err != nil {
++				return fieldSet{}, err
++			}
++			if strings.Contains(item, "/") {
++				end = spec.hi
++			} else {
++				end = start
++			}
++		}
++		for v := start; v <= end; v += step {
++			values.add(v)
++		}
++	}
++	return values, nil
++}
++
++// Schedule holds a parsed cron expression.
++type Schedule struct {
++	expr    string
++	minute  fieldSet
++	hour    fieldSet
++	dom     fieldSet
++	month   fieldSet
++	dow     fieldSet
++	domStar bool
++	dowStar bool
++}
++
++// Parse parses expr into a Schedule. The accepted syntax and error messages
++// match the reference parse().
++func Parse(expr string) (*Schedule, error) {
++	original := expr
++	expr = strings.TrimSpace(expr)
++	if strings.HasPrefix(expr, "@") {
++		e, ok := macros[strings.ToLower(expr)]
++		if !ok {
++			return nil, newCronError("unknown macro %s", repr(expr))
++		}
++		expr = e
++	}
++	parts := strings.Fields(expr)
++	if len(parts) != 5 {
++		return nil, newCronError("expected 5 fields, got %d", len(parts))
++	}
++	fieldsOut := make([]fieldSet, 5)
++	for i, p := range parts {
++		f, err := field(p, i)
++		if err != nil {
++			return nil, err
++		}
++		fieldsOut[i] = f
++	}
++	return &Schedule{
++		expr:    original,
++		minute:  fieldsOut[0],
++		hour:    fieldsOut[1],
++		dom:     fieldsOut[2],
++		month:   fieldsOut[3],
++		dow:     fieldsOut[4],
++		domStar: parts[2] == "*",
++		dowStar: parts[4] == "*",
++	}, nil
++}
++
++// dayOk reports whether calendar date d matches the day constraints, following
++// Vixie cron semantics (like _day_ok).
++func (s *Schedule) dayOk(d time.Time) bool {
++	dow := int(d.Weekday()) // Sunday=0 .. Saturday=6, same convention as the reference
++	inDom := s.dom.contains(d.Day())
++	inDow := s.dow.contains(dow)
++	if !s.domStar && !s.dowStar {
++		return inDom || inDow
++	}
++	return inDom && inDow
++}
++
++// Next returns the first time strictly after `after` that matches the
++// schedule, in after's location, like next_run.
++func (s *Schedule) Next(after time.Time) (time.Time, error) {
++	loc := after.Location()
++	midnight := func(t time.Time) time.Time {
++		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
++	}
++	t := time.Date(after.Year(), after.Month(), after.Day(), after.Hour(), after.Minute(), 0, 0, loc).Add(time.Minute)
++	limit := after.AddDate(0, 0, 366*5)
++	for !t.After(limit) {
++		if !s.month.contains(int(t.Month())) {
++			y, m := t.Year(), int(t.Month())
++			if m == 12 {
++				y, m = y+1, 1
++			} else {
++				m++
++			}
++			t = time.Date(y, time.Month(m), 1, 0, 0, 0, 0, loc)
++			continue
++		}
++		if !s.dayOk(t) {
++			t = midnight(t).Add(24 * time.Hour)
++			continue
++		}
++		if !s.hour.contains(t.Hour()) {
++			t = t.Add(-time.Duration(t.Minute()) * time.Minute).Add(time.Hour)
++			continue
++		}
++		if !s.minute.contains(t.Minute()) {
++			t = t.Add(time.Minute)
++			continue
++		}
++		return t, nil
++	}
++	return time.Time{}, newCronError("no match within 5 years for %s", repr(s.expr))
++}
++
++// fmtField renders one field the way the reference _fmt does.
++func fmtField(values fieldSet, idx int) string {
++	spec := fields[idx]
++	if values.full(spec.lo, spec.hi) {
++		return "*"
++	}
++	var vs []int
++	for v := spec.lo; v <= spec.hi; v++ {
++		if values[v] {
++			vs = append(vs, v)
++		}
++	}
++	out := make([]string, 0, len(vs))
++	i := 0
++	for i < len(vs) {
++		j := i
++		for j+1 < len(vs) && vs[j+1] == vs[j]+1 {
++			j++
++		}
++		if j-i < 2 {
++			out = append(out, strconv.Itoa(vs[i]))
++		} else {
++			out = append(out, fmt.Sprintf("%d-%d", vs[i], vs[j]))
++		}
++		if j-i > 0 && j-i < 2 {
++			for k := i + 1; k <= j; k++ {
++				out = append(out, strconv.Itoa(vs[k]))
++			}
++		}
++		i = j + 1
++	}
++	return strings.Join(out, ",")
++}
++
++// String renders the schedule the way the reference describe() does.
++func (s *Schedule) String() string {
++	return strings.Join([]string{
++		fmtField(s.minute, 0),
++		fmtField(s.hour, 1),
++		fmtField(s.dom, 2),
++		fmtField(s.month, 3),
++		fmtField(s.dow, 4),
++	}, " ")
++}
+diff --git a/cron/cron_test.go b/cron/cron_test.go
+new file mode 100644
+index 0000000..fc3ab0d
+--- /dev/null
++++ b/cron/cron_test.go
+@@ -0,0 +1,215 @@
++package cron
++
++import (
++	"fmt"
++	"os/exec"
++	"strconv"
++	"strings"
++	"testing"
++	"time"
++)
++
++// runPython invokes the reference CLI from the repository root.
++func runPython(t *testing.T, args ...string) string {
++	t.Helper()
++	cmd := exec.Command("python3", append([]string{"reference/cron.py"}, args...)...)
++	cmd.Dir = ".."
++	cmd.Env = append(cmd.Environ(), "PYTHONDONTWRITEBYTECODE=1")
++	out, err := cmd.CombinedOutput()
++	if err != nil && len(out) == 0 {
++		t.Fatalf("python3 reference/cron.py %v failed: %v", args, err)
++	}
++	return string(out)
++}
++
++// parseStart parses the ISO-TIME strings used in the tests (naive, like
++// Python's datetime.fromisoformat).
++func parseStart(t *testing.T, s string) time.Time {
++	t.Helper()
++	layouts := []string{"2006-01-02T15:04:05.999999", "2006-01-02T15:04:05"}
++	for _, l := range layouts {
++		if x, err := time.Parse(l, s); err == nil {
++			return x.UTC()
++		}
++	}
++	t.Fatalf("cannot parse start time %q", s)
++	return time.Time{}
++}
++
++// pyISO formats a Go time the way Python's isoformat() prints the reference
++// output (UTC rendered as +00:00, six fractional digits when nonzero).
++func pyISO(x time.Time) string {
++	s := x.UTC().Format("2006-01-02T15:04:05")
++	if n := x.UTC().Nanosecond(); n != 0 {
++		s += fmt.Sprintf(".%06d", n/1000)
++	}
++	return s + "+00:00"
++}
++
++func TestParseErrors(t *testing.T) {
++	exprs := []string{
++		"",
++		"   ",
++		"1",
++		"1 2 3 4",
++		"1 2 3 4 5 6",
++		"@foo",
++		"@FOO",
++		"60 * * * *",
++		"* 24 * * *",
++		"* * 0 * *",
++		"* * 32 * *",
++		"* * * 13 *",
++		"* * * * 7", // valid: 7 == Sunday
++		"* * * * 8",
++		"5-1 * * * *",
++		"1-5-6 * * * *",
++		"*/0 * * * *",
++		"*/a * * * *",
++		"5/* * * * *",
++		"1,,2 * * * *",
++		",1 * * * *",
++		"1, * * * *",
++		"abc * * * *",
++		"1.5 * * * *",
++		"-1 * * * *",
++		"* * -1 * *",
++		"* * * FOO *",
++		"* * * 13-1 *",
++		"61 25 32 13 8",
++		"JAN * * * *",
++		"1/2/3 * * * *",
++		"*/1.5 * * * *",
++		"  0 0 * * *  ",
++		"0 0 * * 7",
++		"*-* * * * *",
++		"2-3/0 * * * *",
++		"0 0 * * sun",
++		"0 0 * 13 *",
++		"0 0 32 * *",
++	}
++	for _, e := range exprs {
++		e := e
++		t.Run("expr"+strconv.Quote(e), func(t *testing.T) {
++			want := runPython(t, e)
++			s, err := Parse(e)
++			var got string
++			if err != nil {
++				got = "error: " + err.Error() + "\n"
++			} else {
++				got = s.String() + "\n"
++			}
++			if got != want {
++				t.Fatalf("Parse(%q):\n got %q\nwant %q", e, got, want)
++			}
++		})
++	}
++}
++
++// TestNext runs the CLI with a start time and N and compares the output,
++// which is the describe() line plus the next N runs.
++func TestNext(t *testing.T) {
++	cases := []struct {
++		expr, start string
++		n           int
++	}{
++		{"* * * * *", "2024-01-15T10:30:59.123456", 3},
++		{"0 0 * * *", "2024-01-15T10:30:59", 5},
++		{"0 0 1 1 *", "2024-01-15T10:30:59", 3},
++		{"0 0 1 * *", "2024-02-29T23:59:59", 4},
++		{"30 4 1,15 * 5", "2024-03-01T00:00:00", 6},
++		{"0 12 * * 1-5", "2024-03-30T13:00:00", 4},
++		{"*/15 * * * *", "2024-05-06T01:47:02", 5},
++		{"0 0 30 2 *", "2021-03-01T00:00:00", 2},
++		{"0 0 29,30,31 4 *", "2024-04-29T01:00:00", 3},
++		{"5 4 * * mon", "2024-01-01T00:00:00", 3},
++		{"0 0 * * sun", "2024-12-28T00:00:00", 3},
++		{"@daily", "2024-07-04T23:00:00", 2},
++		{"@yearly", "2024-12-31T23:30:00", 2},
++		{"@monthly", "2024-11-30T12:00:00", 2},
++		{"@weekly", "2024-01-06T10:00:00", 2},
++		{"@hourly", "2024-06-15T09:01:01", 2},
++		{"15 10,14 * * *", "2024-02-29T10:16:00", 3},
++		{"0-59/10 0 1 1 1", "2024-01-01T00:05:00", 4},
++		{"59 23 31 * *", "2024-06-30T12:00:00", 4},
++		{"0 0 * * *", "2100-03-01T00:00:00", 2},
++		{"0 0 1 1 *", "2096-02-29T10:00:00", 2},
++		{"*/5 */6 * JAN,DEC *", "2024-06-15T09:30:00", 4},
++		{"5/3 1/12 * * 0", "2024-01-05T02:00:00", 3},
++		{"30 14 13 * 6", "2024-08-01T00:00:00", 5}, // dom+dow OR semantics
++		{"0 0 * * *", "2024-11-03T08:30:00", 2},
++		{"0 0 * * 0", "2024-01-01T00:00:00", 2},
++	}
++	for _, c := range cases {
++		c := c
++		t.Run(strconv.Quote(c.expr)+"@"+c.start, func(t *testing.T) {
++			want := runPython(t, c.expr, c.start, strconv.Itoa(c.n))
++			s, err := Parse(c.expr)
++			var got string
++			if err != nil {
++				got = "error: " + err.Error() + "\n"
++			} else {
++				var b strings.Builder
++				b.WriteString(s.String())
++				b.WriteByte('\n')
++				tt := parseStart(t, c.start)
++				for i := 0; i < c.n; i++ {
++					tt, err = s.Next(tt)
++					if err != nil {
++						b.WriteString("error: " + err.Error() + "\n")
++						break
++					}
++					b.WriteString(pyISO(tt))
++					b.WriteByte('\n')
++				}
++				got = b.String()
++			}
++			if got != want {
++				t.Fatalf("Next(%q, %q, %d):\n got %q\nwant %q", c.expr, c.start, c.n, got, want)
++			}
++		})
++	}
++}
++
++// TestString checks String() against the reference describe() output.
++func TestString(t *testing.T) {
++	exprs := []string{
++		"* * * * *",
++		"5 * * * *",
++		"1,2 * * * *",
++		"1,2,3 * * * *",
++		"1,2,3,4 * * * *",
++		"0,10,20,30,40,50 * * * *",
++		"0,59 * * * *",
++		"5-7 * * * *",
++		"*/15 * * * *",
++		"*/1 * * * *",
++		"5/2 * * * *",
++		"1-3/2 * * * *",
++		"0,5,10-12,20-21,30/10 * * * *",
++		"@daily",
++		"@monthly",
++		"0 0 1 * *",
++		"0 0 * * 0",
++		"30 4 1,15 * 5",
++		"0 0 * 1,3-5,12 *",
++		"1-6 * * 2,4 1-5",
++		"5-20/3 10-14 * * 0",
++		"2 0 30 2 *",
++		"0 12 1,2 1-12 0-6",
++		"59/2 * * * *",
++	}
++	for _, e := range exprs {
++		e := e
++		t.Run(strconv.Quote(e), func(t *testing.T) {
++			want := strings.TrimSuffix(runPython(t, e), "\n")
++			s, err := Parse(e)
++			if err != nil {
++				t.Fatalf("Parse(%q) failed: %v", e, err)
++			}
++			if s.String() != want {
++				t.Fatalf("String() of %q: got %q want %q", e, s.String(), want)
++			}
++		})
++	}
++}
+diff --git a/cron/differential_test.go b/cron/differential_test.go
+new file mode 100644
+index 0000000..c01c342
+--- /dev/null
++++ b/cron/differential_test.go
+@@ -0,0 +1,225 @@
++package cron
++
++import (
++	"bufio"
++	"fmt"
++	"math/rand"
++	"os/exec"
++	"strconv"
++	"strings"
++	"testing"
++	"time"
++)
++
++const diffScript = `
++import sys, importlib.util
++from datetime import datetime, timezone
++spec = importlib.util.spec_from_file_location("refcron", "reference/cron.py")
++m = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(m)
++for line in sys.stdin:
++    line = line.strip()
++    if not line:
++        continue
++    expr, start, n = line.split("|")
++    t = datetime.fromisoformat(start)
++    if t.tzinfo is None:
++        t = t.replace(tzinfo=timezone.utc)
++    try:
++        s = m.parse(expr)
++        print(m.describe(s))
++        for _ in range(int(n)):
++            t = m.next_run(s, t)
++            print(t.isoformat())
++    except m.CronError as e:
++        print("error: " + str(e))
++    except BaseException as e:
++        print("error: UNCAUGHT " + repr(e))
++    print("---")
++`
++
++// runDifferential compares the Go implementation against the Python
++// reference on numCases random inputs.
++func runDifferential(t *testing.T, seed int64, numCases int) {
++	t.Helper()
++	rng := rand.New(rand.NewSource(seed))
++
++	// item for a field with the given bounds.
++	randValue := func(lo, hi int) int { return lo + rng.Intn(hi-lo+1) }
++	randItem := func(lo, hi int, names []string) string {
++		v := func() int { return randValue(lo, hi) }
++		choices := []func() string{
++			func() string { return "*" },
++			func() string { return strconv.Itoa(v()) },
++			func() string {
++				a, b := v(), v()
++				if a > b {
++					a, b = b, a
++				}
++				if a == b {
++					return strconv.Itoa(a)
++				}
++				if rng.Intn(3) == 0 {
++					return fmt.Sprintf("%d-%d", a, b)
++				}
++				return fmt.Sprintf("%d-%d/%d", a, b, 1+rng.Intn(6))
++			},
++			func() string {
++				s := 1 + rng.Intn(8)
++				switch rng.Intn(3) {
++				case 0:
++					return "*/" + strconv.Itoa(s)
++				case 1:
++					return fmt.Sprintf("%d/%d", v(), s)
++				default:
++					return fmt.Sprintf("%d-%d/%d", v(), v(), s)
++				}
++			},
++			func() string { // reversed / out of range / bad step / names
++				switch rng.Intn(6) {
++				case 0:
++					a, b := v(), v()
++					if a < b {
++						a, b = b, a
++					}
++					return fmt.Sprintf("%d-%d", a, b) // reversed when a>b
++				case 1:
++					return strconv.Itoa(v() + hi + 1) // out of range
++				case 2:
++					return "*/0"
++				case 3:
++					if len(names) > 0 {
++						return names[rng.Intn(len(names))]
++					}
++					return strconv.Itoa(v())
++				case 4:
++					if len(names) > 0 {
++						return fmt.Sprintf("%s-%s/%d", names[len(names)-1], names[0], 2)
++					}
++					return "*/2"
++				default:
++					return "junk"
++				}
++			},
++		}
++		return choices[rng.Intn(len(choices))]()
++	}
++	randField := func(lo, hi int, names []string) string {
++		parts := make([]string, 1+rng.Intn(3))
++		for i := range parts {
++			parts[i] = randItem(lo, hi, names)
++		}
++		return strings.Join(parts, ",")
++	}
++	monthNames := []string{"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"}
++	dayNames := []string{"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"}
++	randExpr := func() string {
++		switch rng.Intn(10) {
++		case 0:
++			return []string{"@yearly", "@monthly", "@weekly", "@daily", "@hourly", "@midnight", "@annually"}[rng.Intn(7)]
++		default:
++			f := []string{
++				randField(0, 59, nil),
++				randField(0, 23, nil),
++				randField(1, 31, nil),
++				randField(1, 12, monthNames),
++				randField(0, 6, dayNames),
++			}
++			return strings.Join(f, " ")
++		}
++	}
++	randStart := func() string {
++		y := 2000 + rng.Intn(105)
++		mo := 1 + rng.Intn(12)
++		d := 1 + rng.Intn(28)
++		s := fmt.Sprintf("%04d-%02d-%02dT%02d:%02d:%02d", y, mo, d, rng.Intn(24), rng.Intn(60), rng.Intn(60))
++		if rng.Intn(3) == 0 {
++			s += fmt.Sprintf(".%06d", rng.Intn(1000000))
++		}
++		return s
++	}
++
++	cmd := exec.Command("python3", "-c", diffScript)
++	cmd.Dir = ".."
++	cmd.Env = append(cmd.Environ(), "PYTHONDONTWRITEBYTECODE=1")
++	stdin, err := cmd.StdinPipe()
++	if err != nil {
++		t.Fatal(err)
++	}
++	stdout, err := cmd.StdoutPipe()
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := cmd.Start(); err != nil {
++		t.Fatal(err)
++	}
++	scanner := bufio.NewScanner(stdout)
++	scanner.Buffer(make([]byte, 1<<20), 1<<20)
++
++	type tri struct {
++		expr, start string
++		n           int
++	}
++	tris := make([]tri, 0, numCases)
++	for i := 0; i < numCases; i++ {
++		tris = append(tris, tri{randExpr(), randStart(), 1 + rng.Intn(5)})
++	}
++	for _, tr := range tris {
++		fmt.Fprintf(stdin, "%s|%s|%d\n", tr.expr, tr.start, tr.n)
++	}
++	stdin.Close()
++
++	failures := 0
++	for i, tr := range tris {
++		var want []string
++		for {
++			if !scanner.Scan() {
++				t.Fatalf("python ended early at case %d (%s|%s)", i, tr.expr, tr.start)
++			}
++			if scanner.Text() == "---" {
++				break
++			}
++			want = append(want, scanner.Text())
++		}
++		s, err := Parse(tr.expr)
++		var got []string
++		if err != nil {
++			got = []string{"error: " + err.Error()}
++		} else {
++			start, err := time.Parse("2006-01-02T15:04:05.999999", tr.start)
++			if err != nil {
++				start, err = time.Parse("2006-01-02T15:04:05", tr.start)
++				if err != nil {
++					t.Fatalf("bad start %q: %v", tr.start, err)
++				}
++			}
++			got = append(got, s.String())
++			tt := start
++			for j := 0; j < tr.n; j++ {
++				tt, err = s.Next(tt)
++				if err != nil {
++					got = append(got, "error: "+err.Error())
++					break
++				}
++				got = append(got, pyISO(tt))
++			}
++		}
++		if strings.Join(got, "\n") != strings.Join(want, "\n") {
++			failures++
++			if failures <= 5 {
++				t.Errorf("case %d (%s|%s n=%d):\n got %v\nwant %v", i, tr.expr, tr.start, tr.n, got, want)
++			}
++		}
++	}
++	if err := cmd.Wait(); err != nil {
++		t.Fatalf("python exited: %v", err)
++	}
++	if failures > 5 {
++		t.Errorf("and %d more mismatches", failures-5)
++	}
++}
++
++func TestDifferential(t *testing.T) {
++	runDifferential(t, 1, 250)
++	runDifferential(t, 42, 250)
++}
