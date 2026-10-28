@@ -119,13 +119,13 @@ Score / wall minutes. The qh + L1 row is the L1 probe; its b02 and b03 come from
 
 | task | qh base | qh + L1 | pi | little-coder |
 |---|---|---|---|---|
-| b01 expr-lang | 1.00 / 46.7 | 0.95 / 60 (timeout) | 1.00 / 39.7 | queued |
-| b02 tasker-feature | 1.00 / 19.9 | (1.00 / 19.9) | 1.00 / 13.5 | queued |
-| b03 ledger-debug | 1.00 / 4.7 | (1.00 / 4.7) | 1.00 / 7.8 | queued |
-| b04 kv-server | 0.925 | 1.00 / 51.6 | 0.97 / 53.6 | queued |
-| b05 port-cron | 0 / 60 (timeout) | 1.00 / 33.0 | 1.00 / 50.6 | queued |
-| b06 markdown | 0 / 60 (timeout) | 0 / 60 (timeout) | 0 / 18.3 | queued |
-| **mean** | **0.654** | **0.825** | **0.828** | |
+| b01 expr-lang | 1.00 / 46.7 | 0.95 / 60 (timeout) | 1.00 / 39.7 | 0 / 60 (timeout) |
+| b02 tasker-feature | 1.00 / 19.9 | (1.00 / 19.9) | 1.00 / 13.5 | 1.00 / 25.7 |
+| b03 ledger-debug | 1.00 / 4.7 | (1.00 / 4.7) | 1.00 / 7.8 | 1.00 / 8.7 |
+| b04 kv-server | 0.925 | 1.00 / 51.6 | 0.97 / 53.6 | 0.90 / 60 (timeout) |
+| b05 port-cron | 0 / 60 (timeout) | 1.00 / 33.0 | 1.00 / 50.6 | 1.00 / 60 (timeout) |
+| b06 markdown | 0 / 60 (timeout) | 0 / 60 (timeout) | 0 / 18.3 | 0 / 60 (timeout) |
+| **mean** | **0.654** | **0.825** | **0.828** | **0.650** |
 
 - pi's b06 failure is the same pathology as qh's: "Response was truncated: the model reached its output token
   limit". The first big turn spent the full 16K on thinking, and pi ended the run there because it has no
@@ -134,7 +134,12 @@ Score / wall minutes. The qh + L1 row is the L1 probe; its b02 and b03 come from
   on this model; L1 only brought qh level with pi.
 - What qh does have is the trace and probe loop that found the runaway-thinking problem at all, and the
   L1 mechanism that a lean harness lacks. pi solved b05 because its run happened not to hit a runaway.
-- Next: L2 on b06, and repetitions to separate signal from the large per-run variance.
+- little-coder (its default profile: thinking budget 4096, temperature 0.3) is the slowest on Tier B. Four of six
+  tasks hit the 60-min limit, so it finished b05 but not b01, b04 or b06.
+  - Its 4K thinking cap, which discards nothing but forces thinking off, plus the 30 s default shell timeout
+    look costly on long tasks with this model.
+- qh + L1 + L2 (b01 1.00 / 29.3, b05 1.00 / 30.3, b06 0.96) is the best on the tasks it ran.
+  - The full it1 (base + fuzzy + L1 + L2) Tier-B run is in progress (`eval/results/it1`).
 
 ## Mechanisms, mapped to qh, with our evidence
 

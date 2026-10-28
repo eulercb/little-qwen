@@ -193,4 +193,6 @@ Then follow "Decisions waiting on those results" below as items finish.
   - Composed harness/it1 = base + fuzzy_edit + L1 + L2; queued it1 on Tier B + held-out.
 - 2026-10-27 08:36 — PAUSED on request during the little-coder b04 re-run (interrupted run discarded).
 - 2026-10-28 — resumed on tunnel msg-opportunities-campbell-suddenly.
+- 2026-10-28 04:11 — little-coder Tier-B done: mean 0.650 (b01 0, b02 1, b03 1, b04 0.90, b05 1, b06 0; four
+  tasks hit the 60-min limit). Compare pi 0.828 and qh base 0.654. it1 run started.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
