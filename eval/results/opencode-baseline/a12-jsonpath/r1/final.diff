@@ -1,0 +1,270 @@
+ jpath/jpath.go | 261 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 261 insertions(+)
+
+diff --git a/jpath/jpath.go b/jpath/jpath.go
+new file mode 100644
+index 0000000..d892e4f
+--- /dev/null
++++ b/jpath/jpath.go
+@@ -0,0 +1,261 @@
++// Package jpath implements a tiny path query language over decoded JSON
++// values (map[string]any, []any, string, float64, bool, nil).
++package jpath
++
++import (
++	"errors"
++	"fmt"
++	"sort"
++	"strconv"
++	"strings"
++)
++
++type stepKind int
++
++const (
++	kindMember stepKind = iota
++	kindIndex
++	kindWildcard
++	kindRecursive
++)
++
++type step struct {
++	kind  stepKind
++	name  string
++	index int
++}
++
++// Query evaluates path against doc and returns the matched values in
++// traversal order. A path that matches nothing yields an empty non-nil
++// slice; a malformed path yields a non-nil error and a nil result.
++func Query(doc any, path string) ([]any, error) {
++	steps, err := parsePath(path)
++	if err != nil {
++		return nil, err
++	}
++	nodes := []any{doc}
++	for _, s := range steps {
++		next := make([]any, 0, len(nodes))
++		for _, n := range nodes {
++			next = append(next, s.apply(n)...)
++		}
++		nodes = next
++	}
++	return nodes, nil
++}
++
++func parsePath(p string) ([]step, error) {
++	if p == "" || p[0] != '$' {
++		return nil, fmt.Errorf("jpath: path must start with '$'")
++	}
++	i := 1
++	var steps []step
++	for i < len(p) {
++		switch p[i] {
++		case '.':
++			if i+1 < len(p) && p[i+1] == '.' {
++				i += 2
++				name, end, err := ident(p, i)
++				if err != nil {
++					return nil, err
++				}
++				steps = append(steps, step{kind: kindRecursive, name: name})
++				i = end
++			} else {
++				i++
++				if i < len(p) && p[i] == '*' {
++					steps = append(steps, step{kind: kindWildcard})
++					i++
++				} else {
++					name, end, err := ident(p, i)
++					if err != nil {
++						return nil, err
++					}
++					steps = append(steps, step{kind: kindMember, name: name})
++					i = end
++				}
++			}
++		case '[':
++			s, end, err := bracket(p, i+1)
++			if err != nil {
++				return nil, err
++			}
++			steps = append(steps, s)
++			i = end
++		default:
++			return nil, fmt.Errorf("jpath: malformed path at position %d", i)
++		}
++	}
++	return steps, nil
++}
++
++// ident reads a name of the form [A-Za-z_][A-Za-z0-9_]* starting at i.
++func ident(p string, i int) (string, int, error) {
++	j := i
++	for j < len(p) && isIdentPart(p[j]) {
++		j++
++	}
++	if j == i || !isIdentStart(p[i]) {
++		return "", i, fmt.Errorf("jpath: expected a name at position %d", i)
++	}
++	return p[i:j], j, nil
++}
++
++func isIdentStart(c byte) bool {
++	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
++}
++
++func isIdentPart(c byte) bool {
++	return isIdentStart(c) || (c >= '0' && c <= '9')
++}
++
++// bracket parses the contents of a bracket step; i is the position just
++// after the opening '['. It returns the step and the position after the
++// closing ']'.
++func bracket(p string, i int) (step, int, error) {
++	if i >= len(p) {
++		return step{}, i, errors.New("jpath: unclosed '['")
++	}
++	switch p[i] {
++	case '*':
++		if i+1 >= len(p) || p[i+1] != ']' {
++			return step{}, i, errors.New("jpath: expected ']' after '*'")
++		}
++		return step{kind: kindWildcard}, i + 2, nil
++	case '"':
++		key, j, err := quotedKey(p, i)
++		if err != nil {
++			return step{}, i, err
++		}
++		if j >= len(p) || p[j] != ']' {
++			return step{}, i, errors.New("jpath: expected ']' after quoted key")
++		}
++		return step{kind: kindMember, name: key}, j + 1, nil
++	default:
++		j := i
++		if j < len(p) && p[j] == '-' {
++			j++
++		}
++		k := j
++		for k < len(p) && p[k] >= '0' && p[k] <= '9' {
++			k++
++		}
++		if k == j {
++			return step{}, i, errors.New("jpath: expected a number, '*' or quoted key in brackets")
++		}
++		n, err := strconv.Atoi(p[i:k])
++		if err != nil {
++			return step{}, i, fmt.Errorf("jpath: invalid index: %v", err)
++		}
++		if k >= len(p) || p[k] != ']' {
++			return step{}, i, errors.New("jpath: expected ']' after index")
++		}
++		return step{kind: kindIndex, index: n}, k + 1, nil
++	}
++}
++
++// quotedKey parses a double-quoted key starting at the opening quote; only
++// \" and \\ escapes are supported. It returns the key and the position just
++// after the closing quote.
++func quotedKey(p string, i int) (string, int, error) {
++	var b strings.Builder
++	i++
++	for i < len(p) {
++		c := p[i]
++		switch {
++		case c == '\\':
++			if i+1 >= len(p) {
++				return "", i, errors.New("jpath: bad escape in quoted key")
++			}
++			e := p[i+1]
++			if e != '"' && e != '\\' {
++				return "", i, errors.New("jpath: unsupported escape in quoted key")
++			}
++			b.WriteByte(e)
++			i += 2
++		case c == '"':
++			return b.String(), i + 1, nil
++		default:
++			b.WriteByte(c)
++			i++
++		}
++	}
++	return "", i, errors.New("jpath: unterminated quoted key")
++}
++
++func (s step) apply(n any) []any {
++	switch s.kind {
++	case kindMember:
++		m, ok := n.(map[string]any)
++		if !ok {
++			return nil
++		}
++		v, ok := m[s.name]
++		if !ok {
++			return nil
++		}
++		return []any{v}
++	case kindIndex:
++		a, ok := n.([]any)
++		if !ok {
++			return nil
++		}
++		idx := s.index
++		if idx < 0 {
++			idx += len(a)
++		}
++		if idx < 0 || idx >= len(a) {
++			return nil
++		}
++		return []any{a[idx]}
++	case kindWildcard:
++		switch v := n.(type) {
++		case []any:
++			out := make([]any, len(v))
++			copy(out, v)
++			return out
++		case map[string]any:
++			return objectValues(v)
++		}
++		return nil
++	case kindRecursive:
++		var out []any
++		var visit func(x any)
++		visit = func(x any) {
++			switch v := x.(type) {
++			case map[string]any:
++				if val, ok := v[s.name]; ok {
++					out = append(out, val)
++				}
++				for _, k := range sortedKeys(v) {
++					visit(v[k])
++				}
++			case []any:
++				for _, val := range v {
++					visit(val)
++				}
++			}
++		}
++		visit(n)
++		return out
++	}
++	return nil
++}
++
++func objectValues(m map[string]any) []any {
++	keys := sortedKeys(m)
++	out := make([]any, 0, len(keys))
++	for _, k := range keys {
++		out = append(out, m[k])
++	}
++	return out
++}
++
++func sortedKeys(m map[string]any) []string {
++	keys := make([]string, 0, len(m))
++	for k := range m {
++		keys = append(keys, k)
++	}
++	sort.Strings(keys)
++	return keys
++}

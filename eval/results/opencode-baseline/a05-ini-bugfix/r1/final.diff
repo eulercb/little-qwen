@@ -1,0 +1,80 @@
+ ini/ini.go | 38 +++++++++++++++++++++++++-------------
+ 1 file changed, 25 insertions(+), 13 deletions(-)
+
+diff --git a/ini/ini.go b/ini/ini.go
+index dc53235..668f49f 100644
+--- a/ini/ini.go
++++ b/ini/ini.go
+@@ -20,6 +20,7 @@ import (
+ 	"fmt"
+ 	"io"
+ 	"strings"
++	"unicode"
+ )
+ 
+ // File maps section -> key -> value.
+@@ -31,7 +32,9 @@ type SyntaxError struct {
+ 	Text string
+ }
+ 
+-func (e *SyntaxError) Error() string { return fmt.Sprintf("ini: line %d: syntax error: %q", e.Line, e.Text) }
++func (e *SyntaxError) Error() string {
++	return fmt.Sprintf("ini: line %d: syntax error: %q", e.Line, e.Text)
++}
+ 
+ // Get returns the value of key in section.
+ func (f File) Get(section, key string) (string, bool) {
+@@ -51,32 +54,41 @@ func Parse(r io.Reader) (File, error) {
+ 	n := 0
+ 	for sc.Scan() {
+ 		n++
+-		line := sc.Text()
+-		if line == "" || line[0] == ';' {
++		raw := sc.Text()
++		line := strings.TrimSpace(raw)
++		if line == "" || line[0] == ';' || line[0] == '#' {
+ 			continue
+ 		}
+ 		if line[0] == '[' && line[len(line)-1] == ']' {
+-			section = strings.TrimSpace(line[1 : len(line)-1])
++			section = strings.ToLower(strings.TrimSpace(line[1 : len(line)-1]))
+ 			continue
+ 		}
+-		i := strings.LastIndex(line, "=")
++		i := strings.Index(line, "=")
+ 		if i < 0 {
+-			return nil, &SyntaxError{Line: n, Text: line}
++			return nil, &SyntaxError{Line: n, Text: raw}
+ 		}
+ 		key := strings.ToLower(strings.TrimSpace(line[:i]))
+ 		val := strings.TrimSpace(line[i+1:])
+-		if j := strings.Index(val, ";"); j >= 0 {
+-			val = strings.TrimSpace(val[:j])
+-		}
+ 		if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+-			val = strings.TrimSpace(val[1 : len(val)-1])
++			val = val[1 : len(val)-1]
++		} else if j := inlineComment(val); j >= 0 {
++			val = strings.TrimSpace(val[:j])
+ 		}
+ 		if f[section] == nil {
+ 			f[section] = map[string]string{}
+ 		}
+-		if _, exists := f[section][key]; !exists {
+-			f[section][key] = val
+-		}
++		f[section][key] = val
+ 	}
+ 	return f, sc.Err()
+ }
++
++// inlineComment returns the index where an inline comment begins in an
++// unquoted value: the first ';' or '#' that is preceded by whitespace.
++func inlineComment(val string) int {
++	for i := 1; i < len(val); i++ {
++		if (val[i] == ';' || val[i] == '#') && unicode.IsSpace(rune(val[i-1])) {
++			return i
++		}
++	}
++	return -1
++}

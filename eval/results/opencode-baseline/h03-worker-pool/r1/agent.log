@@ -1,0 +1,98 @@
+timestamp=2026-10-29T06:32:14.912Z level=INFO run=2b997169 message="creating instance" directory=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1
+timestamp=2026-10-29T06:32:14.914Z level=INFO run=2b997169 message=fromDirectory directory=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1
+timestamp=2026-10-29T06:32:14.959Z level=INFO run=2b997169 message=bootstrapping directory=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1
+timestamp=2026-10-29T06:32:14.967Z level=INFO run=2b997169 message=loading path=/root/.config/opencode/config.json
+timestamp=2026-10-29T06:32:14.967Z level=INFO run=2b997169 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-10-29T06:32:14.968Z level=INFO run=2b997169 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-10-29T06:32:14.973Z level=INFO run=2b997169 message=loading path=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/opencode.json
+timestamp=2026-10-29T06:32:15.129Z level=INFO run=2b997169 message="all LSPs are disabled"
+timestamp=2026-10-29T06:32:15.130Z level=INFO run=2b997169 message="all formatters are disabled"
+timestamp=2026-10-29T06:32:15.130Z level=INFO run=2b997169 message=init
+timestamp=2026-10-29T06:32:15.445Z level=INFO run=2b997169 message=created id=ses_e79a40cabffefd4da23PwCbECj slug=eager-circuit version=1.19.4 projectID=3cb8e0a2a2fa883b15c87a1cf77ed14e18a4d037 directory=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1 path="" workspaceID=undefined parentID=undefined title="New session - 2026-10-29T06:32:15.444Z" agent=undefined model=undefined metadata=undefined permission="[{\"permission\":\"question\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_enter\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_exit\",\"pattern\":\"*\",\"action\":\"deny\"}]" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1793255535444 time.updated=1793255535444
+timestamp=2026-10-29T06:32:15.466Z level=INFO run=2b997169 message="event connected"
+timestamp=2026-10-29T06:32:15.544Z level=INFO run=2b997169 message=loop session.id=ses_e79a40cabffefd4da23PwCbECj step=0
+timestamp=2026-10-29T06:32:16.929Z level=INFO run=2b997169 message=stream providerID=splash modelID=mlx-community/Qwen3.8-27B-4bit session.id=ses_e79a40cabffefd4da23PwCbECj small=true agent=title mode=primary
+timestamp=2026-10-29T06:32:16.942Z level=INFO run=2b997169 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=splash llm.model=mlx-community/Qwen3.8-27B-4bit
+[0m
+> build · mlx-community/Qwen3.8-27B-4bit
+[0m
+timestamp=2026-10-29T06:32:17.028Z level=INFO run=2b997169 message=initialized
+timestamp=2026-10-29T06:32:17.043Z level=INFO run=2b997169 message=tracking hash=f912c9e5ece36ef3b5ccaf09ea3b58392acee95f cwd=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1 git=/root/.local/share/opencode/snapshot/3cb8e0a2a2fa883b15c87a1cf77ed14e18a4d037/110241d4f86ab4591a27ef6e2e479ca0e9555fda
+timestamp=2026-10-29T06:32:17.053Z level=INFO run=2b997169 message="shell tool using shell" shell=/bin/bash
+timestamp=2026-10-29T06:32:17.090Z level=INFO run=2b997169 message=init count=13
+timestamp=2026-10-29T06:32:17.179Z level=INFO run=2b997169 message="watcher backend" directory=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1 platform=linux backend=inotify
+timestamp=2026-10-29T06:32:17.193Z level=INFO run=2b997169 message="project copy refresh started" projectID=3cb8e0a2a2fa883b15c87a1cf77ed14e18a4d037
+timestamp=2026-10-29T06:32:17.609Z level=INFO run=2b997169 message="project copy refresh done" projectID=3cb8e0a2a2fa883b15c87a1cf77ed14e18a4d037 updated=[] removed=[]
+timestamp=2026-10-29T06:32:17.616Z level=INFO run=2b997169 message="booting location services" directory=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1 workspaceID=undefined
+timestamp=2026-10-29T06:32:17.620Z level=INFO run=2b997169 message=process session.id=ses_e79a40cabffefd4da23PwCbECj messageID=msg_1865bf919001zeHFTbCyQkIPn2
+timestamp=2026-10-29T06:32:17.621Z level=INFO run=2b997169 message=stream providerID=splash modelID=mlx-community/Qwen3.8-27B-4bit session.id=ses_e79a40cabffefd4da23PwCbECj small=false agent=build mode=primary
+timestamp=2026-10-29T06:32:17.623Z level=INFO run=2b997169 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=splash llm.model=mlx-community/Qwen3.8-27B-4bit
+timestamp=2026-10-29T06:33:15.164Z level=INFO run=2b997169 message=cleanup prune=7.days
+timestamp=2026-10-29T06:33:15.191Z level=INFO run=2b997169 message=evaluated permission=read pattern=pool/pool.go action.permission=read action.pattern=* action.action=allow
+timestamp=2026-10-29T06:33:15.204Z level=INFO run=2b997169 message="touching file" file=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/pool/pool.go
+[0m→ [0mRead pool/pool.go
+timestamp=2026-10-29T06:33:16.826Z level=INFO run=2b997169 message=evaluated permission=bash pattern="find /tmp/qh-runs/opencode-baseline/h03-worker-pool-r1 -type f" action.permission=* action.action=allow action.pattern=*
+timestamp=2026-10-29T06:33:16.826Z level=INFO run=2b997169 message=evaluated permission=bash pattern="head -50" action.permission=* action.action=allow action.pattern=*
+[0m
+[0m$ [0mfind /tmp/qh-runs/opencode-baseline/h03-worker-pool-r1 -type f | head -50
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/go.mod
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/description
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/config
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/pre-applypatch.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/pre-push.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/sendemail-validate.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/fsmonitor-watchman.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/commit-msg.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/post-update.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/update.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/pre-commit.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/pre-rebase.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/prepare-commit-msg.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/push-to-checkout.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/pre-merge-commit.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/pre-receive.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/hooks/applypatch-msg.sample
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/objects/ba/7e123c94fcb330c07932e1cb4b564ea62b1cd9
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/objects/42/17e40dc219680a82dd4eca2b7d723af6c53f3b
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/objects/f9/12c9e5ece36ef3b5ccaf09ea3b58392acee95f
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/objects/d1/1ba48a1572c43aeb44b6118c9ab39aad4f1d1b
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/objects/3c/b8e0a2a2fa883b15c87a1cf77ed14e18a4d037
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/objects/b6/5ca56a9cdaf39054573f92c91c7417c3e8e452
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/COMMIT_EDITMSG
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/refs/heads/master
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/logs/refs/heads/master
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/logs/HEAD
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/HEAD
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/index
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/opencode
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/.git/info/exclude
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/pool/pool.go
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/pool/pool_test.go
+/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/opencode.json
+[0m
+timestamp=2026-10-29T06:33:16.856Z level=INFO run=2b997169 message=tracking hash=f912c9e5ece36ef3b5ccaf09ea3b58392acee95f cwd=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1 git=/root/.local/share/opencode/snapshot/3cb8e0a2a2fa883b15c87a1cf77ed14e18a4d037/110241d4f86ab4591a27ef6e2e479ca0e9555fda
+timestamp=2026-10-29T06:33:16.876Z level=INFO run=2b997169 message=loop session.id=ses_e79a40cabffefd4da23PwCbECj step=1
+timestamp=2026-10-29T06:33:16.893Z level=INFO run=2b997169 message=tracking hash=f912c9e5ece36ef3b5ccaf09ea3b58392acee95f cwd=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1 git=/root/.local/share/opencode/snapshot/3cb8e0a2a2fa883b15c87a1cf77ed14e18a4d037/110241d4f86ab4591a27ef6e2e479ca0e9555fda
+timestamp=2026-10-29T06:33:16.900Z level=INFO run=2b997169 message=process session.id=ses_e79a40cabffefd4da23PwCbECj messageID=msg_1865ce34d001uEseoD0iUkfeKp
+timestamp=2026-10-29T06:33:16.901Z level=INFO run=2b997169 message=stream providerID=splash modelID=mlx-community/Qwen3.8-27B-4bit session.id=ses_e79a40cabffefd4da23PwCbECj small=false agent=build mode=primary
+timestamp=2026-10-29T06:33:16.903Z level=INFO run=2b997169 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=splash llm.model=mlx-community/Qwen3.8-27B-4bit
+timestamp=2026-10-29T06:33:33.383Z level=INFO run=2b997169 message=evaluated permission=read pattern=pool/pool_test.go action.permission=read action.pattern=* action.action=allow
+timestamp=2026-10-29T06:33:33.393Z level=INFO run=2b997169 message="touching file" file=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/pool/pool_test.go
+[0m→ [0mRead pool/pool_test.go
+timestamp=2026-10-29T06:33:34.457Z level=INFO run=2b997169 message=evaluated permission=read pattern=go.mod action.permission=read action.pattern=* action.action=allow
+timestamp=2026-10-29T06:33:34.463Z level=INFO run=2b997169 message="touching file" file=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1/go.mod
+[0m→ [0mRead go.mod
+timestamp=2026-10-29T06:33:34.634Z level=INFO run=2b997169 message=tracking hash=f912c9e5ece36ef3b5ccaf09ea3b58392acee95f cwd=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1 git=/root/.local/share/opencode/snapshot/3cb8e0a2a2fa883b15c87a1cf77ed14e18a4d037/110241d4f86ab4591a27ef6e2e479ca0e9555fda
+timestamp=2026-10-29T06:33:34.652Z level=INFO run=2b997169 message=loop session.id=ses_e79a40cabffefd4da23PwCbECj step=2
+timestamp=2026-10-29T06:33:34.668Z level=INFO run=2b997169 message=tracking hash=f912c9e5ece36ef3b5ccaf09ea3b58392acee95f cwd=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1 git=/root/.local/share/opencode/snapshot/3cb8e0a2a2fa883b15c87a1cf77ed14e18a4d037/110241d4f86ab4591a27ef6e2e479ca0e9555fda
+timestamp=2026-10-29T06:33:34.675Z level=INFO run=2b997169 message=process session.id=ses_e79a40cabffefd4da23PwCbECj messageID=msg_1865d28be001szHccAkx30meWO
+timestamp=2026-10-29T06:33:34.676Z level=INFO run=2b997169 message=stream providerID=splash modelID=mlx-community/Qwen3.8-27B-4bit session.id=ses_e79a40cabffefd4da23PwCbECj small=false agent=build mode=primary
+timestamp=2026-10-29T06:33:34.678Z level=INFO run=2b997169 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=splash llm.model=mlx-community/Qwen3.8-27B-4bit
+timestamp=2026-10-29T06:37:31.141Z level=INFO run=2b997169 message=stream providerID=splash modelID=mlx-community/Qwen3.8-27B-4bit session.id=ses_e79a40cabffefd4da23PwCbECj small=false agent=build mode=primary
+timestamp=2026-10-29T06:37:31.145Z level=INFO run=2b997169 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=splash llm.model=mlx-community/Qwen3.8-27B-4bit
+timestamp=2026-10-29T06:45:44.461Z level=INFO run=2b997169 message=stream providerID=splash modelID=mlx-community/Qwen3.8-27B-4bit session.id=ses_e79a40cabffefd4da23PwCbECj small=false agent=build mode=primary
+timestamp=2026-10-29T06:45:44.465Z level=INFO run=2b997169 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=splash llm.model=mlx-community/Qwen3.8-27B-4bit
+timestamp=2026-10-29T07:02:20.749Z level=INFO run=2b997169 message=tracking hash=f912c9e5ece36ef3b5ccaf09ea3b58392acee95f cwd=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1 git=/root/.local/share/opencode/snapshot/3cb8e0a2a2fa883b15c87a1cf77ed14e18a4d037/110241d4f86ab4591a27ef6e2e479ca0e9555fda
+timestamp=2026-10-29T07:02:20.780Z level=INFO run=2b997169 message=loop session.id=ses_e79a40cabffefd4da23PwCbECj step=3
+timestamp=2026-10-29T07:02:20.783Z level=INFO run=2b997169 message="exiting loop" session.id=ses_e79a40cabffefd4da23PwCbECj
+timestamp=2026-10-29T07:02:20.802Z level=INFO run=2b997169 message="disposing instance" directory=/tmp/qh-runs/opencode-baseline/h03-worker-pool-r1
