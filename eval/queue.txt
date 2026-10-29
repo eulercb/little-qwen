@@ -1,6 +1,11 @@
-# One command per line, run sequentially by eval/runner/queue.sh (see STATUS.md).
+./bin/qh eval --agent "eval/runner/pi_agent.sh qh" --agent-timeout-min 70 --out eval/results/piqh --only tierB --reps 1 --parallel 1 > eval/results/piqh-B.log 2>&1
+QH_PI_CONFIG=$PWD/pi-qh/config/long.json ./bin/qh eval --agent "eval/runner/pi_agent.sh qh-chunks" --agent-timeout-min 310 --out eval/results/piqh-chunks --only d01s-caca-palavras-single --reps 1 --parallel 1 > eval/results/piqh-chunks-D.log 2>&1
+QH_PI_CONFIG=$PWD/pi-qh/config/long.json ./bin/qh eval --agent "eval/runner/pi_agent.sh qh" --agent-timeout-min 310 --out eval/results/piqh --only d01s-caca-palavras-single --reps 1 --parallel 1 > eval/results/piqh-D.log 2>&1
+./bin/qh eval --harness harness/it2-long --out eval/results/it2-long --only d01s-caca-palavras-single --reps 1 --parallel 1 > eval/results/it2-long-D.log 2>&1
+./bin/qh eval --agent "eval/runner/pi_agent.sh qh" --agent-timeout-min 45 --out eval/results/piqh --only a05-ini-bugfix,h01-paginate-bugs,h02-config-merge,h03-worker-pool,h04-mini-template,a09-csv-report,a12-jsonpath --reps 1 --parallel 1 > eval/results/piqh-A.log 2>&1
 ./bin/qh tbench --harness harness/it2 --only @eval/tbench/subset.txt --out eval/results/tbC-it2 --reps 1 > eval/results/tbC-it2.log 2>&1
 ./bin/qh tbench --agent eval/runner/lc_tb_agent.py --only @eval/tbench/subset.txt --out eval/results/tbC-littlecoder --reps 1 > eval/results/tbC-littlecoder.log 2>&1
+# One command per line, run sequentially by eval/runner/queue.sh (see STATUS.md).
 
 # Retired 2026-10-28 (C1 not reproducible; see docs/EXPERIMENTS.md):
 # ./bin/qh eval --harness harness/cand/e2-review --out eval/results/exp2-review --only h02-config-merge,h04-mini-template,b01-expr-lang,b06-markdown --reps 2 --parallel 1 > eval/results/exp2-review.log 2>&1

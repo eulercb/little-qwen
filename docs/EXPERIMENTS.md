@@ -260,3 +260,21 @@ Template:
 - The one miss is `e-complete` (Playwright): clicking "Próxima fase" on the completion card timed out after 8 s,
   probably an overlay or animation intercepting the click.
 - The reference solution scores 39/39.
+
+## pi-qh: qh it2 ported to pi as an extension (2026-10-29, built offline)
+- Every it2 mechanism is implemented with pi's public extension events; see pi-qh/README.md for the map and
+  the known differences.
+- Findings about pi that shaped the port:
+  1. pi drops aborted assistant messages and never sends reasoning-only assistant messages. So little-coder's
+     thinking budget actually discards the partial reasoning, which is EXP-3's rejected variant. pi-qh
+     re-inserts it in the outgoing payload.
+  2. `ctx.abort()` skips `agent_before_settle`. The act turn therefore starts a new run from `agent_settled`.
+  3. pi's bash has no default timeout.
+  4. pi already replays reasoning_content and keeps the history append-only, which is why vanilla pi matched
+     qh base.
+- Chunked execution (new, not part of it2) is the answer to "avoid compaction": a plan phase, then chunks
+  with fresh contexts via `context` rewriting, a done_when check per chunk, and a notes ledger.
+- Queued A/B (needs the endpoint):
+  - piqh vs it1/it2 on Tier B;
+  - the d01s single-session stress test: piqh-chunks vs piqh vs it2-long, against it2's 9-session 38/39;
+  - piqh on the 7 small tasks.

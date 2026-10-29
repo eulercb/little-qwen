@@ -1,0 +1,10 @@
+{
+  "id": "d01s-caca-palavras-single",
+  "tier": "tierD",
+  "domain": "web",
+  "base": "d01-caca-palavras",
+  "check": "npm run check",
+  "prompt_suffix": "# This session\nImplement the WHOLE application in this one session: all milestones M0 to M8, in order, exactly as specified in §12 and the sections they reference. Follow §0 for every milestone: `npm run check` must pass, then commit with `git add -A && git commit -m \"Mx: <name>\"` before starting the next one. Finish with the final report (§0 item 10) as your finish summary once M8 is committed.",
+  "hidden_check": "bash \"$QH_TASK_DIR/checker/check.sh\"",
+  "score": "fraction"
+}

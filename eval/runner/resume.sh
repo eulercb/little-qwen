@@ -66,6 +66,10 @@ qh-pi @earendil-works/pi-coding-agent pi
 qh-littlecoder little-coder little-coder
 PKGS
 fi
+if grep -q 'pi_agent.sh qh' eval/queue.txt; then
+  echo "== pi-qh offline tests (real pi + scripted stub)"
+  node pi-qh/test/run.mjs | tail -1
+fi
 if grep -q lc_tb_agent eval/queue.txt && [ ! -d /home/user/itayinbarr/little-coder ]; then
   # lc_tb_agent.py drives pi through little-coder's benchmarks/rpc_client.py (studied at 89d4fa0 = v1.20.0).
   git clone -q https://github.com/itayinbarr/little-coder /home/user/itayinbarr/little-coder &&

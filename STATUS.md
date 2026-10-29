@@ -12,9 +12,14 @@ Results summary for readers: README.md "Results so far". Full experiment records
 ## ⏸ PAUSED (2026-10-29 11:37 UTC) on request; nothing is running, everything is committed
 
 Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. The queue continues with:
-1. The Terminal-Bench subset with it2 (`tbC-it2`). 3 of 20 tasks are done; the interrupted db-wal-recovery run was
-   discarded, and `qh tbench` skips finished tasks.
-2. The same subset with little-coder (`tbC-littlecoder`).
+1. pi + pi-qh on Tier B (`eval/results/piqh`): the A/B against qh it1/it2.
+2. The long-context stress test on d01s (the whole PWA brief as ONE session, 300 min / 400 turns each):
+   - pi + pi-qh with chunks (`piqh-chunks`);
+   - pi + pi-qh without chunks (`piqh`, pi's own compaction);
+   - qh `harness/it2-long` (qh's compaction at 88K).
+   Compare all three with it2's 9-session 38/39.
+3. pi + pi-qh on the 7 Tier-A/held-out tasks.
+4. The Terminal-Bench subset with it2 (3/20 done), then with little-coder.
 
 Headline:
 - Tier-B mean: qh it1 0.818, it2 0.988 (pooled 0.903); base 0.654, pi 0.828, little-coder 0.650.
@@ -22,6 +27,20 @@ Headline:
   time.
 - Tier D (d01 PWA): it2 38/39.
 - Tier C (it2, partial): cancel-async-tasks 1, cobol-modernization 1, configure-git-webserver 0.
+
+### pi-qh: qh it2 as a pi extension (2026-10-29, user request)
+- `pi-qh/` (README there) ports every it2 mechanism to pi's public extension API, plus a new chunked mode
+  (`QH_PI_CHUNKS=1`) that avoids compaction.
+  - Design inputs: late-cli (fresh context per step) and pi-task (checkbox plan, notes ledger), both cloned
+    under /home/user/{mlhher,mjasnikovs}.
+- Offline tests: `node pi-qh/test/run.mjs` (10 scenarios, 37 checks; real pi binary + scripted stub).
+  The full eval path was also checked offline.
+- Eval wiring:
+  - `eval/runner/pi_agent.sh qh|qh-chunks`.
+  - `qh eval --agent` now passes QH_CHECK, QH_RAW_PROMPT_FILE and QH_AGENT_OUT, and reads agent_status.json.
+  - Task specs gained `base` + `prompt_suffix`. `eval/tasks/d01s-caca-palavras-single` is the d01 brief as one
+    session.
+- Not yet: Terminal-Bench for pi-qh (needs docker-backed tool overrides).
 
 ### Direction (2026-10-29, discussed with the user while the tunnel was down)
 - OpenCode is dropped from future comparisons. Its 7-task result stays as a record.

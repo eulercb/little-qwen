@@ -35,8 +35,13 @@ type TaskSpec struct {
 	// in the same workdir; each session's prompt is the task prompt followed by
 	// the entry (e.g. "Do milestone M3 now."). Models multi-session work.
 	Sessions []string `json:"sessions"`
-	Dir      string   `json:"-"`
-	Prompt   string   `json:"-"`
+	// Base, when set, names another task whose repo/, checker/, hidden/ and
+	// prompt.md this task reuses; PromptSuffix is appended to the prompt
+	// (e.g. d01s: the d01 brief as one long session).
+	Base         string `json:"base"`
+	PromptSuffix string `json:"prompt_suffix"`
+	Dir          string `json:"-"`
+	Prompt       string `json:"-"`
 }
 
 func LoadTasks(root string, filter []string) ([]TaskSpec, error) {
@@ -65,11 +70,17 @@ func LoadTasks(root string, filter []string) ([]TaskSpec, error) {
 		if t.ID == "" {
 			t.ID = e.Name()
 		}
+		if t.Base != "" {
+			dir = filepath.Join(root, t.Base)
+		}
 		p, err := os.ReadFile(filepath.Join(dir, "prompt.md"))
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", dir, err)
 		}
 		t.Prompt = string(p)
+		if t.PromptSuffix != "" {
+			t.Prompt = strings.TrimRight(t.Prompt, "\n") + "\n\n---\n\n" + t.PromptSuffix + "\n"
+		}
 		// Absolute: hidden checks run inside the workdir and use $QH_TASK_DIR
 		// (a relative path scored d01 0 with "check.sh: No such file").
 		if t.Dir, err = filepath.Abs(dir); err != nil {

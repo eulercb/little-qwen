@@ -37,8 +37,16 @@ func RunExternal(ctx context.Context, agentCmd string, t TaskSpec, rep int, outD
 	if err := os.WriteFile(pf, []byte(prompt), 0o644); err != nil {
 		return nil, err
 	}
-	env := append(RunEnv(work), "QH_PROMPT_FILE="+pf, "QH_WORKDIR="+work, fmt.Sprintf("QH_TIMEOUT_S=%d", int(timeout.Seconds())))
-	for _, k := range []string{"REMOTE_LLM_ENDPOINT", "QH_ENDPOINT", "QH_MODEL"} {
+	// The raw task prompt (without the generic check line) and the check
+	// itself, for agents that build their own task card (pi + pi-qh).
+	rawPf := filepath.Join(filepath.Dir(pf), "prompt_raw.txt")
+	if err := os.WriteFile(rawPf, []byte(strings.TrimSpace(t.Prompt)+"\n"), 0o644); err != nil {
+		return nil, err
+	}
+	absOut, _ := filepath.Abs(outDir)
+	env := append(RunEnv(work), "QH_PROMPT_FILE="+pf, "QH_RAW_PROMPT_FILE="+rawPf, "QH_CHECK="+t.Check, "QH_AGENT_OUT="+absOut,
+		"QH_WORKDIR="+work, fmt.Sprintf("QH_TIMEOUT_S=%d", int(timeout.Seconds())))
+	for _, k := range []string{"REMOTE_LLM_ENDPOINT", "QH_ENDPOINT", "QH_MODEL", "QH_PI_CONFIG", "QH_PI_OFF", "QH_PI_CHUNKS"} {
 		if v := os.Getenv(k); v != "" {
 			env = append(env, k+"="+v)
 		}
@@ -52,6 +60,16 @@ func RunExternal(ctx context.Context, agentCmd string, t TaskSpec, rep int, outD
 		o.Status = "wall_clock"
 	} else if code != 0 {
 		o.Status = fmt.Sprintf("exit_%d", code)
+	}
+	// Agents that report their own outcome (pi-qh writes agent_status.json).
+	if b, err := os.ReadFile(filepath.Join(outDir, "agent_status.json")); err == nil && !timedOut {
+		var st struct {
+			Status string `json:"status"`
+			Turns  int    `json:"turns"`
+		}
+		if json.Unmarshal(b, &st) == nil && st.Status != "" {
+			o.Status, o.Turns = st.Status, st.Turns
+		}
 	}
 	if endpointDown(ctx, out) {
 		// The agent died on a tunnel outage (it cannot tell us itself): mark the

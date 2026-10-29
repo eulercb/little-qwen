@@ -2,6 +2,10 @@
 # External comparator agents built on pi (pi.dev), pointed at the same endpoint.
 #   qh eval --agent eval/runner/pi_agent.sh            # vanilla pi
 #   qh eval --agent "eval/runner/pi_agent.sh little"   # little-coder (pi + extensions)
+#   qh eval --agent "eval/runner/pi_agent.sh qh"       # pi + pi-qh (qh it2 ported as a pi extension)
+#   qh eval --agent "eval/runner/pi_agent.sh qh-chunks" # pi + pi-qh with chunked execution
+# pi-qh reads QH_CHECK and the raw prompt (it builds qh's task card itself), writes its
+# trace and agent_status.json into $QH_AGENT_OUT, and takes QH_PI_CONFIG / QH_PI_OFF.
 # Binaries: PI_BIN (default ~/.cache/qh-pi/node_modules/.bin/pi) and LITTLE_CODER_BIN
 # (default ~/.cache/qh-littlecoder/node_modules/.bin/little-coder); resume.sh installs both.
 # Config lives in a throwaway dir, never in the task workdir (the diff is scored).
@@ -47,6 +51,17 @@ case "$flavor" in
     mkdir -p "$XDG_CONFIG_HOME/little-coder" "$PI_CODING_AGENT_DIR"
     models_json > "$XDG_CONFIG_HOME/little-coder/models.json"
     timeout "${QH_TIMEOUT_S:-3600}" "$bin" -p --no-session --model "splash/$model" --thinking medium "$prompt" </dev/null 2>&1 | tail -c 200000
+    ;;
+  qh|qh-chunks)
+    bin=${PI_BIN:-$HOME/.cache/qh-pi/node_modules/.bin/pi}
+    ext="$(cd "$(dirname "$0")/../.." && pwd)/pi-qh/extensions/qh.ts"
+    export PI_CODING_AGENT_DIR="$cfg/pi" PI_OFFLINE=1 \
+      QH_PI_TRACE="${QH_AGENT_OUT:-$cfg}/trace.jsonl" QH_PI_STATUS="${QH_AGENT_OUT:-$cfg}/agent_status.json"
+    [ "$flavor" = qh-chunks ] && export QH_PI_CHUNKS=1
+    mkdir -p "$PI_CODING_AGENT_DIR"
+    models_json | sed 's/"maxTokens": 16384/"maxTokens": 16000/' > "$PI_CODING_AGENT_DIR/models.json"   # qh's max_tokens
+    prompt=$(cat "${QH_RAW_PROMPT_FILE:-$QH_PROMPT_FILE}")
+    timeout "${QH_TIMEOUT_S:-3600}" "$bin" -p --no-session --approve --model "splash/$model" --thinking medium -e "$ext" "$prompt" </dev/null 2>&1 | tail -c 200000
     ;;
   *) echo "unknown flavor $flavor" >&2; exit 2 ;;
 esac
