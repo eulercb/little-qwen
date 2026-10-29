@@ -1,0 +1,36 @@
+{
+  "task_id": "tb-cancel-async-tasks",
+  "tier": "tierC",
+  "rep": 1,
+  "harness_hash": "a94d56e41335",
+  "success": true,
+  "score": 1,
+  "tests_passed": 0,
+  "tests_total": 0,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": false,
+    "Summary": "Created /app/run.py implementing `async def run_tasks(tasks: list[Callable[[], Awaitable[None]]], max_concurrent: int) -\u003e None` (importable via `from run import run_tasks`): tasks run under an asyncio.Semaphore concurrency cap, job factories are invoked only when a slot is acquired, failures propagate after all tasks settle, and a temporary SIGINT handler on Ctrl+C cancels in-flight tasks, awaits their cleanup (finally) code, then re-raises KeyboardInterrupt (a second Ctrl+C force-quits via the previous handler). Verified with /app/test_run.py: 9 tests all pass, including real-SIGINT subprocess tests proving cleanup runs for every started task, exit-code behavior, peak-concurrency enforcement, and handler restoration.",
+    "Turns": 17,
+    "Compactions": 0,
+    "PromptTokens": 343969,
+    "PrefillTokens": 32993,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 20697,
+    "ReasoningTokens": 13772,
+    "ToolCalls": 18,
+    "ToolErrors": 1,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F4": 1
+    },
+    "WallSeconds": 1833.031080727,
+    "Err": ""
+  },
+  "started": "2026-10-29T09:15:58Z",
+  "hidden_output": "Unpacking librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2+b2) ...\r\nSelecting previously unselected package libssh2-1:amd64.\r\nPreparing to unpack .../13-libssh2-1_1.10.0-3+deb12u1_amd64.deb ...\r\nUnpacking libssh2-1:amd64 (1.10.0-3+deb12u1) ...\r\nSelecting previously unselected package libcurl4:amd64.\r\nPreparing to unpack .../14-libcurl4_7.88.1-10+deb12u15_amd64.deb ...\r\nUnpacking libcurl4:amd64 (7.88.1-10+deb12u15) ...\r\nSelecting previously unselected package curl.\r\nPreparing to unpack .../15-curl_7.88.1-10+deb12u15_amd64.deb ...\r\nUnpacking curl (7.88.1-10+deb12u15) ...\r\nSelecting previously unselected package libldap-common.\r\nPreparing to unpack .../16-libldap-common_2.5.13+dfsg-5_all.deb ...\r\nUnpacking libldap-common (2.5.13+dfsg-5) ...\r\nSelecting previously unselected package libsasl2-modules:amd64.\r\nPreparing to unpack .../17-libsasl2-modules_2.1.28+dfsg-10_amd64.deb ...\r\nUnpacking libsasl2-modules:amd64 (2.1.28+dfsg-10) ...\r\nSelecting previously unselected package publicsuffix.\r\nPreparing to unpack .../18-publicsuffix_20230209.2326-1_all.deb ...\r\nUnpacking publicsuffix (20230209.2326-1) ...\r\nSetting up libkeyutils1:amd64 (1.6.3-2) ...\r\nSetting up libpsl5:amd64 (0.21.2-1) ...\r\nSetting up libbrotli1:amd64 (1.0.9-2+deb12u1) ...\r\nSetting up libsasl2-modules:amd64 (2.1.28+dfsg-10) ...\r\nSetting up libnghttp2-14:amd64 (1.52.0-1+deb12u3) ...\r\nSetting up krb5-locales (1.20.1-2+deb12u5) ...\r\nSetting up libldap-common (2.5.13+dfsg-5) ...\r\nSetting up libkrb5support0:amd64 (1.20.1-2+deb12u5) ...\r\nSetting up libsasl2-modules-db:amd64 (2.1.28+dfsg-10) ...\r\nSetting up librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2+b2) ...\r\nSetting up libk5crypto3:amd64 (1.20.1-2+deb12u5) ...\r\nSetting up libsasl2-2:amd64 (2.1.28+dfsg-10) ...\r\nSetting up libssh2-1:amd64 (1.10.0-3+deb12u1) ...\r\nSetting up libkrb5-3:amd64 (1.20.1-2+deb12u5) ...\r\nSetting up publicsuffix (20230209.2326-1) ...\r\nSetting up libldap-2.5-0:amd64 (2.5.13+dfsg-5) ...\r\nSetting up libgssapi-krb5-2:amd64 (1.20.1-2+deb12u5) ...\r\nSetting up libcurl4:amd64 (7.88.1-10+deb12u15) ...\r\nSetting up curl (7.88.1-10+deb12u15) ...\r\nProcessing triggers for libc-bin (2.36-9+deb12u10) ...\r\ncurl: (22) The requested URL returned error: 403\nDownloading pygments (1.2MiB)\n Downloading pygments\nInstalled 6 packages in 15ms\n============================= test session starts ==============================\nplatform linux -- Python 3.13.7, pytest-8.4.1, pluggy-1.7.0\nrootdir: /tests\nplugins: json-ctrf-0.3.5\ncollected 6 items\n\n../tests/test_outputs.py ......                                          [100%]\n\n==================================== PASSES ====================================\n=========================== short test summary info ============================\nPASSED ../tests/test_outputs.py::test_run_py_file_exists\nPASSED ../tests/test_outputs.py::test_tasks_run_concurrently\nPASSED ../tests/test_outputs.py::test_tasks_obey_max_concurrent\nPASSED ../tests/test_outputs.py::test_tasks_cancel_below_max_concurrent\nPASSED ../tests/test_outputs.py::test_tasks_cancel_at_max_concurrent\nPASSED ../tests/test_outputs.py::test_tasks_cancel_above_max_concurrent\n============================== 6 passed in 18.64s =============================="
+}
