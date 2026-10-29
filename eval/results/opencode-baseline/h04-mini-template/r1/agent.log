@@ -1,0 +1,75 @@
+timestamp=2026-10-29T07:02:25.425Z level=INFO run=c50d9801 message="creating instance" directory=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1
+timestamp=2026-10-29T07:02:25.427Z level=INFO run=c50d9801 message=fromDirectory directory=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1
+timestamp=2026-10-29T07:02:25.481Z level=INFO run=c50d9801 message=bootstrapping directory=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1
+timestamp=2026-10-29T07:02:25.489Z level=INFO run=c50d9801 message=loading path=/root/.config/opencode/config.json
+timestamp=2026-10-29T07:02:25.490Z level=INFO run=c50d9801 message=loading path=/root/.config/opencode/opencode.json
+timestamp=2026-10-29T07:02:25.490Z level=INFO run=c50d9801 message=loading path=/root/.config/opencode/opencode.jsonc
+timestamp=2026-10-29T07:02:25.496Z level=INFO run=c50d9801 message=loading path=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1/opencode.json
+timestamp=2026-10-29T07:02:25.602Z level=INFO run=c50d9801 message="all LSPs are disabled"
+timestamp=2026-10-29T07:02:25.603Z level=INFO run=c50d9801 message="all formatters are disabled"
+timestamp=2026-10-29T07:02:25.603Z level=INFO run=c50d9801 message=init
+timestamp=2026-10-29T07:02:25.830Z level=INFO run=c50d9801 message=created id=ses_e79886cdaffew1Ol5uU7wntqa8 slug=mighty-island version=1.19.4 projectID=854048236f4f096099162c6a278f8e8131b82b0f directory=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1 path="" workspaceID=undefined parentID=undefined title="New session - 2026-10-29T07:02:25.830Z" agent=undefined model=undefined metadata=undefined permission="[{\"permission\":\"question\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_enter\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_exit\",\"pattern\":\"*\",\"action\":\"deny\"}]" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1793257345830 time.updated=1793257345830
+timestamp=2026-10-29T07:02:25.848Z level=INFO run=c50d9801 message="event connected"
+timestamp=2026-10-29T07:02:25.932Z level=INFO run=c50d9801 message=loop session.id=ses_e79886cdaffew1Ol5uU7wntqa8 step=0
+timestamp=2026-10-29T07:02:26.875Z level=INFO run=c50d9801 message=stream providerID=splash modelID=mlx-community/Qwen3.8-27B-4bit session.id=ses_e79886cdaffew1Ol5uU7wntqa8 small=true agent=title mode=primary
+timestamp=2026-10-29T07:02:26.883Z level=INFO run=c50d9801 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=splash llm.model=mlx-community/Qwen3.8-27B-4bit
+[0m
+> build · mlx-community/Qwen3.8-27B-4bit
+[0m
+timestamp=2026-10-29T07:02:26.953Z level=INFO run=c50d9801 message=initialized
+timestamp=2026-10-29T07:02:26.966Z level=INFO run=c50d9801 message=tracking hash=e4189da1dbfebb3827dc7866af57e1fa00aeff92 cwd=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1 git=/root/.local/share/opencode/snapshot/854048236f4f096099162c6a278f8e8131b82b0f/2a4c1f9b073b074d565ec63b42645b7061fe75ab
+timestamp=2026-10-29T07:02:26.986Z level=INFO run=c50d9801 message="shell tool using shell" shell=/bin/bash
+timestamp=2026-10-29T07:02:27.033Z level=INFO run=c50d9801 message=init count=13
+timestamp=2026-10-29T07:02:27.103Z level=INFO run=c50d9801 message="watcher backend" directory=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1 platform=linux backend=inotify
+timestamp=2026-10-29T07:02:27.114Z level=INFO run=c50d9801 message="project copy refresh started" projectID=854048236f4f096099162c6a278f8e8131b82b0f
+timestamp=2026-10-29T07:02:27.557Z level=INFO run=c50d9801 message="project copy refresh done" projectID=854048236f4f096099162c6a278f8e8131b82b0f updated=[] removed=[]
+timestamp=2026-10-29T07:02:27.572Z level=INFO run=c50d9801 message="booting location services" directory=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1 workspaceID=undefined
+timestamp=2026-10-29T07:02:27.576Z level=INFO run=c50d9801 message=process session.id=ses_e79886cdaffew1Ol5uU7wntqa8 messageID=msg_186779733001i7KCRbYiq6j0Uc
+timestamp=2026-10-29T07:02:27.578Z level=INFO run=c50d9801 message=stream providerID=splash modelID=mlx-community/Qwen3.8-27B-4bit session.id=ses_e79886cdaffew1Ol5uU7wntqa8 small=false agent=build mode=primary
+timestamp=2026-10-29T07:02:27.580Z level=INFO run=c50d9801 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=splash llm.model=mlx-community/Qwen3.8-27B-4bit
+timestamp=2026-10-29T07:03:25.659Z level=INFO run=c50d9801 message=cleanup prune=7.days
+timestamp=2026-10-29T07:03:36.293Z level=INFO run=c50d9801 message="resolved path" arg=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1/go.mod resolved=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1/go.mod
+timestamp=2026-10-29T07:03:36.297Z level=INFO run=c50d9801 message=evaluated permission=bash pattern="ls -la /tmp/qh-runs/opencode-baseline/h04-mini-template-r1" action.permission=* action.action=allow action.pattern=*
+timestamp=2026-10-29T07:03:36.297Z level=INFO run=c50d9801 message=evaluated permission=bash pattern="cat /tmp/qh-runs/opencode-baseline/h04-mini-template-r1/go.mod" action.permission=* action.action=allow action.pattern=*
+timestamp=2026-10-29T07:03:36.297Z level=INFO run=c50d9801 message=evaluated permission=bash pattern="echo \"---\"" action.permission=* action.action=allow action.pattern=*
+timestamp=2026-10-29T07:03:36.297Z level=INFO run=c50d9801 message=evaluated permission=bash pattern="go version" action.permission=* action.action=allow action.pattern=*
+[0m$ [0mls -la /tmp/qh-runs/opencode-baseline/h04-mini-template-r1 && cat /tmp/qh-runs/opencode-baseline/h04-mini-template-r1/go.mod 2>/dev/null; echo "---"; go version
+total 20
+drwxr-xr-x 3 root root 4096 Oct 29 07:02 .
+drwxr-xr-x 9 root root 4096 Oct 29 07:02 ..
+drwxr-xr-x 8 root root 4096 Oct 29 07:02 .git
+-rw-r--r-- 1 root root   33 Oct 29 07:02 go.mod
+-rw-r--r-- 1 root root  475 Oct 29 07:02 opencode.json
+module example.com/tmpl
+
+go 1.24
+---
+go version go1.24.7 linux/amd64
+[0m
+timestamp=2026-10-29T07:03:36.372Z level=INFO run=c50d9801 message=tracking hash=e4189da1dbfebb3827dc7866af57e1fa00aeff92 cwd=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1 git=/root/.local/share/opencode/snapshot/854048236f4f096099162c6a278f8e8131b82b0f/2a4c1f9b073b074d565ec63b42645b7061fe75ab
+timestamp=2026-10-29T07:03:36.404Z level=INFO run=c50d9801 message=loop session.id=ses_e79886cdaffew1Ol5uU7wntqa8 step=1
+timestamp=2026-10-29T07:03:36.435Z level=INFO run=c50d9801 message=tracking hash=e4189da1dbfebb3827dc7866af57e1fa00aeff92 cwd=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1 git=/root/.local/share/opencode/snapshot/854048236f4f096099162c6a278f8e8131b82b0f/2a4c1f9b073b074d565ec63b42645b7061fe75ab
+timestamp=2026-10-29T07:03:36.456Z level=INFO run=c50d9801 message=process session.id=ses_e79886cdaffew1Ol5uU7wntqa8 messageID=msg_18678a6d8001DZcYo1IIk2hFIM
+timestamp=2026-10-29T07:03:36.459Z level=INFO run=c50d9801 message=stream providerID=splash modelID=mlx-community/Qwen3.8-27B-4bit session.id=ses_e79886cdaffew1Ol5uU7wntqa8 small=false agent=build mode=primary
+timestamp=2026-10-29T07:03:36.466Z level=INFO run=c50d9801 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=splash llm.model=mlx-community/Qwen3.8-27B-4bit
+timestamp=2026-10-29T07:03:47.543Z level=INFO run=c50d9801 message=evaluated permission=bash pattern="git status" action.permission=* action.action=allow action.pattern=*
+timestamp=2026-10-29T07:03:47.544Z level=INFO run=c50d9801 message=evaluated permission=bash pattern="git log --oneline -5" action.permission=* action.action=allow action.pattern=*
+timestamp=2026-10-29T07:03:47.544Z level=INFO run=c50d9801 message=evaluated permission=bash pattern="ls -R --ignore=.git" action.permission=* action.action=allow action.pattern=*
+[0m$ [0mgit status && git log --oneline -5 && ls -R --ignore=.git
+On branch master
+nothing to commit, working tree clean
+8540482 init
+.:
+go.mod
+opencode.json
+[0m
+timestamp=2026-10-29T07:03:47.741Z level=INFO run=c50d9801 message=tracking hash=e4189da1dbfebb3827dc7866af57e1fa00aeff92 cwd=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1 git=/root/.local/share/opencode/snapshot/854048236f4f096099162c6a278f8e8131b82b0f/2a4c1f9b073b074d565ec63b42645b7061fe75ab
+timestamp=2026-10-29T07:03:47.762Z level=INFO run=c50d9801 message=loop session.id=ses_e79886cdaffew1Ol5uU7wntqa8 step=2
+timestamp=2026-10-29T07:03:47.783Z level=INFO run=c50d9801 message=tracking hash=e4189da1dbfebb3827dc7866af57e1fa00aeff92 cwd=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1 git=/root/.local/share/opencode/snapshot/854048236f4f096099162c6a278f8e8131b82b0f/2a4c1f9b073b074d565ec63b42645b7061fe75ab
+timestamp=2026-10-29T07:03:47.795Z level=INFO run=c50d9801 message=process session.id=ses_e79886cdaffew1Ol5uU7wntqa8 messageID=msg_18678d334001XEjs1Am4NzpoPR
+timestamp=2026-10-29T07:03:47.796Z level=INFO run=c50d9801 message=stream providerID=splash modelID=mlx-community/Qwen3.8-27B-4bit session.id=ses_e79886cdaffew1Ol5uU7wntqa8 small=false agent=build mode=primary
+timestamp=2026-10-29T07:03:47.799Z level=INFO run=c50d9801 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=splash llm.model=mlx-community/Qwen3.8-27B-4bit
+timestamp=2026-10-29T07:18:12.232Z level=INFO run=c50d9801 message=tracking hash=e4189da1dbfebb3827dc7866af57e1fa00aeff92 cwd=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1 git=/root/.local/share/opencode/snapshot/854048236f4f096099162c6a278f8e8131b82b0f/2a4c1f9b073b074d565ec63b42645b7061fe75ab
+timestamp=2026-10-29T07:18:12.390Z level=INFO run=c50d9801 message=loop session.id=ses_e79886cdaffew1Ol5uU7wntqa8 step=3
+timestamp=2026-10-29T07:18:12.395Z level=INFO run=c50d9801 message="exiting loop" session.id=ses_e79886cdaffew1Ol5uU7wntqa8
+timestamp=2026-10-29T07:18:12.424Z level=INFO run=c50d9801 message="disposing instance" directory=/tmp/qh-runs/opencode-baseline/h04-mini-template-r1
