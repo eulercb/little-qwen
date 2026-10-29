@@ -23,6 +23,20 @@ Headline:
 - Tier D (d01 PWA): it2 38/39.
 - Tier C (it2, partial): cancel-async-tasks 1, cobol-modernization 1, configure-git-webserver 0.
 
+### Direction (2026-10-29, discussed with the user while the tunnel was down)
+- OpenCode is dropped from future comparisons. Its 7-task result stays as a record.
+- Proposed next steps, pending the user's choice:
+  1. Long-context stress test: d01 as ONE session (the whole brief, about a 4 h budget), so compaction actually
+     fires. Compare with the 9-session run.
+     - In 163 real runs compaction never triggered; the largest context was 73.5K tokens against an 88K
+       threshold.
+  2. Port it2 as a pi extension package, then A/B it against qh it2 on Tier B.
+     - Mechanisms to port: the L1 think cap, the L2 build/test nudge, L3 restore-green, fuzzy edit,
+       check-on-finish, recovery from a max-token truncation, and a wall-clock budget.
+     - pi already replays reasoning_content and keeps the context append-only, which is likely why vanilla pi
+       matched the qh base.
+  3. Finish Tier C: it2 is at 3/20, then little-coder.
+
 ### Resume in one command
 ```bash
 eval/runner/resume.sh https://<new-tunnel>.trycloudflare.com      # add --no-opencode to skip the comparator install
