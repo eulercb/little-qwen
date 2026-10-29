@@ -1,0 +1,24 @@
+{
+  "Status": "finished",
+  "CheckPassed": true,
+  "Summary": "M5 (Puzzle screen, static) implemented: src/ui/strings.ts (Appendix C verbatim), router.ts (parseHash/navigate/onRoute with index 1..12 validation), src/core/save.ts + save.test.ts (default/parse/serialize with shape validation, 6 tests), src/ui/storage.ts (localStorage cp.save.v1 wrapper with in-memory singleton), grid.ts (grid + SVG overlay DOM, ResizeObserver-driven cell sizing clamped 28–56px, pill drawing/redraw), puzzle.ts (header, trace strip, sorted chips, GenerationError retry ':1'..':5', found-word restore from save, chip-tap hint pulse, recordFound/recordSolved persistence helpers), home.ts (temporary theme list with progress), style.css (144 lines: design tokens, dark palette, layout, pills, chips, reduced-motion), and main.ts boot (loadSave + onRoute render). Verified: `npm run check` passes (typecheck, 8 files / 73 tests, build; last 15 lines: build ✓ 174ms, PWA precache 17 entries incl. woff2, sw.js generated), no TODO/any/@ts-ignore/console.log in src, all files under 250 lines. Committed as 0746e60 \"M5: Puzzle screen, static\". Not done (later milestones): pointer handling (M6), settings sheet + theme resolution (M7), SW registration + offline verification (M8).",
+  "Turns": 14,
+  "Compactions": 0,
+  "PromptTokens": 482258,
+  "PrefillTokens": 25906,
+  "ReprefillTokens": 0,
+  "CompletionTokens": 15250,
+  "ReasoningTokens": 5106,
+  "ToolCalls": 22,
+  "ToolErrors": 0,
+  "Repaired": 0,
+  "Nudges": 0,
+  "LoopHints": 0,
+  "FinishAttempts": 1,
+  "Delegations": 0,
+  "Codes": {
+    "F4": 1
+  },
+  "WallSeconds": 1484.79959951,
+  "Err": ""
+}

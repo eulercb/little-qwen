@@ -1,0 +1,24 @@
+{
+  "Status": "finished",
+  "CheckPassed": true,
+  "Summary": "M7 (Home and settings) implemented and committed as \"M7: Home and settings\". (a) Files changed: created src/ui/settings.ts (bottom sheet with haptics switch role=\"switch\" and appearance segmented control; changes persist via storage and dispatch 'cp:settings-changed'); rewrote src/ui/home.ts (home per §8.3 — \"Continuar\" row when save.progress !== null, 64px rows with progress bars, \"12 de 12\" + ✓ for completed themes, next-unsolved navigation, ⚙ gear opening the sheet); rewrote src/main.ts (theme resolution: auto follows prefers-color-scheme via matchMedia with change listener, sets data-theme on \u003chtml\u003e, syncs meta theme-color to the --bg token, re-applies on settings changes); extended src/style.css (home-head grid with gear, bar/bar-fill/check, sheet backdrop + entrance, switch, segmented control — 198 lines total). (b) Last 15 lines of npm run check output: nunito font asset lines, \"index-Tci5er1h.css 9.70 kB │ gzip: 2.69 kB\", \"index-nujDLsBN.js 20.83 kB │ gzip: 8.21 kB\", \"✓ built in 200ms\", \"PWA v2.0.0 / mode generateSW / precache 17 entries (143.81 KiB) / files generated / dist/sw.js / dist/workbox-9c191d2f.js\" — exit 0 (typecheck + tests + build all pass). (c) Nothing left undone: no timers/scores or other out-of-scope items were added; all strings come from strings.ts; no TODO/any/console.log remain in src/.",
+  "Turns": 12,
+  "Compactions": 0,
+  "PromptTokens": 347419,
+  "PrefillTokens": 19803,
+  "ReprefillTokens": 0,
+  "CompletionTokens": 4658,
+  "ReasoningTokens": 463,
+  "ToolCalls": 19,
+  "ToolErrors": 0,
+  "Repaired": 0,
+  "Nudges": 0,
+  "LoopHints": 0,
+  "FinishAttempts": 1,
+  "Delegations": 0,
+  "Codes": {
+    "F4": 1
+  },
+  "WallSeconds": 830.480043302,
+  "Err": ""
+}

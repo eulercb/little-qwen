@@ -1,5 +1,4 @@
 # One command per line, run sequentially by eval/runner/queue.sh (see STATUS.md).
-./bin/qh eval --harness harness/it2 --out eval/results/it2 --only d01-caca-palavras --reps 1 --parallel 1 > eval/results/it2-D.log 2>&1
 ./bin/qh tbench --harness harness/it2 --only @eval/tbench/subset.txt --out eval/results/tbC-it2 --reps 1 > eval/results/tbC-it2.log 2>&1
 ./bin/qh tbench --agent eval/runner/lc_tb_agent.py --only @eval/tbench/subset.txt --out eval/results/tbC-littlecoder --reps 1 > eval/results/tbC-littlecoder.log 2>&1
 

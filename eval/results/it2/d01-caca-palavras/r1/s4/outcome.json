@@ -1,0 +1,22 @@
+{
+  "Status": "finished",
+  "CheckPassed": true,
+  "Summary": "Milestone M4 (Selection geometry) complete.\n\n(a) Files created:\n- `src/core/select.ts` — pure-TS module per §7: `snapSelection(anchor, px, py, cell, rows, cols, prevDir)` with 0.45·cell dead zone, atan2 sector snapping to `DIR_ORDER`, ±33.75° hysteresis around `prevDir` (with proper (−π, π] angle wrapping so the −π/π seam near N behaves), √2 unit for diagonals, and step clamping via `maxSteps`; plus `selectionCells` and `matchWord` (forward or reversed against the remaining set).\n- `src/core/select.test.ts` — 15 tests covering every §11 case (cell 40, 8×8, anchor {3,3}): dead zone (incl. prevDir retention), E/S/NE/SW snaps, √2 diagonal count (2.9c,2.9c → 3), clamping (N from top row → 0; far-right → E,4; far-down → S,4), hysteresis (prevDir E at 28° → E; at 40° → SE; null at 28° → SE; plus seam-wrap cases), `selectionCells`, and `matchWord` ('OLEG'→'GELO', 'GELO'→'GELO', 'ABCD'→null). No DOM access, runs in Node.\n\n(b) Last 15 lines of `npm run check` (exit 0):\n```\ndist/assets/nunito-latin-700-normal-OcDqTBcA.woff          19.98 kB\ndist/assets/nunito-latin-400-normal-r8SDr6Up.woff          20.33 kB\ndist/assets/nunito-latin-ext-700-normal-D4woHhbd.woff      21.00 kB\ndist/assets/nunito-latin-700-normal-OcDqTBcA.woff          19.98 kB  [repeated in output]\ndist/assets/index-P6aNLa4a.css                              3.33 kB │ gzip: 0.70 kB\ndist/assets/index-nBf5EMFz.js                               0.71 kB │ gzip: 0.41 kB\n\n✓ built in 139ms\n\nPWA v2.0.0\nmode      generateSW\nprecache  17 entries (117.96 KiB)\nfiles generated\n  dist/sw.js\n  dist/workbox-9c191d2f.js\n```\nTypecheck, all 66 unit tests (15 new in select.test.ts) and the production build pass.\n\n(c) Nothing was left undone. Committed as `107d9ca \"M4: Selection geometry\"`; did not start M5.",
+  "Turns": 10,
+  "Compactions": 0,
+  "PromptTokens": 233142,
+  "PrefillTokens": 12086,
+  "ReprefillTokens": 0,
+  "CompletionTokens": 7356,
+  "ReasoningTokens": 3507,
+  "ToolCalls": 14,
+  "ToolErrors": 0,
+  "Repaired": 0,
+  "Nudges": 0,
+  "LoopHints": 0,
+  "FinishAttempts": 1,
+  "Delegations": 0,
+  "Codes": null,
+  "WallSeconds": 431.139522118,
+  "Err": ""
+}

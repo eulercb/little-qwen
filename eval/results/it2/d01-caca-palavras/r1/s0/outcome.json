@@ -1,0 +1,22 @@
+{
+  "Status": "finished",
+  "CheckPassed": true,
+  "Summary": "Implemented milestone M0 (Scaffold) exactly per §4: created package.json (scripts dev/build/preview/typecheck/test/check), tsconfig.json (strict, bundler resolution, vite + vite-plugin-pwa client types), vite.config.ts (VitePWA with autoUpdate, pt-BR manifest, base './', workbox globPatterns), vitest.config.ts (node env), index.html (pt-BR meta, theme-color, icon, #app mount), public/icons/icon.svg (512×512, #EEF1EA rounded background, #F7E17A pill tilted −20° with bold \"ABC\"), src/main.ts (imports style.css + @fontsource/nunito 400/700, sets \"ok\"), and a placeholder src/style.css; installed the only allowed deps (vite, typescript, vitest, vite-plugin-pwa, @fontsource/nunito, unpinned). Verified: `npm run check` exits 0 (typecheck passes, no tests yet via --passWithNoTests, build succeeds); dist/ contains sw.js and manifest.webmanifest with a precache covering the JS, CSS, HTML, SVG icon, Nunito woff2 files and registerSW; the dev server serves index (200) and the transformed main.ts module. Committed as `M0: Scaffold` (9 files).\n\nFiles created: package.json, package-lock.json, tsconfig.json, vite.config.ts, vitest.config.ts, index.html, public/icons/icon.svg, src/main.ts, src/style.css.\n\nLast 15 lines of `npm run check`:\n```\ndist/assets/nunito-latin-700-normal-OcDqTBcA.woff          19.98 kB │ gzip: 8.86 kB\ndist/assets/nunito-latin-400-normal-DKg4f3fz.woff          20.33 kB │ gzip: 9.10 kB\ndist/assets/nunito-latin-ext-700-normal-CjMJVfGn.woff      21.28 kB │ gzip: 10.30 kB\ndist/assets/nunito-latin-ext-400-normal-CjMJVfGn.woff      21.28 kB │ gzip: 10.30 kB\ndist/assets/index-P6aNLa4a.css                              3.33 kB │ gzip: 0.70 kB\ndist/assets/index-nBf5EMFz.js                               0.71 kB │ gzip: 0.41 kB\n\n✓ built in 136ms\n\nPWA v2.0.0\nmode      generateSW\nprecache  17 entries (117.96 KiB)\nfiles generated\n  dist/sw.js\n  dist/workbox-9c191d2f.js\n```\n(exit 0; full run shown in conversation — the tailed window above is the build/PWA tail; typecheck and `No test files found, exiting with code 0` precede it.)\n\nCould not do: none — no part of M0 is left out. Note for later: the resolved toolchain is newer than typical (typescript 7.0.2, vite 8.3.5, vitest 5.0.5); the spec says not to pin, so I left the latest stable versions as-is and everything passes with them.",
+  "Turns": 12,
+  "Compactions": 0,
+  "PromptTokens": 229416,
+  "PrefillTokens": 20712,
+  "ReprefillTokens": 0,
+  "CompletionTokens": 4583,
+  "ReasoningTokens": 1462,
+  "ToolCalls": 23,
+  "ToolErrors": 1,
+  "Repaired": 0,
+  "Nudges": 0,
+  "LoopHints": 0,
+  "FinishAttempts": 1,
+  "Delegations": 0,
+  "Codes": null,
+  "WallSeconds": 447.533768882,
+  "Err": ""
+}

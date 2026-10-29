@@ -1,0 +1,37 @@
+{
+  "task_id": "d01-caca-palavras",
+  "tier": "tierD",
+  "rep": 1,
+  "harness_hash": "a94d56e41335",
+  "success": false,
+  "score": 0,
+  "tests_passed": 0,
+  "tests_total": 0,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Completed M8 (PWA and polish). (a) Files changed: src/main.ts — added `import { registerSW } from 'virtual:pwa-register'; registerSW({ immediate: true })` (the one missing piece; the M0 main.ts never registered the SW); src/style.css — dark-mode pass found found-chips rendering near-white ink on light pastel backgrounds, added `[data-theme=\"dark\"] .chip.found { color: #22302A; }`. Everything else from §8.7/§13 was already correct: reduced-motion media query, dark tokens on all screens, lang=\"pt-BR\", 28px cell minimum (tier 4 13×10 computes to 32px at 360×740), all strings from strings.ts, no TODO/any/@ts-ignore/console.log. Verified offline per §10: `dist/sw.js` precache (17 entries) lists index.html, app JS, app CSS, icons/icon.svg, all 10 Nunito woff2 files and the manifest; `npm run preview` served every one with HTTP 200. (b) Last 15 lines of `npm run check` output:\n```\ndist/assets/nunito-latin-400-normal-DKg4f3fz.woff          20.33 kB\ndist/assets/nunito-latin-ext-700-normal-BWeMsAzO.woff2     21.00 kB\ndist/assets/nunito-latin-ext-400-normal-CjMJVfGn.woff      21.28 kB\ndist/assets/index-BRd7l-qt.css                              9.74 kB │ gzip: 2.70 kB\ndist/assets/workbox-window.prod.es5-Bd17z0YL.js             5.65 kB │ gzip: 2.20 kB\ndist/assets/index-D0U1D2q0.js                              23.47 kB │ gzip: 9.30 kB\n\n✓ built in 230ms\n\nPWA v2.0.0\nmode      generateSW\nprecache  17 entries (151.75 KiB)\nfiles generated\n  dist/sw.js\n  dist/workbox-9c191d2f.js\n```\n(c) Could not do: real-device/viewport browser interaction testing (no browser in this environment) — drag feel, vibration and on-screen dark-mode rendering were verified by code/token review and layout math instead. Committed as `2df6dea M8: PWA and polish`.",
+    "Turns": 122,
+    "Compactions": 0,
+    "PromptTokens": 3585890,
+    "PrefillTokens": 180930,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 79246,
+    "ReasoningTokens": 30462,
+    "ToolCalls": 196,
+    "ToolErrors": 4,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 9,
+    "Delegations": 0,
+    "Codes": {
+      "F4": 3
+    },
+    "WallSeconds": 7053.204256716001,
+    "Err": ""
+  },
+  "started": "2026-10-29T07:18:20Z",
+  "hidden_output": "bash: eval/tasks/d01-caca-palavras/checker/check.sh: No such file or directory",
+  "work": "/tmp/qh-runs/it2/d01-caca-palavras-r1"
+}

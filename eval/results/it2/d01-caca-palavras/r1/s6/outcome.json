@@ -1,0 +1,24 @@
+{
+  "Status": "finished",
+  "CheckPassed": true,
+  "Summary": "Implemented M6 (Interaction): added src/ui/pointer.ts (pointerdown/move/up/cancel/capture-loss handlers on .grid — pointer capture, anchor/out-of-bounds guards, snapSelection with hysteresis, active pill + trace updates, single-fire finalization, 180ms miss fade with a re-drag guard); added commitActivePill to src/ui/grid.ts to lock the active line into g.found with a fresh hidden active line; extended src/ui/puzzle.ts with found/miss handling (colorIndex = foundCount % 8, chip strike+color, vibrate when haptics on, recordFound persistence, 600ms colored trace flash then idle hint/empty, restore-aware remaining set), and the §8.6 completion card (recordSolved, [15,60,25] vibrate, 350ms delay, \"Próxima fase\" vs index-12 theme-complete variant, \"Escolher tema\"); added completion-card/button/fade CSS to src/style.css. Verification: `npm run check` passes (tsc --noEmit clean, 73/73 vitest tests pass, vite build OK with PWA precache of 17 entries); last 15 lines of output end with \"✓ built in 158ms / PWA v2.0.0 / precache 17 entries / files generated: dist/sw.js, dist/workbox-9c191d2f.js\". Committed as 6455943 \"M6: Interaction\". Nothing left undone; settings sheet and full home remain for M7.",
+  "Turns": 12,
+  "Compactions": 0,
+  "PromptTokens": 388494,
+  "PrefillTokens": 21838,
+  "ReprefillTokens": 0,
+  "CompletionTokens": 6764,
+  "ReasoningTokens": 1552,
+  "ToolCalls": 21,
+  "ToolErrors": 0,
+  "Repaired": 0,
+  "Nudges": 0,
+  "LoopHints": 0,
+  "FinishAttempts": 1,
+  "Delegations": 0,
+  "Codes": {
+    "F4": 1
+  },
+  "WallSeconds": 998.875359627,
+  "Err": ""
+}

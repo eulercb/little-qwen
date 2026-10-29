@@ -1,0 +1,22 @@
+{
+  "Status": "finished",
+  "CheckPassed": true,
+  "Summary": "Implemented milestone M1 (Core utilities): created src/core/types.ts (shared domain types from §5), normalize.ts (normalizeWord/isValidWord/reverse), prng.ts (FNV-1a hashSeed, mulberry32, rngInt, Fisher–Yates shuffle), directions.ts (DIRS, DIR_ORDER, isDiagonal, angleOf, maxSteps, pathCells), and levels.ts (TIERS, tierForIndex, PUZZLES_PER_THEME, puzzleKey), plus tests for each (normalize, prng, directions, levels) covering every assertion required in §11, including the fixed hashSeed('praia:1') = 2211903053. `npm run check` passes (typecheck + 33/33 tests + build with sw.js/manifest); committed as \"M1: Core utilities\" (ca38752).\n\nLast 15 lines of `npm run check`:\n    dist/assets/nunito-latin-700-normal-OcDqTBcA.woff          19.98 kB\n    dist/assets/nunito-latin-400-normal-DKg4f3fz.woff          20.33 kB\n    dist/assets/nunito-latin-ext-700-normal-D4woHhbd.woff      21.01 kB\n    dist/assets/nunito-latin-ext-400-normal-i-8OOpdj.woff2     15.88 kB\n    dist/assets/nunito-latin-700-normal-OcDqTBcA.woff          19.98 kB\n    dist/assets/nunito-latin-400-normal-DKg4f3fz.woff          20.33 kB\n    dist/assets/index-P6aNLa4a.css                              3.33 kB │ gzip: 0.70 kB\n    dist/assets/index-nBf5EMFz.js                               0.71 kB │ gzip: 0.41 kB\n\n  ✓ built in 169ms\n\n  PWA v2.0.0\n  mode      generateSW\n  precache  17 entries (117.96 KiB)\n  files generated\n    dist/sw.js\n    dist/workbox-9c191d2f.js\n(exit 0; Test Files 4 passed, Tests 33 passed)\n\nNothing was left undone. Note: one test I initially wrote asserted unit deltas on DIRS entries incorrectly (axis directions have one zero component); I fixed the test itself to assert the intended property, without touching the module code.",
+  "Turns": 15,
+  "Compactions": 0,
+  "PromptTokens": 331108,
+  "PrefillTokens": 14084,
+  "ReprefillTokens": 0,
+  "CompletionTokens": 7941,
+  "ReasoningTokens": 1361,
+  "ToolCalls": 24,
+  "ToolErrors": 1,
+  "Repaired": 0,
+  "Nudges": 0,
+  "LoopHints": 0,
+  "FinishAttempts": 1,
+  "Delegations": 0,
+  "Codes": null,
+  "WallSeconds": 437.440184894,
+  "Err": ""
+}

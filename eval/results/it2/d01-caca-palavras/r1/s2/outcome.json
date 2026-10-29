@@ -1,0 +1,22 @@
+{
+  "Status": "finished",
+  "CheckPassed": true,
+  "Summary": "Milestone M2 (Data) complete. Files created: src/data/words.ts (THEMES + themeById, verbatim from Appendix A), src/data/letters.ts (LETTER_WEIGHTS, verbatim from Appendix B), src/data/blocklist.ts (empty BLOCKLIST with the required owner-population comment), and src/data/words.test.ts verifying unique theme ids, ≥20 words per theme, every word passes isValidWord, normalized words unique within a theme, ≥8 words of normalized length ≤7 per theme, and LETTER_WEIGHTS keys single A–Z letters with no K/W/Y and positive weights. `npm run check` passes: typecheck OK, 5 test files / 40 tests passed (including all M1 tests), production build + PWA precache generated. Committed as \"M2: Data\" (0863ed1). Nothing was left out; no blockers.",
+  "Turns": 7,
+  "Compactions": 0,
+  "PromptTokens": 129713,
+  "PrefillTokens": 5393,
+  "ReprefillTokens": 0,
+  "CompletionTokens": 3333,
+  "ReasoningTokens": 516,
+  "ToolCalls": 9,
+  "ToolErrors": 0,
+  "Repaired": 0,
+  "Nudges": 0,
+  "LoopHints": 0,
+  "FinishAttempts": 1,
+  "Delegations": 0,
+  "Codes": null,
+  "WallSeconds": 223.462068806,
+  "Err": ""
+}

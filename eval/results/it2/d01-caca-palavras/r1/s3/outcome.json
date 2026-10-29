@@ -1,0 +1,22 @@
+{
+  "Status": "finished",
+  "CheckPassed": true,
+  "Summary": "M3 complete: added src/core/generate.ts (225 lines) implementing §6.5 — deterministic generatePuzzle (single mulberry32 stream seeded by hashSeed(key+seedSuffix), so every redo is deterministic; 10 placement attempts × 20 weighted fills; candidates filtered by length/blocklist, substring-conflict rule, longest-first placement over shuffled (row,col,dir) spots with overlap support, reserve backfill), plus findOccurrences (all 8 directions, dedup by cell-set so palindromes count once), letterAt, and GenerationError. Added src/core/generate.test.ts (95 lines): full matrix of every theme × index 1..12 with the UI ':1'..':5' retry loop verifying grid shape/letters, placement readback via pathCells, exactly-one occurrence, tier directions, substring pairs, determinism (deep-equal) and index-distinctness; the CAFE/CAFEZINHO prefix test with the hand-made theme; and the blocklist MANGA test for all 12 frutas puzzles. Verified by eyeballing a printed tier-4 praia grid (all 8 words read back correctly; temp print test removed before commit). npm run check passes: tsc clean, 45/45 tests, PWA build with sw.js + manifest. Committed as \"M3: Generator\".\n\nLast 15 lines of npm run check output:\ndist/assets/nunito-latin-700-normal-OcDqTBz.woff          19.98 kB\ndist/assets/nunito-latin-400-normal-DKg4f3fz.woff         20.33 kB\ndist/assets/nunito-latin-ext-700-normal-BWeMsAzO.woff2    21.22 kB\ndist/assets/nunito-latin-ext-400-normal-CjMJVfGn.woff     21.33 kB\ndist/assets/index-P6aNLa4a.css                            3.33 kB │ gzip: 0.70 kB\ndist/assets/index-nBf5EMFz.js                             0.71 kB │ gzip: 0.41 kB\n✓ built in 147ms\nPWA v2.0.0\nmode      generateSW\nprecache  17 entries (117.96 KiB)\nfiles generated\n  dist/sw.js\n  dist/workbox-9c191d2f.js\n\nFiles created: src/core/generate.ts, src/core/generate.test.ts. Nothing left undone.",
+  "Turns": 24,
+  "Compactions": 0,
+  "PromptTokens": 878674,
+  "PrefillTokens": 33490,
+  "ReprefillTokens": 0,
+  "CompletionTokens": 22109,
+  "ReasoningTokens": 12192,
+  "ToolCalls": 38,
+  "ToolErrors": 1,
+  "Repaired": 0,
+  "Nudges": 0,
+  "LoopHints": 0,
+  "FinishAttempts": 1,
+  "Delegations": 0,
+  "Codes": null,
+  "WallSeconds": 1503.194039664,
+  "Err": ""
+}
