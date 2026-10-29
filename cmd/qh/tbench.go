@@ -82,10 +82,20 @@ func cmdTBench(ctx context.Context, args []string) error {
 			}
 			lg := logger(fmt.Sprintf("%s/r%d ", t.ID, rep))
 			lg("start image=%s timeout=%s×%.0f", t.Image, t.AgentTimeout, *mult)
+			// Stage like qh eval: the results tree only ever holds finished runs
+			// (eval/results/**/.inprogress/ is git-ignored).
+			final := od
+			od = filepath.Join(*out, ".inprogress", "tb-"+t.ID, fmt.Sprintf("r%d", rep))
+			_ = os.RemoveAll(od)
 			r, err := eval.RunTB(ctx, c, h, t, rep, od, eval.TBOptions{ToolBin: tb, Oracle: *oracle, TimeoutMult: *mult, UVDir: *uvDir, Agent: *agent}, lg)
 			if err != nil {
 				lg("ERROR %v", err)
 				continue
+			}
+			_ = os.RemoveAll(final)
+			_ = os.MkdirAll(filepath.Dir(final), 0o755)
+			if err := os.Rename(od, final); err != nil {
+				lg("ERROR moving results: %v", err)
 			}
 			lg("DONE reward=%.2f status=%s turns=%d wall=%.1fmin %s", r.Score, r.Outcome.Status, r.Outcome.Turns, r.Outcome.WallSeconds/60, r.Outcome.Err)
 			if strings.Contains(r.Outcome.Err, "endpoint unavailable") {
