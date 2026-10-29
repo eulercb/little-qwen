@@ -1,0 +1,38 @@
+{
+  "task_id": "b01-expr-lang",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "a94d56e41335",
+  "success": true,
+  "score": 1,
+  "tests_passed": 21,
+  "tests_total": 21,
+  "outcome": {
+    "Status": "finished",
+    "CheckPassed": true,
+    "Summary": "Implemented the expression language interpreter from SPEC.md as package `expr` (import `example.com/expr/expr`) in expr/ with four files: lexer.go (tokens for numbers incl. `1.5`, `.5`, `1.`, `1e3`, `2.5E-2`; identifiers with true/false literals; all operators; `unexpected character 'X'` at byte offset), parser.go (recursive-descent with the spec's precedence: right-assoc ternary, ||, \u0026\u0026, equality, comparison, +-, */%^, unary, right-assoc ^ above unary, calls; compile errors for unexpected token/end-of-input, missing `)`/`:`, unknown function, arity), eval.go (float64 semantics: math.Mod, math.Pow, 1/0 booleans, short-circuit \u0026\u0026/||/?:, runtime errors for division by zero at operator position, unknown variable at identifier position, sqrt of negative at name position, non-finite result at position 0; Program.Vars sorted+deduped; public API Compile/Eval/Program.Eval/Program.Vars and *Error formatted \"pos: msg\"), plus expr_test.go with ~15 test functions covering all of the above with exact error-string assertions. Verified with `go vet ./... \u0026\u0026 go test ./...` (exit 0) and an external probe program spot-checking tricky cases.",
+    "Turns": 40,
+    "Compactions": 0,
+    "PromptTokens": 1296044,
+    "PrefillTokens": 48044,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 32267,
+    "ReasoningTokens": 14675,
+    "ToolCalls": 53,
+    "ToolErrors": 6,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 1,
+    "FinishAttempts": 1,
+    "Delegations": 0,
+    "Codes": {
+      "F3": 1,
+      "F4": 1
+    },
+    "WallSeconds": 2675.332758376,
+    "Err": ""
+  },
+  "started": "2026-10-29T00:33:45Z",
+  "hidden_output": "=== RUN   TestNumberLiterals\n--- PASS: TestNumberLiterals (0.00s)\n=== RUN   TestArithmetic\n--- PASS: TestArithmetic (0.00s)\n=== RUN   TestPower\n--- PASS: TestPower (0.00s)\n=== RUN   TestUnary\n--- PASS: TestUnary (0.00s)\n=== RUN   TestComparisons\n--- PASS: TestComparisons (0.00s)\n=== RUN   TestLogical\n--- PASS: TestLogical (0.00s)\n=== RUN   TestShortCircuit\n--- PASS: TestShortCircuit (0.00s)\n=== RUN   TestTernary\n--- PASS: TestTernary (0.00s)\n=== RUN   TestFunctions\n--- PASS: TestFunctions (0.00s)\n=== RUN   TestVars\n--- PASS: TestVars (0.00s)\n=== RUN   TestCompileErrors\n--- PASS: TestCompileErrors (0.00s)\n=== RUN   TestRuntimeErrors\n--- PASS: TestRuntimeErrors (0.00s)\n=== RUN   TestProgramReuse\n--- PASS: TestProgramReuse (0.00s)\n=== RUN   TestNestedCallErrors\n--- PASS: TestNestedCallErrors (0.00s)\n=== RUN   TestHiddenArithmetic\n--- PASS: TestHiddenArithmetic (0.00s)\n=== RUN   TestHiddenLogic\n--- PASS: TestHiddenLogic (0.00s)\n=== RUN   TestHiddenShortCircuit\n--- PASS: TestHiddenShortCircuit (0.00s)\n=== RUN   TestHiddenFunctions\n--- PASS: TestHiddenFunctions (0.00s)\n=== RUN   TestHiddenCompileErrors\n--- PASS: TestHiddenCompileErrors (0.00s)\n=== RUN   TestHiddenRuntimeErrors\n--- PASS: TestHiddenRuntimeErrors (0.00s)\n=== RUN   TestHiddenProgramReuseAndVars\n--- PASS: TestHiddenProgramReuseAndVars (0.00s)\nPASS\nok  \texample.com/expr/expr\t0.004s",
+  "work": "/tmp/qh-runs/it2/b01-expr-lang-r1"
+}
