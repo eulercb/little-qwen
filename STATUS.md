@@ -23,19 +23,6 @@ Headline:
 - Tier D (d01 PWA): it2 38/39.
 - Tier C (it2, partial): cancel-async-tasks 1, cobol-modernization 1, configure-git-webserver 0.
 
-Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. The queue continues with:
-1. (done) it2 on Tier B: 0.988.
-2. (done) The OpenCode comparison: 0.776 in 143.9 min.
-3. (done) d01 with it2: 0.97.
-4. The Terminal-Bench subset with it2, then with little-coder.
-
-Headline:
-- Tier-B mean: qh base 0.654, it1 0.818, pi 0.828, little-coder 0.650.
-- Held-out: it1 1.00; base 0.96 at rep 1, and 1.00 at rep 2 on h02/h04.
-- Adopted: L1 (thinking cap that keeps the reasoning) and L2 (build/test nudge).
-- Implemented: L3 (restore the last green tree on a budget cut), in it2 and awaiting its run.
-- Retired: C1 (noise).
-
 ### Resume in one command
 ```bash
 eval/runner/resume.sh https://<new-tunnel>.trycloudflare.com      # add --no-opencode to skip the comparator install
