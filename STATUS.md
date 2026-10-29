@@ -9,9 +9,19 @@ and compensates for its weaknesses, then improve it with the Harness² method (P
 evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is the roadmap).
 Results summary for readers: README.md "Results so far". Full experiment records: docs/EXPERIMENTS.md.
 
-## Running state (2026-10-29): queue RUNNING on tunnel rosa-spokesman-beaver-frederick
+## ⏸ PAUSED (2026-10-29 11:37 UTC) on request; nothing is running, everything is committed
 
-If this session is gone, the queue died with it: re-run resume.sh with the current tunnel. (Paused 2026-10-28 09:13 on request.)
+Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. The queue continues with:
+1. The Terminal-Bench subset with it2 (`tbC-it2`). 3 of 20 tasks are done; the interrupted db-wal-recovery run was
+   discarded, and `qh tbench` skips finished tasks.
+2. The same subset with little-coder (`tbC-littlecoder`).
+
+Headline:
+- Tier-B mean: qh it1 0.818, it2 0.988 (pooled 0.903); base 0.654, pi 0.828, little-coder 0.650.
+- 7 Tier-A/held-out tasks: qh, pi and little-coder are about tied (0.98–1.00); OpenCode scored 0.776 at 2.5× the
+  time.
+- Tier D (d01 PWA): it2 38/39.
+- Tier C (it2, partial): cancel-async-tasks 1, cobol-modernization 1, configure-git-webserver 0.
 
 Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. The queue continues with:
 1. (done) it2 on Tier B: 0.988.
@@ -216,4 +226,6 @@ Then follow "Decisions waiting on those results" below as items finish.
 - 2026-10-29 09:16 — d01 with it2: 38/39 = 0.97 (9 sessions, 118 min).
   - The first score of 0 was a harness bug: QH_TASK_DIR was relative. Fixed, and rescored with `qh rescore`.
   - Tier C (Terminal-Bench subset) with it2 started.
+- 2026-10-29 11:37 — PAUSED on request during tbC-it2 (3/20 done; interrupted db-wal-recovery discarded).
+  - `qh tbench` now stages runs in .inprogress, like qh eval.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
