@@ -87,16 +87,18 @@ Single run each, single-stream, wall minutes.
 
 | task | qh base | little-coder | pi | OpenCode |
 |---|---|---|---|---|
-| a05-ini-bugfix | 1.00 / 3.0 | 1.00 / 4.4 | 1.00 / 2.8 | — |
-| a09-csv-report | 1.00 / 7.0 | 1.00 / 5.9 | 1.00 / 9.8 | — |
-| a12-jsonpath | 1.00 / 5.6 | 1.00 / 8.5 | 1.00 / 7.3 | — |
+| a05-ini-bugfix | 1.00 / 3.0 | 1.00 / 4.4 | 1.00 / 2.8 | 1.00 / 14.9 |
+| a09-csv-report | 1.00 / 7.0 | 1.00 / 5.9 | 1.00 / 9.8 | 1.00 / 42.2 |
+| a12-jsonpath | 1.00 / 5.6 | 1.00 / 8.5 | 1.00 / 7.3 | 1.00 / 21.0 |
 | h01-paginate-bugs | 1.00 / 3.2 | 1.00 / 3.7 | 1.00 / 2.7 | 1.00 / 9.2 |
-| h02-config-merge | 0.92 / 2.3 | 1.00 / 5.4 | 1.00 / 4.2 | queued |
-| h03-worker-pool | 1.00 / 16.3 | 0.86 / 45.0 (killed at the 45-min cap) | 1.00 / 18.6 | queued |
-| h04-mini-template | 0.92 / 19.9 | 1.00 / 11.3 | 0.97 / 9.5 | queued |
-| **mean score / total min** | **0.976 / 57.3** | **0.980 / 84.2** | **0.996 / 54.9** | |
+| h02-config-merge | 0.92 / 2.3 | 1.00 / 5.4 | 1.00 / 4.2 | 1.00 / 10.8 |
+| h03-worker-pool | 1.00 / 16.3 | 0.86 / 45.0 (killed at the 45-min cap) | 1.00 / 18.6 | 0.43 / 30.1 |
+| h04-mini-template | 0.92 / 19.9 | 1.00 / 11.3 | 0.97 / 9.5 | 0 / 15.8 (stopped after 3 steps, build fails) |
+| **mean score / total min** | **0.976 / 57.3** | **0.980 / 84.2** | **0.996 / 54.9** | **0.776 / 143.9** |
 
 Reading (n=1, so differences of one hidden test are noise):
+- Stock OpenCode is clearly behind on this model: 0.776 in 143.9 min, about 2.5× slower than the others.
+  - It failed h03 (0.43) and h04 (0: it stopped after 3 steps with code that does not build).
 - **All three harnesses are about tied on these tasks with this model.** Vanilla pi (4 tools, a ~2.8K-char
   prompt, no extensions) is not worse than qh or little-coder: 0.996 in 54.9 min.
   - So on Tier-A-sized tasks, a 27B model does not need small-model scaffolding. qh's value has to show on

@@ -15,7 +15,7 @@ If this session is gone, the queue died with it: re-run resume.sh with the curre
 
 Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. The queue continues with:
 1. (done) it2 on Tier B: 0.988.
-2. The OpenCode comparison.
+2. (done) The OpenCode comparison: 0.776 in 143.9 min.
 3. d01 with it2.
 4. The Terminal-Bench subset with it2, then with little-coder.
 
@@ -211,4 +211,6 @@ Then follow "Decisions waiting on those results" below as items finish.
 - 2026-10-29 — resumed on tunnel rosa-spokesman-beaver-frederick.
 - 2026-10-29 05:03 — it2 Tier-B: mean 0.988 (b04 0.97, b06 0.96, the rest 1.00); L3 never fired.
   - Pooled it1 + it2: 0.903. Next: the OpenCode comparison, then d01 and Tier C with it2.
+- 2026-10-29 07:18 — OpenCode on the 7 tasks: 0.776 in 143.9 min (qh 0.976 / 57.3, pi 0.996 / 54.9,
+  little-coder 0.980 / 84.2). d01 (Tier D) with it2 started.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
