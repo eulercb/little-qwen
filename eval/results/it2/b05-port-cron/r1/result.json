@@ -1,0 +1,38 @@
+{
+  "task_id": "b05-port-cron",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "a94d56e41335",
+  "success": true,
+  "score": 1,
+  "tests_passed": 10,
+  "tests_total": 10,
+  "outcome": {
+    "Status": "wall_clock",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 42,
+    "Compactions": 0,
+    "PromptTokens": 1708863,
+    "PrefillTokens": 56767,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 39145,
+    "ReasoningTokens": 20351,
+    "ToolCalls": 61,
+    "ToolErrors": 3,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F4": 1
+    },
+    "WallSeconds": 3607.90370287,
+    "Err": ""
+  },
+  "started": "2026-10-29T02:55:15Z",
+  "hidden_output": "=== RUN   TestParseErrors\n    cron_test.go:63: Parse(\"\") error: expected 5 fields, got 0\n    cron_test.go:63: Parse(\"   \") error: expected 5 fields, got 0\n    cron_test.go:63: Parse(\"1\") error: expected 5 fields, got 1\n    cron_test.go:63: Parse(\"1 2\") error: expected 5 fields, got 2\n    cron_test.go:63: Parse(\"1 2 3 4 5 6\") error: expected 5 fields, got 6\n    cron_test.go:63: Parse(\"@bogus\") error: unknown macro '@bogus'\n    cron_test.go:63: Parse(\"@yearly extra\") error: unknown macro '@yearly extra'\n    cron_test.go:63: Parse(\"60 * * * *\") error: minute: value 60 out of range 0-59\n    cron_test.go:63: Parse(\"* 24 * * *\") error: hour: value 24 out of range 0-23\n    cron_test.go:63: Parse(\"* * 0 * *\") error: day-of-month: value 0 out of range 1-31\n    cron_test.go:63: Parse(\"* * 32 * *\") error: day-of-month: value 32 out of range 1-31\n    cron_test.go:63: Parse(\"* * * 0 *\") error: month: value 0 out of range 1-12\n    cron_test.go:63: Parse(\"* * * 13 *\") error: month: value 13 out of range 1-12\n    cron_test.go:63: Parse(\"* * * * 8\") error: day-of-week: value 8 out of range 0-6\n    cron_test.go:63: Parse(\"* * * * 7x\") error: day-of-week: invalid value '7x'\n    cron_test.go:63: Parse(\"*-1 * * * *\") error: minute: invalid value '*'\n    cron_test.go:63: Parse(\"1-2-3 * * * *\") error: minute: invalid value '2-3'\n    cron_test.go:63: Parse(\"5- * * * *\") error: minute: invalid value ''\n    cron_test.go:63: Parse(\"-5 * * * *\") error: minute: invalid value ''\n    cron_test.go:63: Parse(\"5-1 * * * *\") error: minute: range 5-1 is reversed\n    cron_test.go:63: Parse(\"*/0 * * * *\") error: minute: invalid step '0'\n    cron_test.go:63: Parse(\"*/ * * * *\") error: minute: invalid step ''\n    cron_test.go:63: Parse(\"*/x * * * *\") error: minute: invalid step 'x'\n    cron_test.go:63: Parse(\"1, * * * *\") error: minute: empty item\n    cron_test.go:63: Parse(\",1 * * * *\") error: minute: empty item\n    cron_test.go:63: Parse(\"1,,2 * * * *\") error: minute: empty item\n    cron_test.go:63: Parse(\"a * * * *\") error: minute: invalid value 'a'\n    cron_test.go:63: Parse(\"1.5 * * * *\") error: minute: invalid value '1.5'\n    cron_test.go:63: Parse(\"7 2 2 1 8\") error: day-of-week: value 8 out of range 0-6\n--- PASS: TestParseErrors (0.00s)\n=== RUN   TestParseExactErrors\n--- PASS: TestParseExactErrors (0.00s)\n=== RUN   TestString\n--- PASS: TestString (0.00s)\n=== RUN   TestNext\n--- PASS: TestNext (0.00s)\n=== RUN   TestNextNoMatch\n--- PASS: TestNextNoMatch (0.00s)\n=== RUN   TestAgainstPython\n--- PASS: TestAgainstPython (5.30s)\n=== RUN   TestStringAgainstPython\n--- PASS: TestStringAgainstPython (0.14s)\n=== RUN   TestHiddenParseErrors\n--- PASS: TestHiddenParseErrors (0.00s)\n=== RUN   TestHiddenDescribe\n--- PASS: TestHiddenDescribe (0.00s)\n=== RUN   TestHiddenNext\n--- PASS: TestHiddenNext (0.00s)\nPASS\nok  \texample.com/cron/cron\t5.453s",
+  "work": "/tmp/qh-runs/it2/b05-port-cron-r1"
+}

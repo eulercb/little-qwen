@@ -1,0 +1,39 @@
+{
+  "task_id": "b04-kv-server",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "a94d56e41335",
+  "success": false,
+  "score": 0.967741935483871,
+  "tests_passed": 30,
+  "tests_total": 31,
+  "outcome": {
+    "Status": "wall_clock",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 46,
+    "Compactions": 0,
+    "PromptTokens": 1697393,
+    "PrefillTokens": 62929,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 48254,
+    "ReasoningTokens": 25175,
+    "ToolCalls": 66,
+    "ToolErrors": 8,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 1,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F3": 1,
+      "F4": 1
+    },
+    "WallSeconds": 3645.73398429,
+    "Err": ""
+  },
+  "started": "2026-10-29T01:44:29Z",
+  "hidden_output": "\t/usr/local/go1.24.7/src/testing/testing.go:1792 +0x226\ncreated by testing.(*T).Run in goroutine 1\n\t/usr/local/go1.24.7/src/testing/testing.go:1851 +0x8f3\n\ngoroutine 10 [chan receive]:\nexample.com/kv/server.Serve({0x7059a0, 0xc0000143c0}, {0x705668, 0xc00007ea00}, 0xc000010150)\n\t/tmp/qh-runs/it2/b04-kv-server-r1/server/server.go:55 +0x2a5\nexample.com/kv/server.start.func1()\n\t/tmp/qh-runs/it2/b04-kv-server-r1/server/server_test.go:30 +0x12c\ncreated by example.com/kv/server.start in goroutine 9\n\t/tmp/qh-runs/it2/b04-kv-server-r1/server/server_test.go:30 +0x205\n\ngoroutine 12 [IO wait]:\ninternal/poll.runtime_pollWait(0x7f2b7057d790, 0x72)\n\t/usr/local/go1.24.7/src/runtime/netpoll.go:351 +0x85\ninternal/poll.(*pollDesc).wait(0xc0000cc2a0, 0x72, 0x0)\n\t/usr/local/go1.24.7/src/internal/poll/fd_poll_runtime.go:84 +0xb1\ninternal/poll.(*pollDesc).waitRead(...)\n\t/usr/local/go1.24.7/src/internal/poll/fd_poll_runtime.go:89\ninternal/poll.(*FD).Read(0xc0000cc280, {0xc0000e1015, 0xfeb, 0xfeb})\n\t/usr/local/go1.24.7/src/internal/poll/fd_unix.go:165 +0x453\nnet.(*netFD).Read(0xc0000cc280, {0xc0000e1015, 0xfeb, 0xfeb})\n\t/usr/local/go1.24.7/src/net/fd_posix.go:55 +0x4b\nnet.(*conn).Read(0xc0000560b8, {0xc0000e1015, 0xfeb, 0xfeb})\n\t/usr/local/go1.24.7/src/net/net.go:194 +0xad\nbufio.(*Reader).fill(0xc000187e30)\n\t/usr/local/go1.24.7/src/bufio/bufio.go:113 +0x2a4\nbufio.(*Reader).ReadSlice(0xc000187e30, 0xa)\n\t/usr/local/go1.24.7/src/bufio/bufio.go:380 +0x85\nbufio.(*Reader).collectFragments(0xc000187e30, 0xa)\n\t/usr/local/go1.24.7/src/bufio/bufio.go:455 +0x87\nbufio.(*Reader).ReadString(0xc000187e30, 0xa)\n\t/usr/local/go1.24.7/src/bufio/bufio.go:502 +0x4b\nexample.com/kv/server.serveConn({0x706958, 0xc0000560b8}, 0xc000010150)\n\t/tmp/qh-runs/it2/b04-kv-server-r1/server/server.go:73 +0x37e\nexample.com/kv/server.Serve.func1.1()\n\t/tmp/qh-runs/it2/b04-kv-server-r1/server/server.go:50 +0x238\ncreated by example.com/kv/server.Serve.func1 in goroutine 11\n\t/tmp/qh-runs/it2/b04-kv-server-r1/server/server.go:42 +0xdc\n\ngoroutine 11 [IO wait]:\ninternal/poll.runtime_pollWait(0x7f2b7057d678, 0x72)\n\t/usr/local/go1.24.7/src/runtime/netpoll.go:351 +0x85\ninternal/poll.(*pollDesc).wait(0xc0000cc1a0, 0x72, 0x0)\n\t/usr/local/go1.24.7/src/internal/poll/fd_poll_runtime.go:84 +0xb1\ninternal/poll.(*pollDesc).waitRead(...)\n\t/usr/local/go1.24.7/src/internal/poll/fd_poll_runtime.go:89\ninternal/poll.(*FD).Accept(0xc0000cc180)\n\t/usr/local/go1.24.7/src/internal/poll/fd_unix.go:620 +0x505\nnet.(*netFD).accept(0xc0000cc180)\n\t/usr/local/go1.24.7/src/net/fd_unix.go:172 +0x45\nnet.(*TCPListener).accept(0xc00007ea00)\n\t/usr/local/go1.24.7/src/net/tcpsock_posix.go:159 +0x4e\nnet.(*TCPListener).Accept(0xc00007ea00)\n\t/usr/local/go1.24.7/src/net/tcpsock.go:380 +0x65\nexample.com/kv/server.Serve.func1()\n\t/tmp/qh-runs/it2/b04-kv-server-r1/server/server.go:34 +0xf5\ncreated by example.com/kv/server.Serve in goroutine 10\n\t/tmp/qh-runs/it2/b04-kv-server-r1/server/server.go:31 +0x288\nFAIL\texample.com/kv/server\t600.116s",
+  "work": "/tmp/qh-runs/it2/b04-kv-server-r1"
+}

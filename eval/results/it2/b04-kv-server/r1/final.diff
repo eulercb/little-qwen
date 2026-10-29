@@ -1,0 +1,1528 @@
+ proto/proto.go        | 260 +++++++++++++++++++++++++++++++++++++++
+ proto/proto_test.go   | 154 +++++++++++++++++++++++
+ server/server.go      |  98 +++++++++++++++
+ server/server_test.go | 192 +++++++++++++++++++++++++++++
+ store/glob.go         | 153 +++++++++++++++++++++++
+ store/store.go        | 285 ++++++++++++++++++++++++++++++++++++++++++
+ store/store_test.go   | 335 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ 7 files changed, 1477 insertions(+)
+
+diff --git a/proto/proto.go b/proto/proto.go
+new file mode 100644
+index 0000000..c641358
+--- /dev/null
++++ b/proto/proto.go
+@@ -0,0 +1,260 @@
++// Package proto implements the line protocol on top of a store.Store.
++package proto
++
++import (
++	"strconv"
++	"strings"
++	"time"
++
++	"example.com/kv/store"
++)
++
++// Exec parses one request line and returns the full response,
++// including the trailing '\n'.
++func Exec(s *store.Store, line string) string {
++	toks, err := tokenize(line)
++	if err != nil {
++		return "-ERR syntax error\n"
++	}
++	if len(toks) == 0 {
++		return "-ERR empty command\n"
++	}
++	cmd := strings.ToLower(toks[0])
++	args := toks[1:]
++	switch cmd {
++	case "ping":
++		if len(args) != 0 {
++			return wrongArgs(cmd)
++		}
++		return "+PONG\n"
++	case "quit":
++		if len(args) != 0 {
++			return wrongArgs(cmd)
++		}
++		return "+BYE\n"
++	case "set":
++		return doSet(s, args)
++	case "get":
++		if len(args) != 1 {
++			return wrongArgs(cmd)
++		}
++		if v, ok := s.Get(args[0]); ok {
++			return "$" + encodeValue(v) + "\n"
++		}
++		return "$nil\n"
++	case "del":
++		if len(args) < 1 {
++			return wrongArgs(cmd)
++		}
++		return ":" + strconv.Itoa(s.Del(args...)) + "\n"
++	case "exists":
++		if len(args) != 1 {
++			return wrongArgs(cmd)
++		}
++		return intResp(s.Exists(args[0]))
++	case "expire":
++		if len(args) != 2 {
++			return wrongArgs(cmd)
++		}
++		secs, err := strconv.ParseInt(args[1], 10, 64)
++		if err != nil {
++			return notInt()
++		}
++		return intResp(s.Expire(args[0], time.Duration(secs)*time.Second))
++	case "persist":
++		if len(args) != 1 {
++			return wrongArgs(cmd)
++		}
++		return intResp(s.Persist(args[0]))
++	case "ttl":
++		if len(args) != 1 {
++			return wrongArgs(cmd)
++		}
++		return ":" + strconv.FormatInt(ttlSeconds(s.TTL(args[0])), 10) + "\n"
++	case "incr":
++		if len(args) != 1 {
++			return wrongArgs(cmd)
++		}
++		return doIncr(s, args[0], 1)
++	case "incrby":
++		if len(args) != 2 {
++			return wrongArgs(cmd)
++		}
++		n, err := strconv.ParseInt(args[1], 10, 64)
++		if err != nil {
++			return notInt()
++		}
++		return doIncr(s, args[0], n)
++	case "keys":
++		if len(args) != 1 {
++			return wrongArgs(cmd)
++		}
++		keys := s.Keys(args[0])
++		var b strings.Builder
++		b.WriteByte('*')
++		b.WriteString(strconv.Itoa(len(keys)))
++		b.WriteByte('\n')
++		for _, k := range keys {
++			b.WriteByte('$')
++			b.WriteString(encodeValue(k))
++			b.WriteByte('\n')
++		}
++		return b.String()
++	case "dbsize":
++		if len(args) != 0 {
++			return wrongArgs(cmd)
++		}
++		return ":" + strconv.Itoa(s.Len()) + "\n"
++	}
++	return "-ERR unknown command '" + toks[0] + "'\n"
++}
++
++func doSet(s *store.Store, args []string) string {
++	switch len(args) {
++	case 2:
++		s.Set(args[0], args[1], 0)
++		return "+OK\n"
++	case 4:
++		if !strings.EqualFold(args[2], "ex") {
++			return "-ERR syntax error\n"
++		}
++		n, err := strconv.ParseInt(args[3], 10, 64)
++		if err != nil || n <= 0 {
++			if err != nil {
++				return notInt()
++			}
++			return "-ERR syntax error\n"
++		}
++		s.Set(args[0], args[1], time.Duration(n)*time.Second)
++		return "+OK\n"
++	}
++	return wrongArgs("set")
++}
++
++func doIncr(s *store.Store, key string, by int64) string {
++	v, err := s.Incr(key, by)
++	if err != nil {
++		return notInt()
++	}
++	return ":" + strconv.FormatInt(v, 10) + "\n"
++}
++
++func wrongArgs(cmd string) string {
++	return "-ERR wrong number of arguments for '" + cmd + "'\n"
++}
++
++func notInt() string {
++	return "-ERR value is not an integer\n"
++}
++
++func intResp(b bool) string {
++	if b {
++		return ":1\n"
++	}
++	return ":0\n"
++}
++
++// ttlSeconds converts a store.TTL result to seconds: -2 missing, -1 no
++// expiry, otherwise the remaining time rounded UP to whole seconds.
++func ttlSeconds(d time.Duration) int64 {
++	switch {
++	case d == -2:
++		return -2
++	case d == -1:
++		return -1
++	}
++	return int64((d + time.Second - 1) / time.Second)
++}
++
++// tokenize splits a request line into tokens separated by spaces/tabs.
++// A token may be double-quoted; inside quotes \" \\ and \n are escapes.
++// An unterminated quote is a syntax error.
++func tokenize(line string) ([]string, error) {
++	var toks []string
++	i, n := 0, len(line)
++	for i < n {
++		c := line[i]
++		if c == ' ' || c == '\t' {
++			i++
++			continue
++		}
++		if c == '"' {
++			var b strings.Builder
++			i++
++			terminated := false
++			for i < n {
++				c := line[i]
++				if c == '\\' && i+1 < n {
++					switch esc := line[i+1]; esc {
++					case 'n':
++						b.WriteByte('\n')
++					case '"', '\\':
++						b.WriteByte(esc)
++					default:
++						b.WriteByte('\\')
++						b.WriteByte(esc)
++					}
++					i += 2
++					continue
++				}
++				if c == '"' {
++					i++
++					terminated = true
++					break
++				}
++				b.WriteByte(c)
++				i++
++			}
++			if !terminated {
++				return nil, errSyntax
++			}
++			toks = append(toks, b.String())
++			continue
++		}
++		start := i
++		for i < n && line[i] != ' ' && line[i] != '\t' {
++			i++
++		}
++		toks = append(toks, line[start:i])
++	}
++	return toks, nil
++}
++
++var errSyntax = newSyntaxErr()
++
++type syntaxErr struct{}
++
++func (syntaxErr) Error() string { return "syntax error" }
++
++func newSyntaxErr() error { return syntaxErr{} }
++
++// encodeValue quotes a value when it is empty or contains a space, tab,
++// '"', '\\' or newline, escaping those characters.
++func encodeValue(v string) string {
++	needsQuote := v == ""
++	for _, c := range v {
++		if c == ' ' || c == '\t' || c == '"' || c == '\\' || c == '\n' {
++			needsQuote = true
++			break
++		}
++	}
++	if !needsQuote {
++		return v
++	}
++	var b strings.Builder
++	b.WriteByte('"')
++	for _, c := range v {
++		switch c {
++		case '"':
++			b.WriteString(`\"`)
++		case '\\':
++			b.WriteString(`\\`)
++		case '\n':
++			b.WriteString(`\n`)
++		default:
++			b.WriteRune(c)
++		}
++	}
++	b.WriteByte('"')
++	return b.String()
++}
+diff --git a/proto/proto_test.go b/proto/proto_test.go
+new file mode 100644
+index 0000000..0b9958a
+--- /dev/null
++++ b/proto/proto_test.go
+@@ -0,0 +1,154 @@
++package proto
++
++import (
++	"testing"
++	"time"
++
++	"example.com/kv/store"
++)
++
++func newStore() *store.Store {
++	t0 := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
++	ns := int64(t0.UnixNano())
++	return store.New(func() time.Time { return time.Unix(0, 0).Add(time.Duration(ns)) })
++}
++
++func check(t *testing.T, s *store.Store, line, want string) {
++	t.Helper()
++	if got := Exec(s, line); got != want {
++		t.Errorf("Exec(%q) = %q, want %q", line, got, want)
++	}
++}
++
++func TestPingQuit(t *testing.T) {
++	s := newStore()
++	check(t, s, "PING", "+PONG\n")
++	check(t, s, "ping", "+PONG\n")
++	check(t, s, "Ping", "+PONG\n")
++	check(t, s, "QUIT", "+BYE\n")
++}
++
++func TestSetGet(t *testing.T) {
++	s := newStore()
++	check(t, s, `SET foo bar`, "+OK\n")
++	check(t, s, `GET foo`, "$bar\n")
++	check(t, s, `GET missing`, "$nil\n")
++	// value with a space is quoted back
++	check(t, s, `SET k "hello world"`, "+OK\n")
++	check(t, s, `GET k`, "$\"hello world\"\n")
++	// double quote inside value
++	check(t, s, `SET q "a\"b"`, "+OK\n")
++	check(t, s, `GET q`, "$\"a\\\"b\"\n")
++	// backslash inside value
++	check(t, s, `SET b a\b`, "+OK\n")
++	check(t, s, `GET b`, "$\"a\\\\b\"\n")
++	// backslash-n inside unquoted value
++	check(t, s, `SET n a\nb`, "+OK\n")
++	check(t, s, `GET n`, "$\"a\\\\nb\"\n")
++	// backslash-t inside unquoted value
++	check(t, s, `SET t a\tb`, "+OK\n")
++	check(t, s, `GET t`, "$\"a\\\\tb\"\n")
++	// real newline inside a quoted value
++	check(t, s, `SET nl "a\nb"`, "+OK\n")
++	check(t, s, `GET nl`, "$\"a\\nb\"\n")
++	// empty value
++	check(t, s, `SET e ""`, "+OK\n")
++	check(t, s, `GET e`, "$\"\"\n")
++}
++
++func TestSetEx(t *testing.T) {
++	s := newStore()
++	check(t, s, `SET k v EX 5`, "+OK\n")
++	check(t, s, `SET k v EX 0`, "-ERR syntax error\n")
++	check(t, s, `SET k v EX -1`, "-ERR syntax error\n")
++	check(t, s, `SET k v EX abc`, "-ERR value is not an integer\n")
++	check(t, s, `SET k v PX 5`, "-ERR syntax error\n")
++}
++
++func TestErrors(t *testing.T) {
++	s := newStore()
++	check(t, s, "", "-ERR empty command\n")
++	check(t, s, "   ", "-ERR empty command\n")
++	check(t, s, "FOO bar", "-ERR unknown command 'FOO'\n")
++	check(t, s, "FOO", "-ERR unknown command 'FOO'\n")
++	check(t, s, "GET", "-ERR wrong number of arguments for 'get'\n")
++	check(t, s, "GET a b", "-ERR wrong number of arguments for 'get'\n")
++	check(t, s, "DEL", "-ERR wrong number of arguments for 'del'\n")
++	check(t, s, `SET a "unterminated`, "-ERR syntax error\n")
++	check(t, s, `EXPIRE a b`, "-ERR value is not an integer\n")
++	check(t, s, `INCRBY a b`, "-ERR value is not an integer\n")
++	check(t, s, `SET a b c d e`, "-ERR wrong number of arguments for 'set'\n")
++}
++
++func TestDelExists(t *testing.T) {
++	s := newStore()
++	s.Set("a", "1", 0)
++	s.Set("b", "2", 0)
++	check(t, s, "EXISTS a", ":1\n")
++	check(t, s, "EXISTS b", ":1\n")
++	check(t, s, "DEL a", ":1\n")
++	check(t, s, "EXISTS a", ":0\n")
++	check(t, s, "EXISTS b", ":1\n")
++	check(t, s, "DEL a b c", ":1\n")
++	check(t, s, "DEL a b c", ":0\n")
++}
++
++func TestExpirePersist(t *testing.T) {
++	s := newStore()
++	check(t, s, `SET a 1`, "+OK\n")
++	check(t, s, `SET b 2 EX 10`, "+OK\n")
++	check(t, s, `EXPIRE a 5`, ":1\n")
++	check(t, s, `EXPIRE missing 5`, ":0\n")
++	check(t, s, `PERSIST a`, ":1\n")
++	check(t, s, `PERSIST a`, ":0\n")
++	check(t, s, `PERSIST missing`, ":0\n")
++}
++
++func TestTTL(t *testing.T) {
++	s := newStore()
++	check(t, s, `TTL missing`, ":-2\n")
++	s.Set("a", "1", 0)
++	check(t, s, `TTL a`, ":-1\n")
++	s.Set("b", "2", 3*time.Second)
++	check(t, s, `TTL b`, ":3\n")
++	// 1.2s remaining rounds up to 2
++	s.Set("c", "3", time.Second+200*time.Millisecond)
++	check(t, s, `TTL c`, ":2\n")
++	// 0.1s remaining rounds up to 1
++	s.Set("d", "4", 100*time.Millisecond)
++	check(t, s, `TTL d`, ":1\n")
++}
++
++func TestIncr(t *testing.T) {
++	s := newStore()
++	check(t, s, "INCR n", ":1\n")
++	check(t, s, "INCR n", ":2\n")
++	check(t, s, "INCRBY n 10", ":12\n")
++	check(t, s, "INCRBY n -20", ":-8\n")
++	s.Set("s", "abc", 0)
++	check(t, s, "INCR s", "-ERR value is not an integer\n")
++	check(t, s, "INCRBY s 5", "-ERR value is not an integer\n")
++}
++
++func TestKeysDbsize(t *testing.T) {
++	s := newStore()
++	s.Set("a", "1", 0)
++	s.Set("b", "2", 0)
++	s.Set("ab", "3", 0)
++	check(t, s, `KEYS *`, "*3\n$a\n$ab\n$b\n")
++	check(t, s, `KEYS a*`, "*2\n$a\n$ab\n")
++	check(t, s, `KEYS nomatch*`, "*0\n")
++	// keys with spaces are quoted in the array
++	s.Set("x y", "4", 0)
++	check(t, s, `KEYS *`, "*4\n$a\n$ab\n$b\n$\"x y\"\n")
++	check(t, s, "DBSIZE", ":4\n")
++	check(t, s, `DBSIZE 1`, "-ERR wrong number of arguments for 'dbsize'\n")
++}
++
++func TestRoundTrip(t *testing.T) {
++	s := newStore()
++	check(t, s, `SET foo bar`, "+OK\n")
++	check(t, s, `GET foo`, "$bar\n")
++	check(t, s, `DEL foo`, ":1\n")
++	check(t, s, `GET foo`, "$nil\n")
++}
+diff --git a/server/server.go b/server/server.go
+new file mode 100644
+index 0000000..38500a2
+--- /dev/null
++++ b/server/server.go
+@@ -0,0 +1,98 @@
++// Package server serves the proto line protocol over TCP connections.
++package server
++
++import (
++	"bufio"
++	"context"
++	"io"
++	"net"
++	"strings"
++	"sync"
++
++	"example.com/kv/proto"
++	"example.com/kv/store"
++)
++
++// maxLine is the maximum length of a request line in bytes.
++const maxLine = 64 * 1024
++
++// Serve accepts TCP connections on l and serves the proto line protocol
++// against s, one goroutine per client. It blocks until ctx is cancelled;
++// then it closes the listener, closes open connections, waits for the
++// connection goroutines to finish and returns nil.
++func Serve(ctx context.Context, l net.Listener, s *store.Store) error {
++	var (
++		mu     sync.Mutex
++		open   = make(map[net.Conn]struct{})
++		active sync.WaitGroup
++	)
++
++	acceptDone := make(chan struct{})
++	go func() {
++		defer close(acceptDone)
++		for {
++			c, err := l.Accept()
++			if err != nil {
++				return
++			}
++			mu.Lock()
++			open[c] = struct{}{}
++			mu.Unlock()
++			active.Add(1)
++			go func() {
++				defer active.Done()
++				defer c.Close()
++				defer func() {
++					mu.Lock()
++					delete(open, c)
++					mu.Unlock()
++				}()
++				serveConn(c, s)
++			}()
++		}
++	}()
++
++	<-ctx.Done()
++	l.Close()
++	mu.Lock()
++	for c := range open {
++		c.Close()
++	}
++	mu.Unlock()
++	active.Wait()
++	<-acceptDone
++	return nil
++}
++
++// serveConn handles one connection until it is closed, the client sends
++// QUIT, or a line exceeds maxLine.
++func serveConn(c net.Conn, s *store.Store) {
++	r := bufio.NewReader(c)
++	w := bufio.NewWriter(c)
++	for {
++		line, err := r.ReadString('\n')
++		if err != nil {
++			return
++		}
++		line = strings.TrimSuffix(line, "\r")
++		line = strings.TrimSuffix(line, "\n")
++		if len(line) > maxLine {
++			io.WriteString(w, "-ERR line too long\n")
++			w.Flush()
++			return
++		}
++		resp := proto.Exec(s, line)
++		io.WriteString(w, resp)
++		if err := w.Flush(); err != nil {
++			return
++		}
++		if isQuit(line) {
++			return
++		}
++	}
++}
++
++func isQuit(line string) bool {
++	fields := strings.Fields(line)
++	return len(fields) > 0 && strings.EqualFold(fields[0], "quit")
++}
+diff --git a/server/server_test.go b/server/server_test.go
+new file mode 100644
+index 0000000..af8bbdb
+--- /dev/null
++++ b/server/server_test.go
+@@ -0,0 +1,192 @@
++package server
++
++import (
++	"bufio"
++	"context"
++	"fmt"
++	"net"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++
++	"example.com/kv/store"
++)
++
++type rig struct {
++	addr   string
++	cancel context.CancelFunc
++	errc   chan error
++}
++
++func start(t *testing.T) *rig {
++	t.Helper()
++	l, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	ctx, cancel := context.WithCancel(context.Background())
++	errc := make(chan error, 1)
++	go func() { errc <- Serve(ctx, l, store.New(nil)) }()
++	return &rig{addr: l.Addr().String(), cancel: cancel, errc: errc}
++}
++
++func (r *rig) stop(t *testing.T) {
++	t.Helper()
++	r.cancel()
++	select {
++	case err := <-r.errc:
++		if err != nil {
++			t.Fatalf("Serve returned %v, want nil", err)
++		}
++	case <-time.After(5 * time.Second):
++		t.Fatal("Serve did not return after cancel")
++	}
++}
++
++func (r *rig) client(t *testing.T) net.Conn {
++	t.Helper()
++	c, err := net.Dial("tcp", r.addr)
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { c.Close() })
++	return c
++}
++
++// roundTrip sends lines and returns the responses in order.
++func roundTrip(t *testing.T, c net.Conn, lines ...string) []string {
++	t.Helper()
++	r := bufio.NewReader(c)
++	out := make([]string, 0, len(lines))
++	for _, ln := range lines {
++		if _, err := c.Write([]byte(ln)); err != nil {
++			t.Fatalf("write %q: %v", ln, err)
++		}
++		resp, err := r.ReadString('\n')
++		if err != nil {
++			t.Fatalf("reading reply to %q: %v (got %q)", ln, err, resp)
++		}
++		out = append(out, resp)
++	}
++	return out
++}
++
++func TestPingAndCR(t *testing.T) {
++	r := start(t)
++	defer r.stop(t)
++	c := r.client(t)
++	// \r before \n must be stripped
++	got := roundTrip(t, c, "PING\r\n")
++	if got[0] != "+PONG\n" {
++		t.Fatalf("got %q", got[0])
++	}
++}
++
++func TestSetGetOverWire(t *testing.T) {
++	r := start(t)
++	defer r.stop(t)
++	c := r.client(t)
++	got := roundTrip(t, c,
++		"SET key value\n",
++		`SET k "hello world"\n`,
++		"GET key\n",
++		"GET k\n",
++		"GET missing\n",
++		"DBSIZE\n",
++	)
++	want := []string{"+OK\n", "+OK\n", "$value\n", `$"hello world"` + "\n", "$nil\n", ":2\n"}
++	for i := range want {
++		if got[i] != want[i] {
++			t.Fatalf("response %d = %q, want %q", i, got[i], want[i])
++		}
++	}
++}
++
++func TestQuitClosesConnection(t *testing.T) {
++	r := start(t)
++	defer r.stop(t)
++	c := r.client(t)
++	if got := roundTrip(t, c, "QUIT\n"); got[0] != "+BYE\n" {
++		t.Fatalf("got %q", got[0])
++	}
++	// the connection must now be closed by the server
++	buf := make([]byte, 1)
++	c.SetReadDeadline(time.Now().Add(5 * time.Second))
++	n, err := c.Read(buf)
++	if err == nil {
++		t.Fatalf("expected EOF after QUIT, got %d bytes", n)
++	}
++}
++
++func TestLineTooLong(t *testing.T) {
++	r := start(t)
++	defer r.stop(t)
++	c := r.client(t)
++	long := strings.Repeat("a", maxLine+1) // longer than 64 KiB
++	if got := roundTrip(t, c, long+"\n"); got[0] != "-ERR line too long\n" {
++		t.Fatalf("got %q", strings.TrimSpace(got[0]))
++	}
++	buf := make([]byte, 1)
++	c.SetReadDeadline(time.Now().Add(5 * time.Second))
++	if _, err := c.Read(buf); err == nil {
++		t.Fatal("expected EOF after too-long line")
++	}
++}
++
++func TestLineAtLimitOK(t *testing.T) {
++	r := start(t)
++	defer r.stop(t)
++	c := r.client(t)
++	// exactly 64 KiB of content is within the limit
++	line := "SET " + strings.Repeat("a", maxLine-7) + " v\n"
++	if len(line) > maxLine+1 {
++		t.Fatal("test setup: line too long")
++	}
++	got := roundTrip(t, c, line)
++	if got[0] != "+OK\n" {
++		t.Fatalf("got %q", strings.TrimSpace(got[0]))
++	}
++}
++
++func TestConcurrentClients(t *testing.T) {
++	r := start(t)
++	defer r.stop(t)
++	var wg sync.WaitGroup
++	for i := 0; i < 4; i++ {
++		i := i
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			c, err := net.Dial("tcp", r.addr)
++			if err != nil {
++				t.Errorf("dial: %v", err)
++				return
++			}
++			defer c.Close()
++			key := fmt.Sprintf("key%d", i)
++			got := roundTrip(t, c,
++				"SET "+key+" v\n",
++				"GET "+key+"\n",
++				"DBSIZE\n",
++			)
++			if got[0] != "+OK\n" || got[1] != "$v\n" {
++				t.Errorf("client %d: %q %q", i, got[0], got[1])
++			}
++		}()
++	}
++	wg.Wait()
++}
++
++func TestShutdown(t *testing.T) {
++	r := start(t)
++	c := r.client(t)
++	roundTrip(t, c, "PING\n")
++	r.stop(t)
++	// the open connection must have been closed by the server
++	buf := make([]byte, 1)
++	c.SetReadDeadline(time.Now().Add(5 * time.Second))
++	if _, err := c.Read(buf); err == nil {
++		t.Fatal("expected EOF after server shutdown")
++	}
++}
+diff --git a/store/glob.go b/store/glob.go
+new file mode 100644
+index 0000000..0dc7d17
+--- /dev/null
++++ b/store/glob.go
+@@ -0,0 +1,153 @@
++package store
++
++type atomKind int
++
++const (
++	kindLiteral atomKind = iota
++	kindAny
++	kindStar
++	kindClass
++)
++
++type runRange struct{ lo, hi rune }
++
++type atom struct {
++	kind  atomKind
++	r     rune
++	neg   bool
++	class []runRange
++}
++
++// compilePattern parses a glob pattern into match atoms.
++func compilePattern(pat string) []atom {
++	p := []rune(pat)
++	n := len(p)
++	var parts []atom
++	for i := 0; i < n; {
++		switch c := p[i]; {
++		case c == '*':
++			parts = append(parts, atom{kind: kindStar})
++			i++
++		case c == '?':
++			parts = append(parts, atom{kind: kindAny})
++			i++
++		case c == '\\':
++			if i+1 < n {
++				parts = append(parts, atom{kind: kindLiteral, r: p[i+1]})
++				i += 2
++			} else {
++				parts = append(parts, atom{kind: kindLiteral, r: '\\'})
++				i++
++			}
++		case c == '[':
++			j, class, neg, closed := parseClass(p, i+1)
++			if !closed {
++				// Unterminated class: treat '[' as a literal character.
++				parts = append(parts, atom{kind: kindLiteral, r: '['})
++				i++
++			} else {
++				parts = append(parts, atom{kind: kindClass, neg: neg, class: class})
++				i = j
++			}
++		default:
++			parts = append(parts, atom{kind: kindLiteral, r: c})
++			i++
++		}
++	}
++	return parts
++}
++
++// parseClass parses a class starting at index i (just after the '[').
++// It returns the index just past the closing ']', the ranges, whether the
++// class is negated and whether it was properly closed.
++func parseClass(p []rune, i int) (int, []runRange, bool, bool) {
++	n := len(p)
++	var class []runRange
++	neg := false
++	if i < n && (p[i] == '^' || p[i] == '!') {
++		neg = true
++		i++
++	}
++	first := true
++	for i < n {
++		ch := p[i]
++		if ch == ']' && !first {
++			return i + 1, class, neg, true
++		}
++		first = false
++		lo := ch
++		i++
++		if lo == '\\' && i < n {
++			lo = p[i]
++			i++
++		}
++		if i < n && p[i] == '-' && i+1 < n && p[i+1] != ']' {
++			class = append(class, runRange{lo, p[i+1]})
++			i += 2
++		} else {
++			class = append(class, runRange{lo, lo})
++		}
++	}
++	return i, class, neg, false
++}
++
++func (a atom) matches(r rune) bool {
++	switch a.kind {
++	case kindLiteral:
++		return a.r == r
++	case kindAny:
++		return true
++	case kindClass:
++		in := false
++		for _, rr := range a.class {
++			if r >= rr.lo && r <= rr.hi {
++				in = true
++				break
++			}
++		}
++		return in != a.neg
++	}
++	return false
++}
++
++// globMatch reports whether s matches the whole glob pattern.
++// '*' matches any sequence (including empty and '/'), '?' matches exactly
++// one character, '[...]' a character class with ranges and negation,
++// and '\' escapes the following character.
++func globMatch(pattern, s string) bool {
++	parts := compilePattern(pattern)
++	src := []rune(s)
++	pi, si := 0, 0
++	star := -1
++	matchPos := 0
++	for si < len(src) {
++		advanced := false
++		if pi < len(parts) {
++			a := parts[pi]
++			if a.kind == kindStar {
++				star = pi
++				matchPos = si
++				pi++
++				advanced = true
++			} else if a.matches(src[si]) {
++				pi++
++				si++
++				advanced = true
++			}
++		}
++		if advanced {
++			continue
++		}
++		if star >= 0 {
++			pi = star + 1
++			matchPos++
++			si = matchPos
++		} else {
++			return false
++		}
++	}
++	for pi < len(parts) && parts[pi].kind == kindStar {
++		pi++
++	}
++	return pi == len(parts)
++}
+diff --git a/store/store.go b/store/store.go
+new file mode 100644
+index 0000000..322af58
+--- /dev/null
++++ b/store/store.go
+@@ -0,0 +1,285 @@
++// Package store implements a small in-memory key-value store with TTLs,
++// glob key matching and JSON snapshots.
++package store
++
++import (
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io"
++	"sort"
++	"strconv"
++	"sync"
++	"time"
++)
++
++// ErrNotInteger is returned by Incr when the stored value is not a base-10 int64.
++var ErrNotInteger = errors.New("value is not an integer")
++
++// Clock returns the current time.
++type Clock func() time.Time
++
++type entry struct {
++	val   string
++	exp   time.Time
++	expr  bool // true if the entry has an expiry
++}
++
++// Store is a concurrency-safe key-value store.
++type Store struct {
++	mu    sync.Mutex
++	m     map[string]entry
++	clock Clock
++}
++
++// New creates a Store. A nil clock uses time.Now.
++func New(clock Clock) *Store {
++	if clock == nil {
++		clock = time.Now
++	}
++	return &Store{m: make(map[string]entry), clock: clock}
++}
++
++// live reports whether the key exists and is unexpired at time now.
++func (s *Store) live(key string, now time.Time) (string, bool) {
++	e, ok := s.m[key]
++	if !ok {
++		return "", false
++	}
++	if e.expr && !now.Before(e.exp) {
++		return "", false
++	}
++	return e.val, true
++}
++
++// liveEntry returns the entry if the key exists and is unexpired at time now.
++func (s *Store) liveEntry(key string, now time.Time) (entry, bool) {
++	e, ok := s.m[key]
++	if !ok {
++		return entry{}, false
++	}
++	if e.expr && !now.Before(e.exp) {
++		return entry{}, false
++	}
++	return e, true
++}
++
++// Set stores value under key. ttl <= 0 means no expiry.
++// Set always replaces both value and ttl.
++func (s *Store) Set(key, value string, ttl time.Duration) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	e := entry{val: value}
++	if ttl > 0 {
++		e.exp = s.clock().Add(ttl)
++		e.expr = true
++	}
++	s.m[key] = e
++}
++
++// Get returns the value for key and whether it was found.
++func (s *Store) Get(key string) (string, bool) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	return s.live(key, s.clock())
++}
++
++// Del removes the given keys and returns how many existed and were removed.
++func (s *Store) Del(keys ...string) int {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	now := s.clock()
++	n := 0
++	for _, k := range keys {
++		if _, ok := s.live(k, now); ok {
++			delete(s.m, k)
++			n++
++		}
++	}
++	return n
++}
++
++// Exists reports whether key exists and is unexpired.
++func (s *Store) Exists(key string) bool {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	_, ok := s.live(key, s.clock())
++	return ok
++}
++
++// Expire sets a new expiry on key. It returns false if the key is missing;
++// ttl <= 0 deletes the key and returns true.
++func (s *Store) Expire(key string, ttl time.Duration) bool {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	now := s.clock()
++	e, ok := s.liveEntry(key, now)
++	if !ok {
++		return false
++	}
++	if ttl <= 0 {
++		delete(s.m, key)
++		return true
++	}
++	e.exp = now.Add(ttl)
++	e.expr = true
++	s.m[key] = e
++	return true
++}
++
++// Persist removes the expiry of key. It returns true only if the key existed
++// and had an expiry.
++func (s *Store) Persist(key string) bool {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	now := s.clock()
++	e, ok := s.liveEntry(key, now)
++	if !ok || !e.expr {
++		return false
++	}
++	e.expr = false
++	e.exp = time.Time{}
++	s.m[key] = e
++	return true
++}
++
++// TTL returns -2 (as a duration) if the key is missing, -1 if it has no
++// expiry, otherwise the remaining time (> 0).
++func (s *Store) TTL(key string) time.Duration {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	now := s.clock()
++	e, ok := s.liveEntry(key, now)
++	if !ok {
++		return -2
++	}
++	if !e.expr {
++		return -1
++	}
++	return e.exp.Sub(now)
++}
++
++// Incr adds by to the integer value stored under key (missing counts as 0)
++// and stores the result, keeping any existing ttl.
++func (s *Store) Incr(key string, by int64) (int64, error) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	now := s.clock()
++	v, ok := s.live(key, now)
++	var cur int64
++	if ok {
++		n, err := strconv.ParseInt(v, 10, 64)
++		if err != nil {
++			return 0, ErrNotInteger
++		}
++		cur = n
++	}
++	nv := cur + by
++	e := entry{val: strconv.FormatInt(nv, 10)}
++	if ok {
++		e = s.m[key]
++		e.val = strconv.FormatInt(nv, 10)
++	}
++	s.m[key] = e
++	return nv, nil
++}
++
++// Keys returns the live keys matching the glob pattern, sorted ascending.
++func (s *Store) Keys(pattern string) []string {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	now := s.clock()
++	var out []string
++	for k := range s.m {
++		if _, ok := s.live(k, now); ok && globMatch(pattern, k) {
++			out = append(out, k)
++		}
++	}
++	sort.Strings(out)
++	return out
++}
++
++// Len returns the number of live keys.
++func (s *Store) Len() int {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	now := s.clock()
++	n := 0
++	for k := range s.m {
++		if _, ok := s.live(k, now); ok {
++			n++
++		}
++	}
++	return n
++}
++
++type snapEntry struct {
++	K   string `json:"k"`
++	V   string `json:"v"`
++	Exp int64  `json:"exp"`
++}
++
++type snapshot struct {
++	Version int         `json:"version"`
++	Entries []snapEntry `json:"entries"`
++}
++
++// Save writes a JSON snapshot of the live entries, sorted by key.
++func (s *Store) Save(w io.Writer) error {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	now := s.clock()
++	snap := snapshot{Version: 1}
++	for k, e := range s.m {
++		if _, ok := s.live(k, now); !ok {
++			continue
++		}
++		se := snapEntry{K: k, V: e.val}
++		if e.expr {
++			se.Exp = e.exp.UnixMilli()
++		}
++		snap.Entries = append(snap.Entries, se)
++	}
++	sort.Slice(snap.Entries, func(i, j int) bool { return snap.Entries[i].K < snap.Entries[j].K })
++	data, err := json.Marshal(snap)
++	if err != nil {
++		return err
++	}
++	_, err = w.Write(append(data, '\n'))
++	return err
++}
++
++// Load replaces all contents from a JSON snapshot written by Save.
++// Other versions are rejected with an error; entries already expired at load
++// time are dropped.
++func (s *Store) Load(r io.Reader) error {
++	data, err := io.ReadAll(r)
++	if err != nil {
++		return err
++	}
++	var snap snapshot
++	if err := json.Unmarshal(data, &snap); err != nil {
++		return err
++	}
++	if snap.Version != 1 {
++		return fmt.Errorf("unsupported snapshot version %d", snap.Version)
++	}
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	now := s.clock()
++	m := make(map[string]entry, len(snap.Entries))
++	for _, se := range snap.Entries {
++		e := entry{val: se.V}
++		if se.Exp != 0 {
++			d := time.UnixMilli(se.Exp)
++			if !now.Before(d) {
++				continue // already expired
++			}
++			e.exp = d
++			e.expr = true
++		}
++		m[se.K] = e
++	}
++	s.m = m
++	return nil
++}
+diff --git a/store/store_test.go b/store/store_test.go
+new file mode 100644
+index 0000000..0a84422
+--- /dev/null
++++ b/store/store_test.go
+@@ -0,0 +1,335 @@
++package store
++
++import (
++	"bytes"
++	"errors"
++	"strconv"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++)
++
++var t0 = time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
++
++func newTestStore() (*Store, *int64) {
++	ns := int64(t0.UnixNano())
++	s := New(func() time.Time { return time.Unix(0, 0).Add(time.Duration(ns)) })
++	return s, &ns
++}
++
++func advance(ns *int64, d time.Duration) { *ns += d.Nanoseconds() }
++
++func TestSetGet(t *testing.T) {
++	s, ns := newTestStore()
++	_ = ns
++	if v, ok := s.Get("a"); ok {
++		t.Fatalf("missing key: got %q ok=%v", v, ok)
++	}
++	s.Set("a", "hello", 0)
++	if v, ok := s.Get("a"); !ok || v != "hello" {
++		t.Fatalf("Get: got %q %v", v, ok)
++	}
++	// Set replaces value and ttl
++	s.Set("a", "world", time.Hour)
++	if v, _ := s.Get("a"); v != "world" {
++		t.Fatalf("replace value: %q", v)
++	}
++	if got := s.TTL("a"); got != time.Hour {
++		t.Fatalf("ttl: %v", s.TTL("a"))
++	}
++	s.Set("a", "x", 0) // ttl reset to none
++	if got := s.TTL("a"); got != -1 {
++		t.Fatalf("ttl after reset: %v", got)
++	}
++}
++
++func TestExpiry(t *testing.T) {
++	s, ns := newTestStore()
++	s.Set("k", "v", time.Second)
++	if !s.Exists("k") {
++		t.Fatal("should exist before expiry")
++	}
++	advance(ns, 999_000_000) // just under
++	if !s.Exists("k") {
++		t.Fatal("should still exist before deadline")
++	}
++	advance(ns, 1_000_000) // now >= deadline
++	if s.Exists("k") {
++		t.Fatal("expired key must behave as missing")
++	}
++	if _, ok := s.Get("k"); ok {
++		t.Fatal("expired Get must be missing")
++	}
++}
++
++func TestTTLValues(t *testing.T) {
++	s, ns := newTestStore()
++	if got := s.TTL("missing"); got != -2 {
++		t.Fatalf("missing ttl: %v", got)
++	}
++	s.Set("a", "1", 0)
++	if got := s.TTL("a"); got != -1 {
++		t.Fatalf("no expiry ttl: %v", got)
++	}
++	s.Set("b", "2", 3*time.Second)
++	if got := s.TTL("b"); got != 3*time.Second {
++		t.Fatalf("remaining: %v", got)
++	}
++	advance(ns, 2*time.Second)
++	if got := s.TTL("b"); got != time.Second {
++		t.Fatalf("remaining after advance: %v", got)
++	}
++	advance(ns, time.Second) // exactly at deadline -> expired -> -2
++	if got := s.TTL("b"); got != -2 {
++		t.Fatalf("expired ttl: %v", got)
++	}
++}
++
++func TestDelExists(t *testing.T) {
++	s, _ := newTestStore()
++	s.Set("a", "1", 0)
++	s.Set("b", "2", 0)
++	if n := s.Del("a", "nope", "b", "a"); n != 2 {
++		t.Fatalf("Del count: %d", n)
++	}
++	if s.Exists("a") || s.Exists("b") {
++		t.Fatal("deleted keys must not exist")
++	}
++	if n := s.Del("a", "b"); n != 0 {
++		t.Fatalf("Del already deleted: %d", n)
++	}
++}
++
++func TestExpirePersist(t *testing.T) {
++	s, ns := newTestStore()
++	if s.Expire("missing", time.Second) {
++		t.Fatal("Expire missing must be false")
++	}
++	s.Set("a", "1", 0)
++	s.Set("b", "2", time.Hour)
++	if !s.Expire("a", 5*time.Second) {
++		t.Fatal("Expire existing must be true")
++	}
++	if got := s.TTL("a"); got != 5*time.Second {
++		t.Fatalf("expired ttl: %v", got)
++	}
++	if !s.Persist("a") {
++		t.Fatal("Persist of expiring key must be true")
++	}
++	if got := s.TTL("a"); got != -1 {
++		t.Fatalf("persisted ttl: %v", got)
++	}
++	if s.Persist("a") {
++		t.Fatal("Persist of non-expiring key must be false")
++	}
++	if !s.Persist("b") {
++		t.Fatal("Persist b")
++	}
++	// ttl <= 0 deletes
++	s.Set("c", "3", time.Second)
++	advance(ns, 2*time.Second) // c is now expired -> missing
++	if s.Expire("c", 0) {
++		t.Fatal("Expire on expired key must be false")
++	}
++	s.Set("d", "4", time.Second)
++	if !s.Expire("d", 0) {
++		t.Fatal("Expire 0 on existing must be true")
++	}
++	if s.Exists("d") {
++		t.Fatal("key must be deleted")
++	}
++}
++
++func TestIncr(t *testing.T) {
++	s, ns := newTestStore()
++	if v, err := s.Incr("n", 5); err != nil || v != 5 {
++		t.Fatalf("Incr missing: %v %v", v, err)
++	}
++	if v, err := s.Incr("n", 10); err != nil || v != 15 {
++		t.Fatalf("Incr again: %v %v", v, err)
++	}
++	if v, err := s.Incr("n", -20); err != nil || v != -5 {
++		t.Fatalf("Incr negative: %v %v", v, err)
++	}
++	// keeps existing ttl
++	s.Set("x", "10", time.Minute)
++	if v, err := s.Incr("x", 1); err != nil || v != 11 {
++		t.Fatalf("Incr x: %v %v", v, err)
++	}
++	if got := s.TTL("x"); got != time.Minute {
++		t.Fatalf("Incr must keep ttl: %v", got)
++	}
++	// non-integer value
++	s.Set("s", "abc", 0)
++	if _, err := s.Incr("s", 1); !errors.Is(err, ErrNotInteger) {
++		t.Fatalf("Incr non-integer: %v", err)
++	}
++	// stored value overflows int64 (addition wraps; value itself parses fine)
++	s.Set("big", "9223372036854775807", 0)
++	if _, err := s.Incr("big", 1); err != nil {
++		t.Fatalf("Incr overflow: %v", err)
++	}
++	// expired key counts as 0 and gets a fresh entry
++	s.Set("e", "40", time.Second)
++	advance(ns, 2*time.Second)
++	if v, err := s.Incr("e", 1); err != nil || v != 1 {
++		t.Fatalf("Incr expired: %v %v", v, err)
++	}
++	if got := s.TTL("e"); got != -1 {
++		t.Fatalf("Incr expired ttl: %v", got)
++	}
++}
++
++func TestKeysLen(t *testing.T) {
++	s, ns := newTestStore()
++	for _, k := range []string{"user:1", "user:2", "session:9", "temp"} {
++		s.Set(k, "v", 0)
++	}
++	s.Set("gone", "v", time.Second)
++	advance(ns, 2*time.Second)
++	if got := s.Len(); got != 4 {
++		t.Fatalf("Len: %d", got)
++	}
++	if got := strings.Join(s.Keys("user:*"), ","); got != "user:1,user:2" {
++		t.Fatalf("Keys user:*: %s", got)
++	}
++	if got := strings.Join(s.Keys("*:*"), ","); got != "session:9,user:1,user:2" {
++		t.Fatalf("Keys *:*: %s", got)
++	}
++	if got := strings.Join(s.Keys("?emp"), ","); got != "temp" {
++		t.Fatalf("Keys ?emp: %s", got)
++	}
++	if got := strings.Join(s.Keys("*session*"), ","); got != "session:9" {
++		t.Fatalf("Keys *session*: %s", got)
++	}
++	if got := strings.Join(s.Keys("*"), ","); got != "session:9,temp,user:1,user:2" {
++		t.Fatalf("Keys *: %s", got)
++	}
++	if got := strings.Join(s.Keys("user:2"), ","); got != "user:2" {
++		t.Fatalf("Keys exact: %s", got)
++	}
++	if got := s.Len(); got != 4 {
++		t.Fatalf("Len after ops: %d", got)
++	}
++}
++
++func TestGlob(t *testing.T) {
++	cases := []struct {
++		pattern, s string
++		want       bool
++	}{
++		{"*", "", true},
++		{"*", "anything/at/all", true},
++		{"a*", "a", true},
++		{"a*", "abc", true},
++		{"a*", "b", false},
++		{"*a", "ba", true},
++		{"a*a", "a", false},
++		{"a*a", "aa", true},
++		{"a*a", "abca", true},
++		{"a*a", "ab", false},
++		{"?", "a", true},
++		{"?", "ab", false},
++		{"?", "", false},
++		{"??", "ab", true},
++		{"??", "a", false},
++		{"[abc]", "b", true},
++		{"[abc]", "d", false},
++		{"[a-z]", "m", true},
++		{"[a-z]", "M", false},
++		{"[a-z]", "1", false},
++		{"[^abc]", "d", true},
++		{"[^abc]", "b", false},
++		{"[!abc]", "d", true},
++		{"[!abc]", "a", false},
++		{`a\b`, `a\b`, false},
++		{`a\b`, `ab`, true},
++		{`\*`, "*", true},
++		{`\*`, "x", false},
++		{`a\*b`, "a*b", true},
++		{"[a-cx-z]", "y", true},
++		{"[a-cx-z]", "g", false},
++	}
++	for _, c := range cases {
++		if got := globMatch(c.pattern, c.s); got != c.want {
++			t.Errorf("globMatch(%q, %q) = %v, want %v", c.pattern, c.s, got, c.want)
++		}
++	}
++}
++
++func TestSaveLoad(t *testing.T) {
++	s, _ := newTestStore()
++	s.Set("a", "1", 0)
++	s.Set("b", "2", time.Hour)
++	s.Set("c", "3", time.Second)
++	var buf bytes.Buffer
++	if err := s.Save(&buf); err != nil {
++		t.Fatal(err)
++	}
++	want := `{"version":1,"entries":[{"k":"a","v":"1","exp":0},{"k":"b","v":"2","exp":` +
++		strconv.FormatInt(t0.Add(time.Hour).UnixMilli(), 10) + `},{"k":"c","v":"3","exp":` +
++		strconv.FormatInt(t0.Add(time.Second).UnixMilli(), 10) + `}]}`
++	if strings.TrimSuffix(buf.String(), "\n") != want {
++		t.Fatalf("snapshot:\n got %s\nwant %s", buf.String(), want)
++	}
++
++	// load into a store whose clock is 2s later: c is expired at load time
++	ns2 := int64(t0.Add(2 * time.Second).UnixNano())
++	s2 := New(func() time.Time { return time.Unix(0, 0).Add(time.Duration(ns2)) })
++	if err := s2.Load(strings.NewReader(buf.String())); err != nil {
++		t.Fatal(err)
++	}
++	if got := s2.Len(); got != 2 {
++		t.Fatalf("Len after load: %d", got)
++	}
++	if v, ok := s2.Get("c"); ok || v != "" {
++		t.Fatalf("expired entry must be dropped: %q %v", v, ok)
++	}
++	if v, ok := s2.Get("b"); !ok || v != "2" {
++		t.Fatalf("b after load: %q %v", v, ok)
++	}
++	// b still has its (future) expiry
++	if got := s2.TTL("b"); got != time.Hour-2*time.Second {
++		t.Fatalf("b ttl after load: %v", got)
++	}
++	// Load replaces all contents
++	s2.Set("zz", "z", 0)
++	if err := s2.Load(strings.NewReader(buf.String())); err != nil {
++		t.Fatal(err)
++	}
++	if s2.Exists("zz") {
++		t.Fatal("Load must replace all contents")
++	}
++}
++
++func TestLoadRejectsVersion(t *testing.T) {
++	s, _ := newTestStore()
++	err := s.Load(strings.NewReader(`{"version":2,"entries":[]}`))
++	if err == nil {
++		t.Fatal("want error for version 2")
++	}
++	if err := s.Load(strings.NewReader(`not json`)); err == nil {
++		t.Fatal("want error for bad json")
++	}
++}
++
++func TestConcurrent(t *testing.T) {
++	s, _ := newTestStore()
++	var wg sync.WaitGroup
++	for i := 0; i < 8; i++ {
++		wg.Add(1)
++		go func(i int) {
++			defer wg.Done()
++			k := string(rune('a' + i))
++			for j := 0; j < 100; j++ {
++				s.Set(k, "v", 0)
++				s.Get(k)
++				s.Incr(k, 1)
++				s.Keys("*")
++				s.Len()
++			}
++		}(i)
++	}
++	wg.Wait()
++}
