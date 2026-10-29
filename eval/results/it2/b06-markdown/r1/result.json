@@ -1,0 +1,38 @@
+{
+  "task_id": "b06-markdown",
+  "tier": "tierB",
+  "rep": 1,
+  "harness_hash": "a94d56e41335",
+  "success": false,
+  "score": 0.9629629629629629,
+  "tests_passed": 26,
+  "tests_total": 27,
+  "outcome": {
+    "Status": "wall_clock",
+    "CheckPassed": false,
+    "Summary": "",
+    "Turns": 35,
+    "Compactions": 0,
+    "PromptTokens": 1263239,
+    "PrefillTokens": 58727,
+    "ReprefillTokens": 0,
+    "CompletionTokens": 38250,
+    "ReasoningTokens": 20251,
+    "ToolCalls": 48,
+    "ToolErrors": 3,
+    "Repaired": 0,
+    "Nudges": 0,
+    "LoopHints": 0,
+    "FinishAttempts": 0,
+    "Delegations": 0,
+    "Codes": {
+      "F10": 1,
+      "F4": 3
+    },
+    "WallSeconds": 4063.016728685,
+    "Err": ""
+  },
+  "started": "2026-10-29T03:55:29Z",
+  "hidden_output": "=== RUN   TestSpecExample\n--- PASS: TestSpecExample (0.00s)\n=== RUN   TestHeadings\n--- PASS: TestHeadings (0.00s)\n=== RUN   TestHorizontalRule\n--- PASS: TestHorizontalRule (0.00s)\n=== RUN   TestCodeFence\n--- PASS: TestCodeFence (0.00s)\n=== RUN   TestBlockquote\n--- PASS: TestBlockquote (0.00s)\n=== RUN   TestLists\n--- PASS: TestLists (0.00s)\n=== RUN   TestParagraph\n--- PASS: TestParagraph (0.00s)\n=== RUN   TestBlankAndCR\n--- PASS: TestBlankAndCR (0.00s)\n=== RUN   TestInlineCode\n--- PASS: TestInlineCode (0.00s)\n=== RUN   TestInlineLinks\n--- PASS: TestInlineLinks (0.00s)\n=== RUN   TestAutolink\n--- PASS: TestAutolink (0.00s)\n=== RUN   TestEmphasis\n--- PASS: TestEmphasis (0.00s)\n=== RUN   TestEscape\n--- PASS: TestEscape (0.00s)\n=== RUN   TestHardBreaks\n--- PASS: TestHardBreaks (0.00s)\n=== RUN   TestHTMLEscaping\n--- PASS: TestHTMLEscaping (0.00s)\n=== RUN   TestNoLeadingNewline\n--- PASS: TestNoLeadingNewline (0.00s)\n=== RUN   TestHiddenCode\n--- PASS: TestHiddenCode (0.00s)\n=== RUN   TestHiddenCodeSpans\n    zz_hidden_test.go:23: ToHTML(\"`  `\")\n         got \"\u003cp\u003e\u003ccode\u003e\u003c/code\u003e\u003c/p\u003e\\n\"\n        want \"\u003cp\u003e\u003ccode\u003e  \u003c/code\u003e\u003c/p\u003e\\n\"\n--- FAIL: TestHiddenCodeSpans (0.00s)\n=== RUN   TestHiddenEmphasis\n--- PASS: TestHiddenEmphasis (0.00s)\n=== RUN   TestHiddenEscapes\n--- PASS: TestHiddenEscapes (0.00s)\n=== RUN   TestHiddenHeadings\n--- PASS: TestHiddenHeadings (0.00s)\n=== RUN   TestHiddenLinks\n--- PASS: TestHiddenLinks (0.00s)\n=== RUN   TestHiddenLists\n--- PASS: TestHiddenLists (0.00s)\n=== RUN   TestHiddenParagraphs\n--- PASS: TestHiddenParagraphs (0.00s)\n=== RUN   TestHiddenQuotes\n--- PASS: TestHiddenQuotes (0.00s)\n=== RUN   TestHiddenRules\n--- PASS: TestHiddenRules (0.00s)\n=== RUN   TestHiddenSpecExample\n--- PASS: TestHiddenSpecExample (0.00s)\nFAIL\nFAIL\texample.com/md/md\t0.003s",
+  "work": "/tmp/qh-runs/it2/b06-markdown-r1"
+}
