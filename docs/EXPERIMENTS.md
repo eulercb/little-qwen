@@ -250,3 +250,13 @@ Template:
 - it1 and it2 pooled (n=2 per task): Tier-B mean 0.903.
   - b06 0 and 0.96. b04 0.91 and 0.97. b01, b02, b03 and b05 1.00 in both.
   - Compare base 0.654, pi 0.828 and little-coder 0.650 (n=1 each).
+
+## Tier D: d01 Caça-Palavras PWA with it2 (2026-10-29): 38/39 = 0.97
+- 9 milestone sessions (M0–M8), each committed, in 117.6 min and 122 turns; the visible `npm run check` passes.
+- First scored 0 because of a harness bug: `QH_TASK_DIR` was relative, so the hidden checker's `check.sh` was not
+  found from inside the workdir.
+  - Fixed: task dirs are made absolute in LoadTasks.
+  - Rescored from the intact workdir with `qh rescore`: 38/39.
+- The one miss is `e-complete` (Playwright): clicking "Próxima fase" on the completion card timed out after 8 s,
+  probably an overlay or animation intercepting the click.
+- The reference solution scores 39/39.

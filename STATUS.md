@@ -16,7 +16,7 @@ If this session is gone, the queue died with it: re-run resume.sh with the curre
 Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. The queue continues with:
 1. (done) it2 on Tier B: 0.988.
 2. (done) The OpenCode comparison: 0.776 in 143.9 min.
-3. d01 with it2.
+3. (done) d01 with it2: 0.97.
 4. The Terminal-Bench subset with it2, then with little-coder.
 
 Headline:
@@ -213,4 +213,7 @@ Then follow "Decisions waiting on those results" below as items finish.
   - Pooled it1 + it2: 0.903. Next: the OpenCode comparison, then d01 and Tier C with it2.
 - 2026-10-29 07:18 — OpenCode on the 7 tasks: 0.776 in 143.9 min (qh 0.976 / 57.3, pi 0.996 / 54.9,
   little-coder 0.980 / 84.2). d01 (Tier D) with it2 started.
+- 2026-10-29 09:16 — d01 with it2: 38/39 = 0.97 (9 sessions, 118 min).
+  - The first score of 0 was a harness bug: QH_TASK_DIR was relative. Fixed, and rescored with `qh rescore`.
+  - Tier C (Terminal-Bench subset) with it2 started.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.

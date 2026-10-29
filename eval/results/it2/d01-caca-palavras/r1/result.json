@@ -4,9 +4,9 @@
   "rep": 1,
   "harness_hash": "a94d56e41335",
   "success": false,
-  "score": 0,
-  "tests_passed": 0,
-  "tests_total": 0,
+  "score": 0.9743589743589743,
+  "tests_passed": 38,
+  "tests_total": 39,
   "outcome": {
     "Status": "finished",
     "CheckPassed": true,
@@ -32,6 +32,7 @@
     "Err": ""
   },
   "started": "2026-10-29T07:18:20Z",
-  "hidden_output": "bash: eval/tasks/d01-caca-palavras/checker/check.sh: No such file or directory",
-  "work": "/tmp/qh-runs/it2/d01-caca-palavras-r1"
+  "hidden_output": "PASS hygiene\nPASS core-pure\nPASS data-words\nPASS data-letters\nPASS strings\nPASS dependencies\nPASS index-html\nPASS npm-check\nPASS u-normalize \nPASS u-prng-exact \nPASS u-shuffle-exact \nPASS u-directions \nPASS u-levels \nPASS u-select-cases \nPASS u-select-hysteresis \nPASS u-matchword \nPASS u-save \nPASS u-generate-valid \nPASS u-generate-deterministic \nPASS u-generate-substring \nPASS u-generate-blocklist \nPASS u-letterat \nPASS b-sw\nPASS b-manifest\nPASS b-precache\nPASS e-home\nPASS e-puzzle-tier1\nPASS e-trace-hint\nPASS e-puzzle-tier4\nPASS e-drag-forward\nPASS e-drag-reverse\nPASS e-miss\nPASS e-hint\nPASS e-persist\nFAIL e-complete TimeoutError: page.click: Timeout 8000ms exceeded.\nCall log:\n  - waiting for locator('.done-card').locator('text=Próxima fase')\n    - locator resolved to \u003cbutton class=\"btn primary\"\u003ePróxima fase\u003c/butt\nPASS e-settings-dark\nPASS e-offline\nok   layout\nok   file-length\nok   hygiene\nok   core-pure\nok   data-words\nok   data-letters\nok   strings\nok   dependencies\nok   index-html\nok   npm-check\nok   u-normalize\nok   u-prng-exact\nok   u-shuffle-exact\nok   u-directions\nok   u-levels\nok   u-select-cases\nok   u-select-hysteresis\nok   u-matchword\nok   u-save\nok   u-generate-valid\nok   u-generate-deterministic\nok   u-generate-substring\nok   u-generate-blocklist\nok   u-letterat\nok   b-sw\nok   b-manifest\nok   b-precache\nok   e-home\nok   e-puzzle-tier1\nok   e-puzzle-tier4\nok   e-drag-forward\nok   e-drag-reverse\nok   e-miss\nok   e-hint\nok   e-persist\nMISS e-complete\nok   e-settings-dark\nok   e-offline\nok   e-trace-hint\nSCORE 38 39",
+  "work": "/tmp/qh-runs/it2/d01-caca-palavras-r1",
+  "rescored": true
 }

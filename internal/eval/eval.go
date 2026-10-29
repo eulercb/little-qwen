@@ -70,7 +70,11 @@ func LoadTasks(root string, filter []string) ([]TaskSpec, error) {
 			return nil, fmt.Errorf("%s: %w", dir, err)
 		}
 		t.Prompt = string(p)
-		t.Dir = dir
+		// Absolute: hidden checks run inside the workdir and use $QH_TASK_DIR
+		// (a relative path scored d01 0 with "check.sh: No such file").
+		if t.Dir, err = filepath.Abs(dir); err != nil {
+			return nil, err
+		}
 		if len(want) > 0 && !want[t.ID] && !want[t.Tier] {
 			continue
 		}
