@@ -9,7 +9,9 @@ and compensates for its weaknesses, then improve it with the Harness² method (P
 evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is the roadmap).
 Results summary for readers: README.md "Results so far". Full experiment records: docs/EXPERIMENTS.md.
 
-## ⏸ PAUSED (2026-10-28 09:13 UTC) on request; nothing is running, everything is committed
+## Running state (2026-10-29): queue RUNNING on tunnel rosa-spokesman-beaver-frederick
+
+If this session is gone, the queue died with it: re-run resume.sh with the current tunnel. (Paused 2026-10-28 09:13 on request.)
 
 Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. The queue continues with:
 1. it2 (it1 + L3 restore_green) on Tier B; the interrupted b01 run was discarded.
@@ -206,4 +208,5 @@ Then follow "Decisions waiting on those results" below as items finish.
     `tbC-it2`) instead of base. qh's best version is what we compare with little-coder, and these tiers are too
     slow to run twice.
 - 2026-10-28 09:13 — PAUSED on request during it2 Tier-B b01 (interrupted run discarded).
+- 2026-10-29 — resumed on tunnel rosa-spokesman-beaver-frederick.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
