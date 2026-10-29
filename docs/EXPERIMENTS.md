@@ -236,3 +236,17 @@ Template:
   it1 scored 1.00 on both too.
 - The misses were run-to-run variance, not a systematic weakness. The queued INV/DOM probes (e2-review, c1-dom)
   were removed from the queue (kept as comments) to save ~6–8 h of endpoint time.
+
+## it2 run (2026-10-29), Tier B: mean 0.988
+- Results:
+  - b01 1.00 / 44.6 min.
+  - b02 1.00 / 18.9.
+  - b03 1.00 / 7.2.
+  - b04 0.97, wall clock.
+  - b05 1.00, wall clock 60.1.
+  - b06 0.96 (26/27; only TestHiddenCodeSpans failed), wall clock 67.7.
+- `restore_green` (L3) never fired: every budget-cut run still passed its last passing command. So this run is a
+  second sample of the it1 mechanisms (fuzzy + L1 + L2), and L3 stays unmeasured but harmless.
+- it1 and it2 pooled (n=2 per task): Tier-B mean 0.903.
+  - b06 0 and 0.96. b04 0.91 and 0.97. b01, b02, b03 and b05 1.00 in both.
+  - Compare base 0.654, pi 0.828 and little-coder 0.650 (n=1 each).

@@ -117,15 +117,15 @@ Reading (n=1, so differences of one hidden test are noise):
 
 Score / wall minutes. The qh + L1 row is the L1 probe; its b02 and b03 come from the baseline.
 
-| task | qh base | qh + L1 | **qh it1** | pi | little-coder |
-|---|---|---|---|---|---|
-| b01 expr-lang | 1.00 / 46.7 | 0.95 / 60 (timeout) | 1.00 / 34.9 | 1.00 / 39.7 | 0 / 60 (timeout) |
-| b02 tasker-feature | 1.00 / 19.9 | (1.00 / 19.9) | 1.00 / 18.3 | 1.00 / 13.5 | 1.00 / 25.7 |
-| b03 ledger-debug | 1.00 / 4.7 | (1.00 / 4.7) | 1.00 / 4.6 | 1.00 / 7.8 | 1.00 / 8.7 |
-| b04 kv-server | 0.925 | 1.00 / 51.6 | 0.91 / 60 (timeout) | 0.97 / 53.6 | 0.90 / 60 (timeout) |
-| b05 port-cron | 0 / 60 (timeout) | 1.00 / 33.0 | 1.00 / 53.4 | 1.00 / 50.6 | 1.00 / 60 (timeout) |
-| b06 markdown | 0 / 60 (timeout) | 0 / 60 (timeout) | 0 / 60 (timeout, broken build at the cut) | 0 / 18.3 | 0 / 60 (timeout) |
-| **mean** | **0.654** | **0.825** | **0.818** | **0.828** | **0.650** |
+| task | qh base | qh + L1 | **qh it1** | **qh it2** | pi | little-coder |
+|---|---|---|---|---|---|---|
+| b01 expr-lang | 1.00 / 46.7 | 0.95 / 60 (timeout) | 1.00 / 34.9 | 1.00 / 44.6 | 1.00 / 39.7 | 0 / 60 (timeout) |
+| b02 tasker-feature | 1.00 / 19.9 | (1.00 / 19.9) | 1.00 / 18.3 | 1.00 / 18.9 | 1.00 / 13.5 | 1.00 / 25.7 |
+| b03 ledger-debug | 1.00 / 4.7 | (1.00 / 4.7) | 1.00 / 4.6 | 1.00 / 7.2 | 1.00 / 7.8 | 1.00 / 8.7 |
+| b04 kv-server | 0.925 | 1.00 / 51.6 | 0.91 / 60 (timeout) | 0.97 / 60 (timeout) | 0.97 / 53.6 | 0.90 / 60 (timeout) |
+| b05 port-cron | 0 / 60 (timeout) | 1.00 / 33.0 | 1.00 / 53.4 | 1.00 / 60 (timeout) | 1.00 / 50.6 | 1.00 / 60 (timeout) |
+| b06 markdown | 0 / 60 (timeout) | 0 / 60 (timeout) | 0 / 60 (timeout, broken build at the cut) | 0.96 / 60 (timeout) | 0 / 18.3 | 0 / 60 (timeout) |
+| **mean** | **0.654** | **0.825** | **0.818** | **0.988** | **0.828** | **0.650** |
 
 - pi's b06 failure is the same pathology as qh's: "Response was truncated: the model reached its output token
   limit". The first big turn spent the full 16K on thinking, and pi ended the run there because it has no
@@ -139,6 +139,10 @@ Score / wall minutes. The qh + L1 row is the L1 probe; its b02 and b03 come from
   - Its 4K thinking cap, which discards nothing but forces thinking off, plus the 30 s default shell timeout
     look costly on long tasks with this model.
 - qh + L1 + L2 (b01 1.00 / 29.3, b05 1.00 / 30.3, b06 0.96) is the best on the tasks it ran.
+- it2 (it1 + L3; L3 never fired) scored 0.988 on Tier B. Pooled over it1 and it2, qh scores 0.903 against
+  pi's 0.828 and little-coder's 0.650.
+  - On long tasks, the little-coder-derived thinking cap plus our build/test nudge give qh a clear edge.
+  - The comparators are n=1, so this is indicative rather than significant.
   - The full it1 (base + fuzzy + L1 + L2) Tier-B run is in progress (`eval/results/it1`).
 
 ## Mechanisms, mapped to qh, with our evidence

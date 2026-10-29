@@ -14,7 +14,7 @@ Results summary for readers: README.md "Results so far". Full experiment records
 If this session is gone, the queue died with it: re-run resume.sh with the current tunnel. (Paused 2026-10-28 09:13 on request.)
 
 Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. The queue continues with:
-1. it2 (it1 + L3 restore_green) on Tier B; the interrupted b01 run was discarded.
+1. (done) it2 on Tier B: 0.988.
 2. The OpenCode comparison.
 3. d01 with it2.
 4. The Terminal-Bench subset with it2, then with little-coder.
@@ -209,4 +209,6 @@ Then follow "Decisions waiting on those results" below as items finish.
     slow to run twice.
 - 2026-10-28 09:13 — PAUSED on request during it2 Tier-B b01 (interrupted run discarded).
 - 2026-10-29 — resumed on tunnel rosa-spokesman-beaver-frederick.
+- 2026-10-29 05:03 — it2 Tier-B: mean 0.988 (b04 0.97, b06 0.96, the rest 1.00); L3 never fired.
+  - Pooled it1 + it2: 0.903. Next: the OpenCode comparison, then d01 and Tier C with it2.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
