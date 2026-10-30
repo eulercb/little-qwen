@@ -1,0 +1,24 @@
+(node:5665) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All 7 requirements are implemented and verified. `go vet ./... && go test ./...` exits 0, and the existing tests keep passing.
+
+## Summary
+
+**Model** (`internal/model/task.go`)
+- Added `Tags []string` (`json:"tags,omitempty"`) and `Due *time.Time` (`json:"due,omitempty"`).
+- Added `ErrBadTag`, `NormalizeTags` (trim → lower-case → de-dup → sort, validating `^[a-z0-9][a-z0-9-]*$`), and `NormalizeTag`. `Validate` normalizes tags via `NormalizeTags`.
+
+**Store** (`internal/store/store.go`)
+- Bumped `Version` to 2. Version-1 files still load (JSON ignores the absent fields); files always save as v2.
+
+**Query** (`internal/query/query.go`)
+- Extended `Options` with `Tags`, `Overdue`, `Now`. Filters: ALL-given-tags, overdue (due strictly before today in UTC, and not done even with `--all`), and `--sort due` (ascending, no-due last, ties by ID).
+
+**CLI** (`internal/cli/cli.go`, `format.go`)
+- `add`: repeatable `--tag` and `--due` (both forms); invalid tag/date → exit 2.
+- `edit`: `--tag` (add/validate), `--untag` (remove, absent is fine), `--due`/`--due none`; validation errors map to usage errors.
+- `list`: `--tag` (repeatable), `--overdue`, and `due` as a sort key — all combinable with existing `--all`/`--sort`.
+- New `tags` command (counts of tags on open tasks, sorted). Updated the missing-command usage message and README.
+- `FormatTask` appends ` (due YYYY-MM-DD)` then ` [tag1,tag2]`.
+
+**Tests**: added model normalization/ErrBadTag tests, store v1→v2 round-trip + legacy-load tests, query tag/overdue/sort/combined tests, and CLI tests for add/edit/list/tags/usage (plus a `FormatTask` example matching the spec). I also did a live binary smoke test to confirm end-to-end behavior and cleaned up the temp data file it produced.

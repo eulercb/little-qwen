@@ -1,0 +1,25 @@
+`tasker` (see `README.md`) is a small task-tracker CLI. Add **tags** and **due dates**. Read the existing code first; keep its structure (model / store / query / cli layers) and conventions (usage errors → exit code 2, runtime errors → exit code 1, `cli.Run` stays the entry point and all time comes from `Env.Now`).
+
+Requirements:
+
+1. **Model**: `model.Task` gets `Tags []string` (JSON `tags`, omitted when empty) and `Due *time.Time` (JSON `due`, omitted when nil; dates are stored as UTC midnight). Tags are normalised on validation: trimmed, lower-cased, de-duplicated, sorted; a tag must match `^[a-z0-9][a-z0-9-]*$` after normalisation, otherwise validation fails with the new exported error `model.ErrBadTag`.
+
+2. **Store**: bump the schema `store.Version` to 2. Version-1 files (no tags/due) must still load. Files are always saved as version 2.
+
+3. **`add`**: accepts `--tag T` / `--tag=T` (repeatable) and `--due YYYY-MM-DD` / `--due=YYYY-MM-DD`. An invalid date or tag is a usage error (exit 2).
+
+4. **`edit`**: accepts `--tag T` (add a tag), `--untag T` (remove a tag; removing a tag that is not present is fine), `--due YYYY-MM-DD` and `--due none` (clear the due date).
+
+5. **`list`**: new options
+   - `--tag T` (repeatable): only tasks having ALL given tags;
+   - `--overdue`: only tasks with a due date strictly before today's date (from `Env.Now`, in UTC) that are not done;
+   - `--sort due`: by due date ascending; tasks without a due date come last; ties by ID.
+   Options combine with the existing `--all` and `--sort id|priority`.
+
+6. **Output**: `FormatTask` appends ` (due YYYY-MM-DD)` when there is a due date, and then ` [tag1,tag2]` when there are tags. Example: `#4 [ ] P2 file taxes (due 2026-04-15) [home,money]`.
+
+7. **New command `tags`**: prints every tag used by open (not done) tasks with its count, one per line as `<tag> <count>`, sorted by tag. Update the usage message for a missing command to include `tags`, and update `README.md`.
+
+Write tests for the new behaviour. All existing tests must keep passing.
+
+Acceptance check: `go vet ./... && go test ./...` must exit 0. Run it yourself before you finish.

@@ -1,0 +1,9 @@
+(node:8369) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All tests pass. Fixed three bugs in `ledger/ledger.go`:
+
+1. **Truncation instead of banker's rounding** — `toUSD` used `int64(float64(amount) * rate)`, which truncates toward zero. The spec requires rounding to the nearest cent with ties to even; now uses `math.RoundToEven`.
+2. **No deduplication** — the log has 180 duplicated ids (at-least-once delivery), all of which were applied. `Replay` now keeps only the first occurrence of each event id.
+3. **File-order application** — the log isn't sorted, so events applied out of order (and reversals processed before their originals, which were then ignored as "unknown"). `Replay` now sorts by timestamp, ties broken by seq, before applying.
+
+Verified by comparing replay against `testdata/expected_balances.json` (all 40 accounts match) and `go test ./... -count=1` exits 0 with only `ledger/ledger.go` modified.

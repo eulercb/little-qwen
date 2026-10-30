@@ -1,0 +1,1 @@
+Build an expression language interpreter as Go package `expr` (directory `expr/`, module `example.com/expr` already initialised). Read the full specification in `SPEC.md` at the repository root and implement all of it, with your own tests. This is a multi-step task: plan it, build it incrementally (lexer → parser → evaluator → errors → API), and test as you go.

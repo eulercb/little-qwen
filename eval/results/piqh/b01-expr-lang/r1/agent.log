@@ -1,0 +1,15 @@
+(node:2678) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+The expression language interpreter is complete. I built the `expr` package in `expr/` per `SPEC.md`:
+
+**Implementation**
+- `expr/lexer.go` — tokenizes whitespace, numbers (incl. `1.`, `.5`, `1e3`, `2.5E-2`), identifiers (`true`/`false`→1/0), and all operators with 0-based byte positions; unknown characters become `unexpected character 'X'`.
+- `expr/parser.go` — recursive-descent parser implementing the full precedence table (right-associative ternary and `^`, unary binding looser than `^` so `-2^2=-4`, unary exponents so `2^-1=0.5`). Compile-time checks: unknown function, wrong arity, missing `)`/`:`/operand, trailing tokens, empty input — all as `*Error`. Includes the six built-ins and sorted, de-duplicated variable collection.
+- `expr/eval.go` — float64 evaluator: comparisons/logic yield 1/0, `!`, `math.Mod`, `math.Pow`, short-circuit `&&`/`||`/`?:` (unevaluated operands can't error), division-by-zero at the operator, unknown variable at the identifier, non-finite result at pos 0.
+- `expr/expr.go` — public API: `Error` (`"<Pos>: <Msg>"`), `Program`, `Compile`, `Program.Eval`, `Program.Vars`, and the convenience `Eval`.
+
+**Tests** — `expr/expr_test.go` covers all of the above with exact expected messages/positions.
+
+**Verification** — `go vet ./... && go test ./... -count=1` → `ok example.com/expr/expr`, and the code is `gofmt`-clean, so the acceptance check passes.
+
+(Along the way I fixed real bugs the tests surfaced — a missing `>=` case in comparison evaluation, the `>` shadowing in the arity check, an out-of-scope `nt` reference, and a byte/rune mismatch in the lexer — plus several of my own incorrect test expectations.)
