@@ -1,0 +1,644 @@
+# Caça-Palavras — implementation brief
+
+You are a software engineer implementing a small web game from this specification. You have a shell in the repository root. Read this whole document once, then work strictly milestone by milestone (§12). Everything you need is here; do not invent features that are not specified, and do not skip anything that is.
+
+## 0. How to work
+
+1. Do only the milestone you were asked to do. When it is done, stop and report.
+2. After every milestone, run `npm run check` (typecheck + unit tests + production build). It must pass before you report. If it fails: read the error, fix the cause, re-run. Never delete or weaken a test, never add `// @ts-ignore` or `any` to get past an error.
+3. Allowed npm dependencies, nothing else: `vite`, `typescript`, `vitest`, `vite-plugin-pwa`, `@fontsource/nunito`. No React/Vue/Svelte, no Phaser/Pixi, no canvas, no jQuery, no CSS frameworks.
+4. Code in `src/core/` is pure TypeScript with no DOM, `window`, `document` or `navigator` access, so it runs in Node tests. DOM code lives only in `src/ui/`.
+5. Keep every file under 250 lines. Split modules exactly as laid out in §3.
+6. All user-visible text comes from `src/ui/strings.ts`, whose content is given verbatim in Appendix C. Do not paraphrase these strings; the app is in Brazilian Portuguese.
+7. Data files (`src/data/words.ts`, `src/data/letters.ts`) are given verbatim in Appendices A and B. If they already exist in the repo, do not modify them. If not, create them exactly as written.
+8. Never leave `TODO` comments or placeholder implementations behind. If something is out of scope, it is listed in §1.3 — leave it out entirely.
+9. Commit at the end of each milestone: `git add -A && git commit -m "M<n>: <milestone title>"`.
+10. Final report format: (a) files created/changed, (b) the last 15 lines of `npm run check` output, (c) anything you could not do and why.
+
+## 1. Product
+
+### 1.1 What it is
+
+A word search game (caça-palavras) for Brazilian Portuguese speakers, played on a phone in portrait orientation by dragging a finger across a letter grid. It is a Progressive Web App: installable, fully offline, no accounts, no server.
+
+The game is cozy by design: there is no timer, no score, no penalty for wrong guesses, and hints are unlimited. The only progression is completing puzzles inside themed word lists (fruits, the beach, festa junina...). The visual metaphor is a highlighter pen on paper: found words are highlighter-colored pills drawn behind the letters.
+
+### 1.2 Core loop
+
+1. Home screen lists themes with progress ("4 de 12").
+2. Tapping a theme opens its next unsolved puzzle (12 puzzles per theme, 4 difficulty tiers × 3 puzzles).
+3. The puzzle screen shows the letter grid and the list of words to find, as chips.
+4. The player presses a letter and drags; the selection snaps to one of 8 directions and is drawn as a translucent yellow pill. Releasing on a listed word (read forwards or backwards) locks the pill in a color, strikes the chip, and gives a short vibration. Releasing on anything else just fades the pill out.
+5. Tapping a chip pulses the first letter of that word in the grid (a hint). Unlimited.
+6. When all listed words are found, a completion card offers "Próxima fase" or "Escolher tema".
+7. Progress (solved puzzles, words found in the current puzzle, settings) persists in `localStorage`.
+
+### 1.3 Explicitly out of scope
+
+Timers, scores, streaks, leaderboards, ads, accounts, sound effects, landscape layouts, multi-language UI, a level editor, server calls of any kind, and analytics. Do not build any of these.
+
+## 2. Stack and constraints
+
+- Vite + TypeScript (strict), vanilla DOM, ES modules. One HTML file, hash routing.
+- Unit tests with Vitest, Node environment only (no jsdom).
+- PWA via `vite-plugin-pwa` (Workbox precache of the built app shell, `autoUpdate`).
+- Font: Nunito (rounded, friendly, uppercase I/J/L and O/Q clearly distinct) via `@fontsource/nunito`, bundled so it works offline. Fallback `system-ui, sans-serif`.
+- Target: Android Chrome first, then any modern mobile browser. Layout column max width 480px, centered; works from 320px wide.
+- The grid is rendered with CSS grid for letters and an SVG overlay for pills. No canvas.
+- Rendering must never depend on network availability.
+
+## 3. Repository layout
+
+```
+package.json
+tsconfig.json
+vite.config.ts
+vitest.config.ts
+index.html
+public/icons/icon.svg
+src/main.ts                 # boot: load save, register router, first render
+src/style.css               # tokens + all styles (single file, ≤ 250 lines)
+src/core/types.ts           # shared types (§5)
+src/core/normalize.ts       # normalizeWord, isValidWord
+src/core/prng.ts            # hashSeed, mulberry32, rngInt, shuffle
+src/core/directions.ts      # Dir, DIRS, DIR_ORDER, isDiagonal, angleOf, maxSteps, pathCells
+src/core/levels.ts          # TIERS, tierForIndex, PUZZLES_PER_THEME, puzzleKey
+src/core/generate.ts        # generatePuzzle, findOccurrences, GenerationError
+src/core/select.ts          # snapSelection (pointer → direction + steps)
+src/core/save.ts            # SaveState shape, default, migrate, (de)serialize helpers (pure)
+src/data/words.ts           # THEMES (Appendix A)
+src/data/letters.ts         # LETTER_WEIGHTS (Appendix B)
+src/data/blocklist.ts       # BLOCKLIST: string[] (see §6.6)
+src/ui/strings.ts           # STR (Appendix C)
+src/ui/router.ts            # parseHash, navigate, onRoute
+src/ui/storage.ts           # localStorage read/write wrapping core/save
+src/ui/home.ts              # home screen render
+src/ui/puzzle.ts            # puzzle screen render + state
+src/ui/grid.ts              # grid DOM + SVG overlay + sizing
+src/ui/pointer.ts           # pointer events → core/select → grid pills
+src/ui/settings.ts          # settings sheet
+src/core/*.test.ts          # tests next to the module they test
+```
+
+## 4. Scaffold (Milestone 0)
+
+Create these files exactly. Use latest stable versions (`npm install` resolves them; do not pin).
+
+`package.json`
+```json
+{
+  "name": "caca-palavras",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "check": "npm run typecheck && npm run test && npm run build"
+  }
+}
+```
+Then run: `npm install -D vite typescript vitest vite-plugin-pwa` and `npm install @fontsource/nunito`.
+
+`tsconfig.json`
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": ["vite/client", "vite-plugin-pwa/client"]
+  },
+  "include": ["src", "vite.config.ts", "vitest.config.ts"]
+}
+```
+
+`vite.config.ts`
+```ts
+import { defineConfig } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
+
+export default defineConfig({
+  base: './',
+  plugins: [
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['icons/icon.svg'],
+      manifest: {
+        name: 'Caça-Palavras',
+        short_name: 'Caça-Palavras',
+        description: 'Caça-palavras tranquilo, sem relógio e sem placar.',
+        lang: 'pt-BR',
+        start_url: './',
+        scope: './',
+        display: 'standalone',
+        orientation: 'portrait',
+        background_color: '#EEF1EA',
+        theme_color: '#EEF1EA',
+        icons: [{ src: 'icons/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
+      },
+      workbox: { globPatterns: ['**/*.{js,css,html,svg,woff2}'] },
+    }),
+  ],
+});
+```
+
+`vitest.config.ts`
+```ts
+import { defineConfig } from 'vitest/config';
+export default defineConfig({ test: { environment: 'node', include: ['src/**/*.test.ts'] } });
+```
+
+`index.html`
+```html
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#EEF1EA" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <title>Caça-Palavras</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
+```
+
+`public/icons/icon.svg`: a 512×512 SVG, background `#EEF1EA` with `rx="96"`, and a single rounded pill (`<rect>` with `rx` equal to half its height) in `#F7E17A` tilted −20°, with three bold uppercase letters "ABC" in `#22302A` on top. Keep it under 20 lines.
+
+`src/main.ts` at M0 only imports `./style.css` and `@fontsource/nunito/400.css`, `@fontsource/nunito/700.css`, and sets `document.getElementById('app')!.textContent = 'ok'`.
+
+## 5. Domain types (`src/core/types.ts`)
+
+```ts
+export type Dir = 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW' | 'N' | 'NE';
+
+export interface Cell { row: number; col: number }
+
+export interface Theme {
+  id: string;        // slug, e.g. 'praia'
+  name: string;      // display, e.g. 'Praia'
+  emoji: string;     // one emoji for the home list
+  words: string[];   // display forms with accents, e.g. 'Maracujá'
+}
+
+export interface TierSpec {
+  tier: 1 | 2 | 3 | 4;
+  name: string;      // 'Suave' | 'Tranquilo' | 'Atento' | 'Sereno'
+  rows: number;
+  cols: number;
+  wordCount: number;
+  minLen: number;
+  maxLen: number;
+  directions: Dir[]; // may contain repeats to weight a direction
+}
+
+export interface Placement {
+  word: string;      // normalized, e.g. 'MARACUJA'
+  display: string;   // 'Maracujá'
+  row: number;       // first letter
+  col: number;
+  dir: Dir;
+}
+
+export interface Puzzle {
+  key: string;       // `${themeId}:${index}`
+  themeId: string;
+  index: number;     // 1..12
+  tier: 1 | 2 | 3 | 4;
+  rows: number;
+  cols: number;
+  grid: string[];    // rows*cols single uppercase letters, row-major
+  placements: Placement[];
+}
+
+export interface FoundWord { word: string; cells: Cell[]; colorIndex: number }
+
+export interface Settings { haptics: boolean; theme: 'auto' | 'light' | 'dark' }
+
+export interface SaveState {
+  v: 1;
+  solved: string[];                                  // puzzle keys
+  progress: { key: string; found: string[] } | null; // normalized words found in the open puzzle
+  settings: Settings;
+}
+```
+
+## 6. Core algorithms
+
+### 6.1 Normalization (`src/core/normalize.ts`)
+
+Brazilian caça-palavras convention: the grid never shows accents or cedilla; the word list does.
+
+```ts
+export function normalizeWord(s: string): string {
+  return s.normalize('NFD').replace(/\p{M}/gu, '').toUpperCase();
+}
+export function isValidWord(s: string): boolean {
+  const n = normalizeWord(s);
+  return /^[A-Z]{4,9}$/.test(n);
+}
+export function reverse(s: string): string { return [...s].reverse().join(''); }
+```
+`Ç` decomposes to `C` + combining cedilla, so `normalizeWord('Açúcar') === 'ACUCAR'`.
+
+### 6.2 Seeded randomness (`src/core/prng.ts`)
+
+Every puzzle is fully determined by its key, so the same puzzle is the same on every device and every reload.
+
+```ts
+export function hashSeed(s: string): number {           // FNV-1a 32-bit
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return h >>> 0;
+}
+export type Rng = () => number;                          // [0, 1)
+export function mulberry32(seed: number): Rng {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+export function rngInt(rng: Rng, n: number): number { return Math.floor(rng() * n); }
+export function shuffle<T>(arr: readonly T[], rng: Rng): T[] {  // Fisher–Yates on a copy
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = rngInt(rng, i + 1); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+```
+
+### 6.3 Directions (`src/core/directions.ts`)
+
+Screen coordinates: rows grow downward, cols grow rightward. `[dr, dc]`:
+
+```ts
+export const DIRS: Record<Dir, readonly [number, number]> = {
+  E: [0, 1], SE: [1, 1], S: [1, 0], SW: [1, -1], W: [0, -1], NW: [-1, -1], N: [-1, 0], NE: [-1, 1],
+};
+// Clockwise from E in 45° steps. Index i ↔ angle i·π/4 measured with atan2(dy, dx) in screen coords.
+export const DIR_ORDER: Dir[] = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
+export function isDiagonal(d: Dir): boolean { const [dr, dc] = DIRS[d]; return dr !== 0 && dc !== 0; }
+export function angleOf(d: Dir): number { return DIR_ORDER.indexOf(d) * Math.PI / 4; } // 0..7π/4
+/** Number of steps from `from` in direction d that stay inside a rows×cols grid. */
+export function maxSteps(from: Cell, d: Dir, rows: number, cols: number): number { /* per axis, min of both */ }
+/** Cells from `from`, `steps` steps along d, inclusive (length steps+1). */
+export function pathCells(from: Cell, d: Dir, steps: number): Cell[] { /* ... */ }
+```
+
+### 6.4 Levels (`src/core/levels.ts`)
+
+```ts
+export const PUZZLES_PER_THEME = 12;
+export const TIERS: TierSpec[] = [
+  { tier: 1, name: 'Suave',     rows: 8,  cols: 8,  wordCount: 5, minLen: 4, maxLen: 7, directions: ['E', 'S'] },
+  { tier: 2, name: 'Tranquilo', rows: 10, cols: 9,  wordCount: 6, minLen: 4, maxLen: 8, directions: ['E', 'S', 'SE', 'NE'] },
+  { tier: 3, name: 'Atento',    rows: 11, cols: 10, wordCount: 7, minLen: 4, maxLen: 9, directions: ['E', 'E', 'S', 'S', 'SE', 'NE', 'W', 'N'] },
+  { tier: 4, name: 'Sereno',    rows: 13, cols: 10, wordCount: 8, minLen: 4, maxLen: 9, directions: ['E', 'S', 'SE', 'NE', 'W', 'N', 'NW', 'SW'] },
+];
+export function tierForIndex(index: number): TierSpec { return TIERS[Math.ceil(index / 3) - 1]; } // 1-3→1, 4-6→2, ...
+export function puzzleKey(themeId: string, index: number): string { return `${themeId}:${index}`; }
+```
+Columns never exceed 10 so cells stay large enough on a 360px-wide phone; difficulty grows through rows, directions, reversed words and word count.
+
+### 6.5 Generator (`src/core/generate.ts`)
+
+`generatePuzzle(theme: Theme, index: number, seedSuffix = '', blocklist: string[] = BLOCKLIST): Puzzle`. Deterministic: `rng = mulberry32(hashSeed(puzzleKey(theme.id, index)))`. Steps:
+
+1. Tier: `spec = tierForIndex(index)`. `maxLen = Math.min(spec.maxLen, spec.cols, spec.rows)`.
+2. Candidate words: `theme.words` mapped to `{ display, word: normalizeWord(display) }`, filtered to `word.length` in `[spec.minLen, maxLen]` and not present (normalized) in `blocklist`, then `shuffle(..., rng)`.
+3. Selection: walk the shuffled candidates and collect `spec.wordCount` words. Skip candidate W if it conflicts with any already collected V: `V.includes(W) || W.includes(V) || V.includes(reverse(W)) || W.includes(reverse(V))`. (Example: `CAFE` is a prefix of `CAFEZINHO`; `FOLIA` of `FOLIAO`; never both in one puzzle.) Keep the remaining shuffled candidates as a reserve.
+4. Placement: stable-sort the collected words by length descending (long words first, shuffle order preserved among equal lengths) and place each one:
+   - Enumerate every `(row, col, dir)` with `dir ∈ spec.directions` (duplicates in the list simply weight the shuffle) such that the word fits in bounds. `shuffle` the enumeration with `rng`. Take the first candidate where every cell is either empty or already holds the same letter (overlaps are welcome). Write the letters.
+   - If no candidate works, drop the word and pull the next reserve word that passes the substring rule against everything already placed; try to place it in the same way. Continue until `spec.wordCount` words are placed or the reserve is exhausted.
+   - At least `spec.wordCount - 1` words must end up placed; otherwise fail this attempt.
+5. Fill: every empty cell gets a letter drawn with weights from `LETTER_WEIGHTS` (Appendix B) — build a cumulative table once, draw `rng()` × total. K, W and Y are absent from the table on purpose.
+6. Validate the filled grid:
+   - Every placed word occurs exactly once: `findOccurrences(grid, rows, cols, word)` scans all start cells × all 8 directions, collects each match as its set of cells (key = sorted `"r,c"` strings joined by `|`), and counts distinct sets. Deduplicating by cell set means a palindrome like `ARARA` read both ways counts once.
+   - No word of `blocklist` (normalized) occurs anywhere, any direction.
+7. If validation fails: redo step 5 only (new fill) up to 20 times; if still failing, redo from step 3 up to 10 times; if still failing throw `GenerationError`. Because the rng is consumed in a fixed order, retries are deterministic too.
+8. Return `{ key, themeId, index, tier, rows, cols, grid, placements }` with `placements` in placement order.
+
+`seedSuffix` is appended to the seed string (`hashSeed(puzzleKey(...) + seedSuffix)`). The caller (`src/ui/puzzle.ts`) wraps generation: on `GenerationError`, retry with suffixes `':1'`..`':5'`; if all fail, rethrow. With the shipped data this never happens — the test suite proves it for every theme and index.
+
+Exports: `generatePuzzle`, `findOccurrences`, `GenerationError`, and `letterAt(puzzle, cell)`.
+
+### 6.6 Blocklist (`src/data/blocklist.ts`)
+
+`export const BLOCKLIST: string[] = [];` with a comment saying the project owner populates it with Portuguese profanity and slurs. Words must be checked after `normalizeWord`. Do not write the list yourself.
+
+## 7. Selection geometry (`src/core/select.ts`)
+
+This is the heart of the touch feel. All inputs are in grid pixel space: `(px, py)` is the pointer position relative to the top-left of the `.grid` element; `cell` is the cell size in px. The anchor is the cell where the drag started. The function is pure and heavily tested.
+
+```ts
+export interface Snap { dir: Dir | null; steps: number }
+export function snapSelection(
+  anchor: Cell, px: number, py: number, cell: number,
+  rows: number, cols: number, prevDir: Dir | null,
+): Snap
+```
+Algorithm:
+1. Anchor center: `ax = (anchor.col + 0.5) * cell`, `ay = (anchor.row + 0.5) * cell`. `dx = px - ax`, `dy = py - ay`, `dist = hypot(dx, dy)`.
+2. Dead zone: if `dist < 0.45 * cell` return `{ dir: prevDir, steps: 0 }` (selection is the anchor alone).
+3. `angle = atan2(dy, dx)` in (−π, π].
+4. Hysteresis: if `prevDir !== null`, compute `diff` = signed angular difference between `angle` and `angleOf(prevDir)`, wrapped into (−π, π]. If `|diff| <= 3π/16` (33.75°, i.e. the sector's own 22.5° half-width plus an 11.25° margin), keep `dir = prevDir`. Otherwise `dir = DIR_ORDER[((Math.round(angle / (Math.PI / 4)) % 8) + 8) % 8]`.
+5. Steps: `unit = isDiagonal(dir) ? cell * Math.SQRT2 : cell`; `steps = Math.round(dist / unit)`; clamp to `[0, maxSteps(anchor, dir, rows, cols)]`. A pointer dragged outside the grid keeps extending along `dir` up to the edge, never further.
+6. Return `{ dir, steps }`.
+
+Also export `selectionCells(anchor, snap)` = `pathCells(anchor, snap.dir, snap.steps)` (just `[anchor]` when `dir` is null or steps is 0), and `matchWord(letters: string, remaining: Set<string>): string | null` which returns the matched normalized word if `letters` or `reverse(letters)` is in `remaining`, else null.
+
+## 8. UI specification
+
+### 8.1 Design tokens (`src/style.css`)
+
+```css
+:root {
+  --bg: #EEF1EA;      /* paper with a faint green tint */
+  --surface: #F8F9F5; /* the grid sheet and cards */
+  --ink: #22302A;     /* letters and text, deep green-black */
+  --muted: #6F7A73;
+  --line: #D5DBD1;
+  --hl: #F7E17A;      /* active drag pill (highlighter yellow) */
+  --p0: #F7E17A; --p1: #B8E6A0; --p2: #F9BFD8; --p3: #B4DDF5;
+  --p4: #FBCB9C; --p5: #D9C6F2; --p6: #B2E7DD; --p7: #F9D5B6;
+  --pill-alpha: 0.85; --active-alpha: 0.55;
+  --radius: 18px;
+  --cell: 40px;       /* set at runtime by grid.ts */
+}
+[data-theme="dark"] {
+  --bg: #1A201C; --surface: #232B26; --ink: #E9EDE6; --muted: #98A39B; --line: #34403A;
+  --pill-alpha: 0.5; --active-alpha: 0.4;
+}
+```
+Theme resolution in `main.ts`: `settings.theme === 'auto'` → follow `prefers-color-scheme` via `matchMedia` and set `data-theme` on `<html>` accordingly (listen for changes); otherwise set it to the chosen value. Update `<meta name="theme-color">` to the current `--bg`.
+
+Typography: `font-family: 'Nunito', system-ui, sans-serif` everywhere. Grid letters: weight 700, `font-size: calc(var(--cell) * 0.52)`, uppercase, `line-height: 1`. Body text 16px/1.4, weight 400; headings weight 700, sentence case. Never use letter-spaced all-caps labels in the UI; the grid is the only uppercase text.
+
+Base rules:
+```css
+html, body { height: 100%; margin: 0; overscroll-behavior: none; }
+body { background: var(--bg); color: var(--ink); -webkit-tap-highlight-color: transparent; }
+#app { height: 100dvh; max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; overflow: hidden; }
+button { font: inherit; color: inherit; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+```
+
+### 8.2 Screens and routes
+
+Hash routes (`src/ui/router.ts`): `#/` home, `#/p/<themeId>/<index>` puzzle. `parseHash()` returns `{ name: 'home' } | { name: 'puzzle', themeId, index }`; unknown or invalid (theme missing, index outside 1..12) → home. `navigate(hash)` sets `location.hash`. `onRoute(cb)` listens to `hashchange` and calls `cb` immediately once.
+
+### 8.3 Home (`src/ui/home.ts`)
+
+```html
+<header class="home-head">
+  <h1>Caça-Palavras</h1>
+  <p class="tagline">Sem relógio, sem placar. Só as palavras.</p>
+  <button class="icon-btn" aria-label="Ajustes">⚙</button>
+</header>
+<main class="themes">
+  <button class="theme-row continue" ...>       <!-- only when save.progress !== null -->
+    <span class="emoji">🏖️</span>
+    <span class="theme-text"><strong>Continuar</strong><span>Praia, fase 4</span></span>
+  </button>
+  <button class="theme-row" data-theme="praia">
+    <span class="emoji">🏖️</span>
+    <span class="theme-text"><strong>Praia</strong><span>4 de 12</span></span>
+    <span class="bar"><span class="bar-fill" style="width: 33%"></span></span>
+  </button>
+  ...
+</main>
+```
+Rows are full-width, left-aligned, 64px tall, separated by 1px `--line` (no card shadows). A fully completed theme shows "12 de 12" and a check mark instead of the bar. Tapping a row navigates to the next unsolved index in that theme (or index 1 if all solved). "Continuar" navigates to `save.progress.key`.
+
+### 8.4 Puzzle screen (`src/ui/puzzle.ts`, `src/ui/grid.ts`)
+
+```html
+<header class="puzzle-head">
+  <button class="icon-btn back" aria-label="Voltar">‹</button>
+  <div class="title"><strong>Praia</strong><span>Fase 4 de 12</span></div>
+</header>
+<div class="trace" aria-live="polite"></div>           <!-- letters under the finger, fixed 44px tall -->
+<div class="grid-area">
+  <div class="grid-paper">
+    <div class="grid" role="grid" style="--cell: 40px; width: 400px; height: 440px">
+      <svg class="overlay" width="400" height="440" viewBox="0 0 400 440" aria-hidden="true">
+        <g class="found"></g>
+        <line class="active" style="display: none" />
+      </svg>
+      <div class="cells">                              <!-- CSS grid: repeat(cols, var(--cell)) / repeat(rows, var(--cell)) -->
+        <div class="cell" data-r="0" data-c="0">P</div> ...
+      </div>
+    </div>
+  </div>
+</div>
+<div class="words">
+  <button class="chip" data-word="MARACUJA">Maracujá</button> ...
+</div>
+```
+
+Layout: `.puzzle-head` 52px; `.trace` 44px; `.grid-area { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 6px 12px; }`; `.words { flex: 0 0 auto; max-height: 34vh; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); }`.
+
+Sizing: a `ResizeObserver` on `.grid-area` computes `cell = clamp(floor(min(availW / cols, availH / rows)), 28, 56)` where `availW/availH` are the observed content box minus `.grid-paper` padding (8px each side). Set `--cell` and `--cols` on `.grid`, the `.grid` width/height (`cols*cell` × `rows*cell`), and the SVG `width`, `height`, `viewBox`. Re-draw all pills after a size change (recompute from cells, do not scale the SVG).
+
+Cells: `.cells { display: grid; grid-template-columns: repeat(var(--cols), var(--cell)); position: relative; z-index: 1; }` — **no `gap`**; cells are contiguous so any point in `.grid` maps to exactly one cell by `floor(px / cell)`. `.cell { display: grid; place-items: center; user-select: none; }`. `.grid { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }`. `.overlay { position: absolute; inset: 0; z-index: 0; pointer-events: none; }`. `.grid-paper { background: var(--surface); border-radius: var(--radius); padding: 8px; }`.
+
+Pills: an SVG `<line>` from the center of the first cell to the center of the last, `stroke-linecap="round"`, `stroke-width = cell * 0.78`. Active drag: `stroke: var(--hl)`, `opacity: var(--active-alpha)`. Found: `stroke: var(--p<colorIndex>)`, `opacity: var(--pill-alpha)`, appended to `g.found`. Colors are assigned in the order words are found: `colorIndex = foundCount % 8`.
+
+The `.trace` strip shows the normalized letters currently under the finger, `font-size: 22px; font-weight: 700; letter-spacing: 0.12em`. While idle it shows `STR.dragHint` until the first word of this puzzle is found, then it is empty when idle. After a successful match it shows the word for 600ms tinted with the pill color, then clears.
+
+Chips: `.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; }`. Found: `background: var(--p<colorIndex>); border-color: transparent; text-decoration: line-through; opacity: 0.8;` and the `disabled` attribute. Chips show the display form (`Maracujá`) sorted with `localeCompare(..., 'pt-BR')`. Chip text is never uppercase — strike-through plus color means the found state does not rely on color alone.
+
+Hint: tapping an unfound chip adds class `hint` to the cell of the word's first letter for 900ms: `@keyframes pulse { 0%,100% { transform: scale(1) } 50% { transform: scale(1.18) } }`, `animation: pulse 0.45s ease-in-out 2`, plus `box-shadow: inset 0 0 0 3px var(--hl); border-radius: 50%`. If a hint is already running, ignore the tap.
+
+### 8.5 Pointer handling (`src/ui/pointer.ts`)
+
+Attach to `.grid`:
+- `pointerdown`: ignore non-primary mouse buttons. `grid.setPointerCapture(e.pointerId)`; `e.preventDefault()`. Compute `px, py` from `getBoundingClientRect()`; `anchor = { row: floor(py/cell), col: floor(px/cell) }`; if out of bounds, ignore. State: `{ pointerId, anchor, prevDir: null, cells: [anchor] }`. Draw the active pill from anchor to anchor. Set `.trace` to the anchor letter.
+- `pointermove` (only for the captured `pointerId`): `snap = snapSelection(anchor, px, py, cell, rows, cols, prevDir)`; `prevDir = snap.dir`; `cells = selectionCells(anchor, snap)`; update the active pill endpoints and `.trace` text. Do nothing if the cell list is unchanged.
+- `pointerup` / `pointercancel` / `lostpointercapture`: finalize exactly once (clear the state first so the other two events become no-ops): `letters = cells.map(letterAt).join('')`; `word = matchWord(letters, remaining)`. If found → `onFound(word, cells)`; else → miss animation: transition the active pill's opacity to 0 over 180ms, then set `display: none`.
+- `onFound`: move the pill into `g.found` with its color, disable the chip, `navigator.vibrate?.(15)` when `settings.haptics`, persist progress, update `.trace`. If `remaining` becomes empty: persist solved, `navigator.vibrate?.([15, 60, 25])`, show the completion card after 350ms.
+
+A drag that starts outside `.grid` never starts a selection. Page scroll must never happen during a drag (`touch-action: none` on `.grid`, `overscroll-behavior: none` on body, `#app` overflow hidden).
+
+### 8.6 Completion card
+
+Overlay `.done-backdrop` (`position: fixed; inset: 0; background: rgba(0,0,0,0.25); display: grid; place-items: center`) containing `.done-card` (`background: var(--surface); border-radius: var(--radius); padding: 24px; width: min(320px, 88vw); text-align: center`, entrance `transform: scale(0.96) → 1` and opacity over 220ms). Content: `<h2>` `STR.allFound`, `<p>` "Praia, fase 4 de 12", primary button `STR.nextPuzzle` → next index; secondary button `STR.chooseTheme` → home. If the puzzle was index 12, replace the primary button with a `<p>` `STR.themeComplete(themeName)` and keep only the secondary button.
+
+### 8.7 Settings sheet (`src/ui/settings.ts`)
+
+Opened from the home gear. A bottom sheet with two rows: `STR.haptics` (switch, default on) and `STR.appearance` (segmented: `STR.themeAuto` / `STR.themeLight` / `STR.themeDark`). Changes persist immediately and apply immediately. Close by tapping the backdrop or the `STR.close` button.
+
+## 9. Persistence (`src/core/save.ts`, `src/ui/storage.ts`)
+
+`localStorage` key: `cp.save.v1`. `defaultSave(): SaveState` = `{ v: 1, solved: [], progress: null, settings: { haptics: true, theme: 'auto' } }`. `parseSave(json: string | null): SaveState` returns the default on null, invalid JSON, wrong `v`, or wrong shape (validate each field's type; unknown fields are dropped). `serializeSave(s)` = `JSON.stringify`. `storage.ts` exposes `loadSave()`, `saveState(s)` (wrapped in try/catch — a storage failure never crashes the app) and keeps the single in-memory `SaveState` instance the UI mutates.
+
+When to save: on every found word (`progress`), on completion (`solved` add, `progress = null`), on settings change. When opening a puzzle whose key equals `progress.key`, restore the found words: for each word find its `Placement`, rebuild its cells with `pathCells`, assign colors in stored order, and draw the pills and chips as found. Opening a different puzzle replaces `progress` on the first found word (not before — so browsing a puzzle does not lose progress on another one).
+
+## 10. PWA
+
+- `vite-plugin-pwa` as configured in §4; register the service worker in `main.ts` with `import { registerSW } from 'virtual:pwa-register'; registerSW({ immediate: true });`.
+- The app must open and be fully playable offline after the first load (verify by building, serving `dist/` with `npm run preview`, loading once, then checking that `dist/sw.js` and the precache manifest list the JS, CSS, HTML, SVG icon and the Nunito `woff2` files).
+- `index.html` metadata and the SVG icon as specified in §4.
+
+## 11. Required unit tests
+
+Tests live next to their module (`src/core/x.test.ts`, `src/data/words.test.ts`). Use plain `describe/it/expect` from `vitest`.
+
+- `normalize.test.ts`: `normalizeWord('Açúcar') === 'ACUCAR'`, `'Maracujá' → 'MARACUJA'`, `'Pêssego' → 'PESSEGO'`, `'Folião' → 'FOLIAO'`; `isValidWord` rejects `'Uva'` (3 letters), `'Jabuticaba'` (10), `'Guarda-sol'`, `'Pão de queijo'`, accepts `'Maçã'`; `reverse('ABC') === 'CBA'`.
+- `prng.test.ts`: same seed → identical first 20 values; different seeds → different sequences; every value in `[0, 1)`; `shuffle` returns a permutation, does not mutate its input, and is deterministic for a given seed; `hashSeed('praia:1')` equals a fixed number (run once, paste the value into the assertion).
+- `directions.test.ts`: `maxSteps({row:0,col:0},'E',8,8) === 7`; `'N' → 0`; `maxSteps({row:2,col:3},'SW',8,8) === 3`; `pathCells({row:0,col:0},'SE',2)` deep-equals `[{0,0},{1,1},{2,2}]`; `angleOf('S') === Math.PI/2`; `isDiagonal('NE') && !isDiagonal('W')`.
+- `levels.test.ts`: `tierForIndex` maps 1–3 → 1, 4–6 → 2, 7–9 → 3, 10–12 → 4; every tier has `cols <= 10`.
+- `words.test.ts`: theme ids unique; each theme has ≥ 20 words; every word passes `isValidWord`; normalized words are unique within a theme; each theme has ≥ 8 words of normalized length ≤ 7 (so tier 1 always has enough); `LETTER_WEIGHTS` keys are single letters A–Z, contain no K/W/Y, all weights > 0.
+- `generate.test.ts`, for every theme × every index 1..12 (with the same `':1'..':5'` retry loop the UI uses): generation succeeds; `grid.length === rows*cols` and every entry matches `/^[A-Z]$/`; `placements.length >= spec.wordCount - 1`; each placement's letters read back correctly from the grid through `pathCells`; `findOccurrences` returns exactly 1 for each placed word; every placement `dir` is in `spec.directions`; no pair of placements violates the substring rule; calling twice yields deep-equal puzzles; puzzles with different indices differ. Plus one targeted test with a hand-made theme `['Café', 'Cafezinho', 'Leite', 'Bolo', 'Suco', 'Ovos', 'Broa', 'Rosca']` at index 1: never both `CAFE` and `CAFEZINHO`. Plus one blocklist test: generate the `frutas` theme at every index with `blocklist = ['MANGA']` passed explicitly, and assert `findOccurrences` for `MANGA` returns 0 in every result (the generator must have avoided both placing it and forming it by accident).
+- `select.test.ts` (cell = 40, grid 8×8, anchor `{row:3,col:3}` unless stated): pointer 10px right of the anchor center → `steps 0` (dead zone); 3 cells right → `{E, 3}`; 3 cells down → `{S, 3}`; up-right by (3c, −3c) → `{NE, 3}`; down-left → `{SW, 3}`; diagonal step count uses √2, e.g. offset (2.9c, 2.9c) → `{SE, 3}`; anchor `{0,0}` with pointer straight up → `{N, 0}`; pointer far outside the grid to the right → `{E, 4}` (clamped); hysteresis: `prevDir 'E'` with angle 28° → `'E'`, with angle 40° → `'SE'`; `prevDir null` with angle 28° → `'SE'`. `matchWord('OLEG', new Set(['GELO']))` → `'GELO'`; `matchWord('GELO', ...)` → `'GELO'`; `matchWord('ABCD', ...)` → `null`.
+- `save.test.ts`: `parseSave(null)` returns the default; invalid JSON → default; `{v: 2}` → default; a valid object round-trips; unknown fields are dropped; a `progress` with a non-array `found` → default.
+
+## 12. Milestones
+
+Each milestone ends with `npm run check` passing and a commit. Do not start the next one unless asked.
+
+- **M0 — Scaffold.** Everything in §4. Done when `npm run check` passes (no tests yet), `dist/` contains `sw.js` and `manifest.webmanifest`, and the page shows "ok" in `npm run dev`.
+- **M1 — Core utilities.** `normalize.ts`, `prng.ts`, `directions.ts`, `levels.ts`, `types.ts` and their tests (§11).
+- **M2 — Data.** `words.ts`, `letters.ts` (verbatim from the appendices), `blocklist.ts`, and `words.test.ts`.
+- **M3 — Generator.** `generate.ts` per §6.5 and `generate.test.ts`. To eyeball a grid during development, add a temporary test that `console.log`s a tier-4 puzzle row by row and run `npx vitest run -t <its name>`; delete it before committing.
+- **M4 — Selection geometry.** `select.ts` per §7 and `select.test.ts`.
+- **M5 — Puzzle screen, static.** `strings.ts`, `router.ts`, `save.ts` + `storage.ts` (+ `save.test.ts`), `grid.ts` (render, sizing, overlay, pills for already-found words), `puzzle.ts` (header, trace strip, chips), `style.css` tokens and layout. Home is a temporary list of one link per theme. Visiting `#/p/praia/1` shows a correct puzzle that resizes with the window. No pointer handling yet.
+- **M6 — Interaction.** `pointer.ts` per §8.5, found/miss behavior, color assignment, trace strip behavior, hints, vibration, completion card (§8.6), progress persistence and restore (§9).
+- **M7 — Home and settings.** Home per §8.3 including the continue row and progress bars; settings sheet per §8.7; theme resolution (auto/light/dark) and `theme-color` update.
+- **M8 — PWA and polish.** Service worker registration, offline verification (§10), icon check, dark mode pass over every screen, reduced-motion pass, and a final walk through §13. Fix anything that fails.
+
+## 13. Definition of done
+
+- `npm run check` passes; no `TODO`, no `any`, no `@ts-ignore`, no `console.log` left in `src/`.
+- On a 360×740 viewport, every tier renders without page scroll: header, trace strip, full grid and the chips are all visible; cells are ≥ 28px.
+- Dragging from a letter draws a yellow pill that snaps to 8 directions and never flickers between two directions when the finger moves slowly near a sector boundary.
+- Releasing on a listed word (either reading direction) locks the pill in a color, strikes the chip, and vibrates on Android Chrome; releasing on anything else fades the pill out with no other feedback.
+- The page never scrolls, zooms, or triggers pull-to-refresh during a drag; long-press never selects text or shows a callout.
+- Tapping a chip pulses the word's first letter; unlimited.
+- Finding the last word shows the completion card; "Próxima fase" opens index+1; index 12 shows the theme-complete message.
+- Reloading mid-puzzle restores found words with the same colors; the home screen shows correct "n de 12" counts and a "Continuar" row.
+- Same puzzle key → identical grid on every device.
+- Works offline after one load; installable from Chrome's menu; `lang="pt-BR"`; every user-visible string comes from `strings.ts`.
+- Dark mode follows the system by default and can be forced in settings; `prefers-reduced-motion` disables animations.
+
+## Appendix A — `src/data/words.ts`
+
+Verbatim. Display forms keep accents; the generator normalizes them.
+
+```ts
+import type { Theme } from '../core/types';
+
+export const THEMES: Theme[] = [
+  { id: 'frutas', name: 'Frutas', emoji: '🍊', words: [
+    'Manga', 'Goiaba', 'Abacaxi', 'Banana', 'Mamão', 'Caju', 'Acerola', 'Maracujá', 'Pitanga',
+    'Laranja', 'Limão', 'Melancia', 'Morango', 'Abacate', 'Graviola', 'Caqui', 'Ameixa', 'Pêssego',
+    'Tangerina', 'Figo', 'Melão', 'Carambola', 'Cupuaçu', 'Jaca', 'Coco', 'Pera', 'Maçã',
+  ] },
+  { id: 'feira', name: 'Feira', emoji: '🥕', words: [
+    'Tomate', 'Cebola', 'Alho', 'Batata', 'Cenoura', 'Alface', 'Couve', 'Pepino', 'Abóbora',
+    'Quiabo', 'Chuchu', 'Mandioca', 'Beterraba', 'Brócolis', 'Repolho', 'Pimentão', 'Rúcula',
+    'Inhame', 'Vagem', 'Milho', 'Feijão', 'Arroz', 'Barraca', 'Balança', 'Sacola', 'Pastel',
+    'Cana', 'Tempero',
+  ] },
+  { id: 'cafe', name: 'Café da manhã', emoji: '☕', words: [
+    'Café', 'Leite', 'Queijo', 'Manteiga', 'Tapioca', 'Cuscuz', 'Bolo', 'Suco', 'Geleia', 'Ovos',
+    'Biscoito', 'Torrada', 'Presunto', 'Iogurte', 'Granola', 'Aveia', 'Xícara', 'Coalhada', 'Broa',
+    'Rosca', 'Canela', 'Açúcar', 'Pingado', 'Misto', 'Fruta', 'Requeijão', 'Cafezinho', 'Mamão',
+  ] },
+  { id: 'praia', name: 'Praia', emoji: '🏖️', words: [
+    'Areia', 'Onda', 'Concha', 'Canga', 'Biquíni', 'Chinelo', 'Coqueiro', 'Sorvete', 'Picolé',
+    'Espuma', 'Maré', 'Altinha', 'Frescobol', 'Prancha', 'Surfe', 'Vento', 'Brisa', 'Farol',
+    'Barco', 'Caiçara', 'Água', 'Peixe', 'Siri', 'Gaivota', 'Protetor', 'Cadeira', 'Isopor',
+    'Bronze', 'Verão', 'Mergulho', 'Castelo',
+  ] },
+  { id: 'junina', name: 'Festa junina', emoji: '🎪', words: [
+    'Fogueira', 'Quadrilha', 'Balão', 'Milho', 'Pamonha', 'Canjica', 'Quentão', 'Forró', 'Sanfona',
+    'Chapéu', 'Arraiá', 'Pipoca', 'Paçoca', 'Curau', 'Noivo', 'Noiva', 'Padre', 'Xadrez', 'Caipira',
+    'Pescaria', 'Correio', 'Fogos', 'Bandeira', 'Barraca', 'Roça', 'Zabumba', 'Xote', 'Baião',
+    'Casamento', 'Palha',
+  ] },
+  { id: 'bichos', name: 'Bichos', emoji: '🦜', words: [
+    'Gato', 'Cachorro', 'Papagaio', 'Arara', 'Tucano', 'Capivara', 'Tamanduá', 'Onça', 'Mico',
+    'Jacaré', 'Tartaruga', 'Borboleta', 'Sabiá', 'Coelho', 'Galinha', 'Pintinho', 'Vaca', 'Cavalo',
+    'Cabra', 'Porco', 'Joaninha', 'Lagartixa', 'Preguiça', 'Boto', 'Tatu', 'Quati', 'Pato', 'Sapo',
+    'Grilo', 'Formiga', 'Abelha', 'Lobo', 'Macaco',
+  ] },
+  { id: 'cozinha', name: 'Cozinha da vó', emoji: '🍲', words: [
+    'Feijoada', 'Pudim', 'Coxinha', 'Farofa', 'Moqueca', 'Vatapá', 'Acarajé', 'Bolinho', 'Arroz',
+    'Feijão', 'Macarrão', 'Doce', 'Goiabada', 'Quindim', 'Cocada', 'Panela', 'Fogão', 'Colher',
+    'Tempero', 'Caldo', 'Sopa', 'Carinho', 'Receita', 'Avental', 'Assado', 'Torta', 'Empada',
+    'Canja', 'Angu', 'Polenta', 'Galinhada', 'Lasanha',
+  ] },
+  { id: 'carnaval', name: 'Carnaval', emoji: '🎭', words: [
+    'Samba', 'Bloco', 'Confete', 'Fantasia', 'Máscara', 'Purpurina', 'Abadá', 'Trio', 'Alegoria',
+    'Bateria', 'Marchinha', 'Folia', 'Desfile', 'Tamborim', 'Surdo', 'Cuíca', 'Pandeiro', 'Apito',
+    'Folião', 'Passista', 'Frevo', 'Maracatu', 'Sombrinha', 'Escola', 'Enredo', 'Alegria', 'Brilho',
+    'Pierrô', 'Colombina', 'Arlequim', 'Carnaval',
+  ] },
+];
+
+export function themeById(id: string): Theme | undefined { return THEMES.find((t) => t.id === id); }
+```
+
+## Appendix B — `src/data/letters.ts`
+
+Approximate Brazilian Portuguese letter frequencies (×1000), used only to fill empty cells. K, W and Y are deliberately absent so the filler reads as Portuguese.
+
+```ts
+export const LETTER_WEIGHTS: Record<string, number> = {
+  A: 146, E: 126, O: 107, S: 78, R: 65, I: 62, N: 50, D: 50, M: 47, U: 46, T: 43, C: 39,
+  L: 28, P: 25, V: 17, G: 13, H: 13, Q: 12, B: 10, F: 10, Z: 5, J: 4, X: 3,
+};
+```
+
+## Appendix C — `src/ui/strings.ts`
+
+```ts
+export const STR = {
+  appName: 'Caça-Palavras',
+  tagline: 'Sem relógio, sem placar. Só as palavras.',
+  settings: 'Ajustes',
+  back: 'Voltar',
+  close: 'Fechar',
+  continue: 'Continuar',
+  continueSub: (theme: string, index: number) => `${theme}, fase ${index}`,
+  progress: (done: number, total: number) => `${done} de ${total}`,
+  themeDone: 'Completo',
+  phase: (index: number, total: number) => `Fase ${index} de ${total}`,
+  dragHint: 'Arraste o dedo sobre as letras',
+  allFound: 'Todas encontradas!',
+  nextPuzzle: 'Próxima fase',
+  chooseTheme: 'Escolher tema',
+  themeComplete: (theme: string) => `Você completou o tema ${theme}!`,
+  haptics: 'Vibração',
+  appearance: 'Aparência',
+  themeAuto: 'Automático',
+  themeLight: 'Claro',
+  themeDark: 'Escuro',
+} as const;
+```
+
+---
+
+# This session
+Implement the WHOLE application in this one session: all milestones M0 to M8, in order, exactly as specified in §12 and the sections they reference. Follow §0 for every milestone: `npm run check` must pass, then commit with `git add -A && git commit -m "Mx: <name>"` before starting the next one. Finish with the final report (§0 item 10) as your finish summary once M8 is committed.
+
+Acceptance check: `npm run check` must exit 0. Run it yourself before you finish.

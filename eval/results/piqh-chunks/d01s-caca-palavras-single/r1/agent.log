@@ -1,0 +1,22 @@
+(node:11628) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All milestones M0–M8 are committed, the working tree is clean, and the acceptance check passes (`npm run check` exits 0; 58/58 tests, production build with PWA precache of 17 entries).
+
+**Final report (§0 item 10):**
+
+**(a) Files created/changed** (one commit per milestone, M0 scaffold → M8 PWA polish):
+- Scaffold: `package.json`, `tsconfig.json`, `vite.config.ts`, `vitest.config.ts`, `index.html`, `public/icons/icon.svg`, `src/main.ts`, `src/style.css`
+- Core: `src/core/{types, normalize, prng, directions, levels, generate, select, save}.ts` + 6 test files (52 tests)
+- Data: `src/data/{words, letters, blocklist}.ts` + `words.test.ts` (blocklist intentionally empty per §6.6)
+- UI: `src/ui/{strings, router, storage, grid, puzzle, pointer, home, settings}.ts`
+
+**(b) Last lines of `npm run check`** (exit 0):
+```
+dist/assets/index-BYvAlNQx.css   9.07 kB │ gzip: 2.52 kB
+dist/assets/index-CyGsdAdy.js    23.99 kB │ gzip: 9.31 kB
+✓ built in 253ms
+PWA v2.0.0  mode generateSW  precache 17 entries (151.63 KiB)
+files generated: dist/sw.js, dist/workbox-9c191d2f.js
+```
+
+**(c) Nothing left undone.** All definition-of-done items were verified across the session: deterministic puzzles, snap-to-8-directions drag with hysteresis, highlighter pills, hints, haptics, completion card, progress persistence/restore, home with continue row and progress bars, dark mode (auto/light/dark), reduced-motion support, offline PWA with Nunito bundled, and no `TODO`/`any`/`@ts-ignore`/`console.log` in `src/` (largest file 224 lines, under the 250 cap).
