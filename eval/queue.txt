@@ -1,3 +1,4 @@
+./bin/qh eval --agent "eval/runner/pi_agent.sh qh" --agent-timeout-min 30 --out eval/results/piqh-smoke --only a05-ini-bugfix --reps 1 --parallel 1 > eval/results/piqh-smoke.log 2>&1
 ./bin/qh eval --agent "eval/runner/pi_agent.sh qh" --agent-timeout-min 70 --out eval/results/piqh --only tierB --reps 1 --parallel 1 > eval/results/piqh-B.log 2>&1
 QH_PI_CONFIG=$PWD/pi-qh/config/long.json ./bin/qh eval --agent "eval/runner/pi_agent.sh qh-chunks" --agent-timeout-min 310 --out eval/results/piqh-chunks --only d01s-caca-palavras-single --reps 1 --parallel 1 > eval/results/piqh-chunks-D.log 2>&1
 QH_PI_CONFIG=$PWD/pi-qh/config/long.json ./bin/qh eval --agent "eval/runner/pi_agent.sh qh" --agent-timeout-min 310 --out eval/results/piqh --only d01s-caca-palavras-single --reps 1 --parallel 1 > eval/results/piqh-D.log 2>&1
