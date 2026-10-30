@@ -1,0 +1,13 @@
+(node:1505) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+The parser is fixed and all documented behavior is in place. Summary of bugs corrected in `ini.Parse` (all against the package doc):
+
+1. **Lines not trimmed** — only a raw empty check was done; now `strings.TrimSpace` is applied first, so `  [Server]` and indented key lines parse.
+2. **`#` comments ignored** — now both `;` and `#` start lines are comments.
+3. **Section names not lower-cased** — now lower-cased as documented.
+4. **Wrong `=` split** — `LastIndex` used; switched to the first `=` so values may contain `=`.
+5. **Inline comments wrong** — any `;` cut the value; now only ` ;` or ` #` (whitespace-prefixed) starts a comment, only in unquoted values, and the `#`-only / `;`-absent cases are handled.
+6. **Quoted value whitespace** — inner `TrimSpace` removed; quotes are stripped and inner whitespace kept exactly (`"  a  "` → `  a  `), and quoted values are exempt from inline-comment stripping.
+7. **Repeated keys didn't overwrite** — the `if !exists` guard is gone; later assignments win.
+
+Also added a temporary extra-behavior test to verify the subtler rules (first-`=` split, overwrite, no-space `;`, `#` comments, quoted preservation, section lowercasing), which caught the `j = -1` vs `#` comparison bug; it's removed now. `go test ./...` and `go vet ./...` both pass.

@@ -1,0 +1,54 @@
+ ini/ini.go | 25 ++++++++++++++-----------
+ 1 file changed, 14 insertions(+), 11 deletions(-)
+
+diff --git a/ini/ini.go b/ini/ini.go
+index dc53235..7c075fc 100644
+--- a/ini/ini.go
++++ b/ini/ini.go
+@@ -51,32 +51,35 @@ func Parse(r io.Reader) (File, error) {
+ 	n := 0
+ 	for sc.Scan() {
+ 		n++
+-		line := sc.Text()
+-		if line == "" || line[0] == ';' {
++		line := strings.TrimSpace(sc.Text())
++		if line == "" || line[0] == ';' || line[0] == '#' {
+ 			continue
+ 		}
+ 		if line[0] == '[' && line[len(line)-1] == ']' {
+-			section = strings.TrimSpace(line[1 : len(line)-1])
++			section = strings.ToLower(strings.TrimSpace(line[1 : len(line)-1]))
+ 			continue
+ 		}
+-		i := strings.LastIndex(line, "=")
++		i := strings.Index(line, "=")
+ 		if i < 0 {
+ 			return nil, &SyntaxError{Line: n, Text: line}
+ 		}
+ 		key := strings.ToLower(strings.TrimSpace(line[:i]))
+ 		val := strings.TrimSpace(line[i+1:])
+-		if j := strings.Index(val, ";"); j >= 0 {
+-			val = strings.TrimSpace(val[:j])
+-		}
+ 		if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+-			val = strings.TrimSpace(val[1 : len(val)-1])
++			val = val[1 : len(val)-1]
++		} else {
++			j := strings.Index(val, " ;")
++			if k := strings.Index(val, " #"); k >= 0 && (j < 0 || k < j) {
++				j = k
++			}
++			if j >= 0 {
++				val = strings.TrimSpace(val[:j])
++			}
+ 		}
+ 		if f[section] == nil {
+ 			f[section] = map[string]string{}
+ 		}
+-		if _, exists := f[section][key]; !exists {
+-			f[section][key] = val
+-		}
++		f[section][key] = val
+ 	}
+ 	return f, sc.Err()
+ }

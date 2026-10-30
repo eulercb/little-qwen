@@ -1,0 +1,12 @@
+{
+  "status": "finished",
+  "check_passed": true,
+  "turns": 12,
+  "finish_attempts": 1,
+  "think_caps": 0,
+  "nudges": 0,
+  "loop_hints": 0,
+  "restored_green": false,
+  "compactions": 0,
+  "wall_seconds": 306.864
+}
