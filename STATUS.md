@@ -9,20 +9,19 @@ and compensates for its weaknesses, then improve it with the Harness² method (P
 evidence-gated, lesson library). Guiding doc: `docs/BUILD_PLAN.md` (Part 4 is the roadmap).
 Results summary for readers: README.md "Results so far". Full experiment records: docs/EXPERIMENTS.md.
 
-## ⏸ PAUSED (2026-10-29 11:37 UTC) on request; nothing is running, everything is committed
+## ⏸ PAUSED (2026-10-30 10:49 UTC) on request; nothing is running, everything is committed
 
 Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. The queue continues with:
-1. (done) pi + pi-qh on Tier B: 0.885.
-2. The long-context stress test on d01s (the whole PWA brief as ONE session, 300 min / 400 turns each):
-   - pi + pi-qh with chunks (`piqh-chunks`);
-   - pi + pi-qh without chunks (`piqh`, pi's own compaction);
-   - qh `harness/it2-long` (qh's compaction at 88K).
-   Compare all three with it2's 9-session 38/39.
-3. pi + pi-qh on the 7 Tier-A/held-out tasks.
-4. The Terminal-Bench subset with it2 (3/20 done), then with little-coder.
+1. qh `harness/it2-long` on d01s, the third arm of the single-session stress test. It was interrupted 26 min
+   in and discarded.
+2. pi + pi-qh on the 7 Tier-A/held-out tasks.
+3. The Terminal-Bench subset with it2 (3/20 done), then with little-coder.
 
 Headline:
-- Tier-B mean: qh it1 0.818, it2 0.988 (pooled 0.903); base 0.654, pi 0.828, little-coder 0.650.
+- Tier-B mean: qh it1 0.818, it2 0.988 (pooled 0.903); **pi + pi-qh 0.885**; base 0.654, pi 0.828,
+  little-coder 0.650.
+- d01s (the PWA brief as ONE session): **pi-qh chunks 38/39 with 0 compactions** vs pi-qh without chunks
+  33/39 (1 compaction, prompts up to 109K). qh it2 with 9 task-given sessions: 38/39.
 - 7 Tier-A/held-out tasks: qh, pi and little-coder are about tied (0.98–1.00); OpenCode scored 0.776 at 2.5× the
   time.
 - Tier D (d01 PWA): it2 38/39.
@@ -258,5 +257,6 @@ Then follow "Decisions waiting on those results" below as items finish.
   the same as it2's 9-session result. pi-qh without chunks started.
 - 2026-10-30 10:23 — d01s with pi-qh WITHOUT chunks: 33/39 in 146 min (1 compaction, prompt up to 109K).
   Chunks win, 38 vs 33. qh it2-long started.
+- 2026-10-30 10:49 — PAUSED on request during it2-long d01s (26 min in, discarded).
   - `qh tbench` now stages runs in .inprogress, like qh eval.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
