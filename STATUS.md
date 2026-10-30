@@ -254,5 +254,7 @@ Then follow "Decisions waiting on those results" below as items finish.
 - 2026-10-30 03:15 — the container restarted during pi-qh b04 (run discarded). Resumed with resume.sh.
 - 2026-10-30 05:37 — pi-qh Tier B done: mean 0.885 (b04 0.93, b06 0.38, the rest 1.00); native qh pooled
   0.903. The d01s single-session stress test started (piqh-chunks first).
+- 2026-10-30 07:56 — d01s with pi-qh chunks: 38/39 in 138.7 min (10 chunks, 0 compactions, largest prompt 62K),
+  the same as it2's 9-session result. pi-qh without chunks started.
   - `qh tbench` now stages runs in .inprogress, like qh eval.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.

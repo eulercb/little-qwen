@@ -291,3 +291,14 @@ Template:
   - The L2 nudge fired twice in b06, and the budget stop fired in b06. No compaction occurred.
 - Conclusion: the port works. pi-qh matches qh it2's behaviour well enough that the score gap is within
   single-run noise (b06 alone: 0.96 vs 0.38 vs 0).
+
+## Long-task stress test d01s (the whole PWA brief as ONE session), 2026-10-30
+- **pi + pi-qh with chunks: 38/39 (0.97) in 138.7 min, 180 turns, 0 compactions, largest prompt 62K tokens.**
+  - The model planned 10 chunks (the brief's M0–M8, with M5 split in two). All 10 passed their done_when on
+    the first attempt, taking 6–42 turns each.
+  - The acceptance check passed on the first finish.
+  - The one miss is u-save (saved state kept a solved entry the hidden test expected to be empty).
+- Reference: qh it2 with the task's own 9 sessions scored 38/39 in 117.6 min.
+- So the harness split the work itself, kept every request small and never compacted, and matched the
+  task-split result.
+- Still running: pi + pi-qh WITHOUT chunks (pi's own compaction), then qh it2-long (qh's compaction at 88K).
