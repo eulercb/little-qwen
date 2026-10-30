@@ -12,7 +12,7 @@ Results summary for readers: README.md "Results so far". Full experiment records
 ## ⏸ PAUSED (2026-10-29 11:37 UTC) on request; nothing is running, everything is committed
 
 Resume with `eval/runner/resume.sh https://<tunnel>.trycloudflare.com`. The queue continues with:
-1. pi + pi-qh on Tier B (`eval/results/piqh`): the A/B against qh it1/it2.
+1. (done) pi + pi-qh on Tier B: 0.885.
 2. The long-context stress test on d01s (the whole PWA brief as ONE session, 300 min / 400 turns each):
    - pi + pi-qh with chunks (`piqh-chunks`);
    - pi + pi-qh without chunks (`piqh`, pi's own compaction);
@@ -252,5 +252,7 @@ Then follow "Decisions waiting on those results" below as items finish.
   - pi-qh Tier B: b01 1.00 / 37.6, b02 1.00 / 27.9, b03 1.00 / 7.5. The think cap fired and worked live in b01
     and b02.
 - 2026-10-30 03:15 — the container restarted during pi-qh b04 (run discarded). Resumed with resume.sh.
+- 2026-10-30 05:37 — pi-qh Tier B done: mean 0.885 (b04 0.93, b06 0.38, the rest 1.00); native qh pooled
+  0.903. The d01s single-session stress test started (piqh-chunks first).
   - `qh tbench` now stages runs in .inprogress, like qh eval.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.

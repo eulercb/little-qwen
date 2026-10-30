@@ -278,3 +278,16 @@ Template:
   - piqh vs it1/it2 on Tier B;
   - the d01s single-session stress test: piqh-chunks vs piqh vs it2-long, against it2's 9-session 38/39;
   - piqh on the 7 small tasks.
+
+## pi-qh live Tier B (2026-10-30): mean 0.885
+- Results:
+  - b01 1.00 / 37.6, b02 1.00 / 27.9, b03 1.00 / 7.5.
+  - b04 0.93 / 40.0, b05 1.00 / 40.4.
+  - b06 0.38 (5/13), wall clock 60.
+- Native qh: it1 0.818, it2 0.988, pooled 0.903. Plain pi 0.828; little-coder 0.650.
+- Mechanisms observed live:
+  - The think cap fired in b01, b02 and b06. Each act turn (thinking off, reasoning re-inserted) made tool
+    calls, and the prompt shape matched native qh: act-turn prompt 12,185 tokens vs 12,687 in qh's b01.
+  - The L2 nudge fired twice in b06, and the budget stop fired in b06. No compaction occurred.
+- Conclusion: the port works. pi-qh matches qh it2's behaviour well enough that the score gap is within
+  single-run noise (b06 alone: 0.96 vs 0.38 vs 0).
