@@ -301,4 +301,12 @@ Template:
 - Reference: qh it2 with the task's own 9 sessions scored 38/39 in 117.6 min.
 - So the harness split the work itself, kept every request small and never compacted, and matched the
   task-split result.
-- Still running: pi + pi-qh WITHOUT chunks (pi's own compaction), then qh it2-long (qh's compaction at 88K).
+- **pi + pi-qh WITHOUT chunks: 33/39 (0.85) in 146.3 min, 98 turns, 1 compaction (pi's own, at turn 69).**
+  - The largest prompt was 109K tokens, and turns slowed as the context grew.
+  - Misses: data-words, e-drag-forward, e-drag-reverse, e-miss, e-persist, e-complete. These are mostly the
+    interaction layer (M6), built around the compaction.
+- Chunks vs no chunks, same harness and model: 38/39 vs 33/39, and 180 cheap turns vs 98 expensive ones in
+  about the same time. n=1, but the direction agrees with the hypothesis: avoiding compaction by planned
+  chunking beats one long, compacted context.
+- Still running: qh it2-long (qh's compaction at 88K).
+

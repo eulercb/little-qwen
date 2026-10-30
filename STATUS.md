@@ -256,5 +256,7 @@ Then follow "Decisions waiting on those results" below as items finish.
   0.903. The d01s single-session stress test started (piqh-chunks first).
 - 2026-10-30 07:56 — d01s with pi-qh chunks: 38/39 in 138.7 min (10 chunks, 0 compactions, largest prompt 62K),
   the same as it2's 9-session result. pi-qh without chunks started.
+- 2026-10-30 10:23 — d01s with pi-qh WITHOUT chunks: 33/39 in 146 min (1 compaction, prompt up to 109K).
+  Chunks win, 38 vs 33. qh it2-long started.
   - `qh tbench` now stages runs in .inprogress, like qh eval.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
