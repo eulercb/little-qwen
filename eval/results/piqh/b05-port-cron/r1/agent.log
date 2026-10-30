@@ -1,0 +1,13 @@
+(node:5218) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Done. The port is complete and verified.
+
+**Deliverable** — `cron/cron.go`: package `cron` with the exact required API:
+- `Parse(expr string) (*Schedule, error)` — same syntax as the reference: 5 fields, items `*`, `N`, `N-M`, `*/S`, `N-M/S`, `N/S`, comma lists, JAN–DEC / SUN–SAT names (case-insensitive), `7`→Sunday, all 7 macros, with field-count and all 8 `CronError` message formats reproduced byte-for-byte (including Python `repr` quoting in `invalid value '…'` / `unknown macro '…'` / `no match within 5 years for '…'`).
+- `(*Schedule).Next(after)` — same algorithm as `next_run()`: strictly-after next minute, month/day/hour/minute skip jumps, Vixie OR-rule for restricted dom+dow, 5×366-day limit, result in `after`'s location.
+- `(*Schedule).String()` — same as `describe()`, including its quirk that 2-consecutive runs render as `5,6` while 3+ render as `5-7`.
+
+**Verification**
+- `cron/cron_test.go` covers all error cases (30+ expressions), names/`7` mapping, macros, `String()` grouping, `Next()` (month/day/hour/minute edges, Feb 28/29 year-crossing, Vixie OR, fixed-offset timezone, no-match error) — all pass.
+- Differential testing against the Python reference: ~2400 randomized cases across 5 seeds (expressions including invalid items, reversed ranges, bad steps, names, macros; various ISO times incl. offsets; multi-step `next` chains) — **100% match** on `describe`, `next_run` outputs, and error text.
+- Acceptance check runs clean: `go vet ./... && go test ./...` → `ok example.com/cron/cron`, `gofmt` clean, no other files touched.

@@ -1,0 +1,11 @@
+(node:1500) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Done. The full spec is implemented and the acceptance check (`go vet ./... && go test -race ./...`) exits 0.
+
+Summary of what was built:
+
+- **`store/`** — `Store` (mutex-guarded, injectable `Clock`) with `Set`/`Get`/`Del`/`Exists`/`Expire`/`Persist`/`TTL`/`Incr`/`Keys`/`Len`/`Save`/`Load`. Expired keys (`now >= deadline`) are treated as missing and lazily reaped in every method, including `Len`/`Keys`/`Save`. `Keys` uses a hand-rolled glob matcher (`*` matches `/`, `?`, `[abc]`/`[a-z]`/`[^a]`/`[!a]`, `\x` escapes, full match). Snapshots are versioned JSON with sorted entries; `Load` rejects other versions and drops entries already expired at load time.
+- **`proto/`** — `Exec(s, line) string` with space/tab tokenizing plus double-quoted tokens (with `\"`, `\\`, `\n` escapes; unterminated quote or bad escape → syntax error). Implements PING, SET (with `EX`), GET, DEL, EXISTS, EXPIRE, PERSIST, TTL (rounded up), INCR/INCRBY, KEYS (array), DBSIZE, with the spec's exact response formats (value quoting, `$nil`, `-ERR ...`, unknown-command/wrong-arity messages) and trailing newlines.
+- **`server/`** — `Serve(ctx, listener, store) error`: accepts until ctx cancel (then closes the listener, closes open conns, waits for goroutines, returns nil), serves clients concurrently, strips optional `\r`, replies in order via `proto.Exec`, `QUIT` → `+BYE\n` + close, lines > 64 KiB → `-ERR line too long\n` + close.
+
+Each package has tests (fake-clock expiry semantics, save/load roundtrip and version rejection, wire-format quoting/escaping cases, live TCP tests for QUIT/long-line/concurrency/shutdown), and all pass under `-race`.
