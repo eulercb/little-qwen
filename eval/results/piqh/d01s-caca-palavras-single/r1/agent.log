@@ -1,0 +1,13 @@
+(node:22133) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+All milestones complete. Final state: 9 commits (M0 scaffold → M8), `npm run check` green — typecheck, 124 unit tests across 8 files, and production build with service worker.
+
+**Summary of the delivered game (Caça-Palavras):**
+
+- **M0–M2**: Vite + TypeScript + vitest scaffold with PWA manifest, Nunito font, pt-BR index.html; pure core utilities (normalize/prng/directions/levels) and the full data layer (8 themes, 82 words, filler letters) — all verbatim from the spec appendices, 36 tests.
+- **M3**: Deterministic generator (`generate.ts`) — 624 total placements across all 8×12 puzzles, zero blocklisted words, zero overlapping occurrences; 74 tests.
+- **M4**: Pointer→selection geometry (`select.ts`) with §8.2 dead-zone, direction hysteresis, edge clamping, and reverse-direction matching; 15 tests.
+- **M5**: Puzzle screen — header, live trace strip, DOM grid + SVG pill overlay with ResizeObserver sizing, word chips, progress restore; all strings from Appendix C.
+- **M6**: Full interaction — drag with snapping, pill pulse/pop, 8-color palette in find order, miss fade, one-tap hints, vibration, completion card with next-phase/theme-complete flows, per §9 persistence.
+- **M7**: Home with 8 themed rows (emoji, progress bar, checkmark when complete, continue row) and the settings bottom sheet (haptics switch + auto/light/dark segmented control) with theme resolution in `main.ts`.
+- **M8**: Service worker registered from `main.ts` in production; precache verified to cover index, JS, CSS, all fonts, icon, and manifest; offline preview smoke-tested (all 200s); reduced-motion, dark-mode tokens, and focus outlines in place. All files ≤ 250 lines; no `any`, `@ts-ignore`, `TODO`, or `console` in src.

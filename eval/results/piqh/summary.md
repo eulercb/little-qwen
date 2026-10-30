@@ -1,11 +1,11 @@
-Harness: external — 6 runs over 6 tasks
+Harness: external — 7 runs over 7 tasks
 
 | metric | mean ± sd |
 |---|---|
-| success | 0.67 ± 0.52 |
-| score | 0.89 ± 0.25 |
-| wall (min) | 35.6 ± 17.3 |
-| turns | 44.5 ± 18.4 |
+| success | 0.57 ± 0.53 |
+| score | 0.88 ± 0.23 |
+| wall (min) | 51.4 ± 44.7 |
+| turns | 52.1 ± 26.3 |
 | prefill tokens | 0 ± 0 |
 | re-prefill tokens | 0 ± 0 |
 | completion tokens | 0 ± 0 |
@@ -22,3 +22,4 @@ Failure codes:
 | b04-kv-server | tierB | 0.00 | 0.93 | finished | 58 | 40.0 | 0 |
 | b05-port-cron | tierB | 1.00 | 1.00 | finished | 52 | 40.4 | 0 |
 | b06-markdown | tierB | 0.00 | 0.38 | wall_clock | 64 | 60.0 | 0 |
+| d01s-caca-palavras-single | tierD | 0.00 | 0.85 | finished | 98 | 146.3 | 0 |
