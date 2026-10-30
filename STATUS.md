@@ -247,5 +247,10 @@ Then follow "Decisions waiting on those results" below as items finish.
   - The first score of 0 was a harness bug: QH_TASK_DIR was relative. Fixed, and rescored with `qh rescore`.
   - Tier C (Terminal-Bench subset) with it2 started.
 - 2026-10-29 11:37 — PAUSED on request during tbC-it2 (3/20 done; interrupted db-wal-recovery discarded).
+- 2026-10-30 01:09 — resumed on tunnel controllers-yellow-dare-hamburg.
+  - pi-qh live smoke: a05 1.00 / 5.1 min.
+  - pi-qh Tier B: b01 1.00 / 37.6, b02 1.00 / 27.9, b03 1.00 / 7.5. The think cap fired and worked live in b01
+    and b02.
+- 2026-10-30 03:15 — the container restarted during pi-qh b04 (run discarded). Resumed with resume.sh.
   - `qh tbench` now stages runs in .inprogress, like qh eval.
   - Added the pi/little-coder comparators and candidate L1 (think_cap_continue), and queued them after Tier B.
