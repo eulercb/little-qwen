@@ -1,0 +1,12 @@
+{
+  "status": "wall_clock",
+  "check_passed": false,
+  "turns": 64,
+  "finish_attempts": 0,
+  "think_caps": 1,
+  "nudges": 0,
+  "loop_hints": 1,
+  "restored_green": false,
+  "compactions": 0,
+  "wall_seconds": 3600.041
+}

@@ -25,3 +25,4 @@
 2026-10-29T07:18:15Z rc=0 OPENCODE_BIN=${OPENCODE_BIN:-opencode} ./bin/qh eval --agent eval/runner/opencode_agent.sh --agent-timeout-min 45 --out eval/results/opencode-baseline --only h02-config-merge,h03-worker-pool,h04-mini-template,a05-ini-bugfix,a09-csv-report,a12-jsonpath --reps 1 --parallel 1 > eval/results/opencode-baseline-2.log 2>&1
 2026-10-29T09:15:53Z rc=0 ./bin/qh eval --harness harness/it2 --out eval/results/it2 --only d01-caca-palavras --reps 1 --parallel 1 > eval/results/it2-D.log 2>&1
 2026-10-30T01:09:29Z rc=0 ./bin/qh eval --agent "eval/runner/pi_agent.sh qh" --agent-timeout-min 30 --out eval/results/piqh-smoke --only a05-ini-bugfix --reps 1 --parallel 1 > eval/results/piqh-smoke.log 2>&1
+2026-10-30T05:36:56Z rc=0 ./bin/qh eval --agent "eval/runner/pi_agent.sh qh" --agent-timeout-min 70 --out eval/results/piqh --only tierB --reps 1 --parallel 1 > eval/results/piqh-B.log 2>&1
